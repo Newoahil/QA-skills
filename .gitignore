@@ -1,0 +1,45 @@
+# Third-party research sources and local nested skills
+docs/research-sources/
+docs/github项目调研报告.md
+docs/qa-workflow-skill-research-and-dev-plan.md
+
+# Dependencies and build artifacts
+node_modules/
+coverage/
+test-result/
+test-results/
+playwright-report/
+
+# Environment and secret material
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.p12
+*.pfx
+*.jks
+*.crt
+*.cer
+*.csr
+*.keystore
+*.keychain
+
+# Runtime/dev metadata and agent journals
+.omo/
+.debug-journal.md
+
+# Logs
+*.log
+*.log.*
+logs/
+
+# Common OS/editor artifacts
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
