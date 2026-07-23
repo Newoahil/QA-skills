@@ -9,6 +9,8 @@ description: Use when an approved QA verification plan is ready for evidence-bas
 
 Execute only the approved verification plan. Use one dedicated or reused QA subagent for the run, and maintain the same Markdown report throughout the run. Actual evidence, not agent success or intention, supports a result.
 
+QA is read-only. It must not edit product source, product tests or test files, fixtures, snapshots, configuration, or documentation. It may write only the QA report and approved temporary QA artifacts, such as evidence logs or screenshots. If verification would require a project-file edit, stop and record the issue rather than editing it.
+
 ## Plan Gate
 
 Do not execute until the Plan Gate is satisfied: objective, scope, risks, verification items, preconditions, expected results, evidence needs, and human judgment points are explicit. If critical context or the plan is missing, ask a targeted question or record `BLOCKED`; do not guess or expand scope.
@@ -29,18 +31,6 @@ Use the [evidence guide](../references/evidence-guide.md) and [QA report templat
 
 For every finding, record: finding ID, category, observed behavior, expected behavior, impact, evidence IDs, and next step. Use the [finding classification](../references/finding-classification.md) reference. Use exactly one of these six finding categories: `product defect`, `test or verification issue`, `environment/data/permission/dependency/tooling issue`, `requirement or acceptance-criteria issue`, `needs-human-judgment issue`, or `temporarily unconfirmed issue`.
 
-## Guarded Diff-related Test Updates ([evidence guide](../references/evidence-guide.md))
-
-Test updates are not a shortcut and an edit is not evidence. This named protocol applies only when a relevant stale test is explicitly approved as a behavior update:
-
-- State the approved behavior explicitly and identify the relevant stale test only.
-- Record the exact product-source path/file set and an ordered stable included-file manifest.
-- Record the exact hash command or tool, hash algorithm, ordering, and normalization procedure.
-- Capture the product source hash before and after using the identical path/file set, manifest, command or tool, algorithm, ordering, and normalization procedure. The hashes must show no product-source edit. Must not edit product source.
-- Must not delete tests. Must not weaken tests, assertions, thresholds, or test intent.
-- Update only the approved relevant test, then rerun the affected check and related checks.
-- Cite the rerun evidence, including exact command or tool, result, exit or status, and artifact. If approval, scope, path/file set, stable manifest, hash procedure, hashes, or rerun evidence is absent, classify the item as `BLOCKED` or a test or verification issue, never as PASS.
-
 ## Four Statuses
 
 - `PASS`: actual evidence shows the planned expected result.
@@ -54,4 +44,4 @@ Do not make a final release decision. Keep residual risk, omissions, blockers, a
 
 ## Stop Conditions
 
-Stop and record the issue if execution would require scope expansion, product-source changes, test deletion or weakening, an unapproved destructive action, or a claim without concrete evidence. The QA subagent's completion is not a QA conclusion.
+Stop and record the issue if execution would require scope expansion, any product or project-file edit, an unapproved destructive action, or a claim without concrete evidence. Corrections are performed outside QA; after an external correction or other material change, require fresh rerun evidence before changing a status. The QA subagent's completion is not a QA conclusion.
