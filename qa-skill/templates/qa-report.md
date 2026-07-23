@@ -1,5 +1,16 @@
 # QA Report
 
+## Change Intake
+
+Record the named Change Intake before planning.
+
+| Change Intake field | Record |
+|---|---|
+| Observed Facts |  |
+| Inferred Intent | Intent:  Confidence:  Basis:  |
+| Authoritative Acceptance Criteria | Criterion:  Source or owner:  |
+| Unresolved Questions |  |
+
 ## Objective and Scope
 
 | Field | Record |
@@ -19,7 +30,7 @@
 
 | Risk ID | Priority | Risk statement | Validation layer | Must verify | Reason if omitted |
 |---|---|---|---|---|---|
-| R- | Must Verify / Should Verify / Optional / Explicitly Not Verified |  | Static and unit / API and integration / E2E and system / specialized non-functional / human acceptance | Yes/No |  |
+| R- | Must Verify / Should Verify / Optional / Explicitly Not Verified |  | Static/unit / API/integration / E2E/system / Specialist non-functional / Manual acceptance | Yes/No |  |
 
 ## Verification Plan
 
@@ -36,7 +47,7 @@ QA Plan Gate: OPEN/BLOCKED
 | Risks ranked with `Must Verify`, `Should Verify`, `Optional`, or `Explicitly Not Verified` | OPEN/BLOCKED:  |
 | `Must Verify` methods, preconditions, expected results, evidence requirements, and human gates | OPEN/BLOCKED:  |
 | Validation layers selected and omitted layers with reasons | OPEN/BLOCKED:  |
-| Existing coverage and guarded test-update candidates recorded | OPEN/BLOCKED:  |
+| Named Change Intake, existing coverage, and no unresolved critical or contradictory authoritative criterion | OPEN/BLOCKED:  |
 | Risks, methods, omissions, evidence requirements, and human gates reviewed | OPEN/BLOCKED:  |
 
 ## Execution and Evidence
@@ -51,14 +62,7 @@ Evidence must be actual and reviewable. A successful runner or command alone doe
 |---|---|
 | Evidence minimization and redaction | Minimum reviewable evidence only; redacted excerpt, hash, path, or summary:  |
 | Risky-command human approval reference | Approval or human-gate ID, or `N/A`:  |
-| Exact product-source path/file set |  |
-| Ordered stable included-file manifest |  |
-| Exact hash command or tool |  |
-| Hash algorithm, ordering, and normalization |  |
-| Product-source hash before guarded test update |  |
-| Product-source hash after guarded test update |  |
-| Guarded test update details | Changed test path, rationale, approval, affected and related reruns:  |
-| Edits as review history, separate from evidence | Test edit summary and review reference; do not count edits as execution evidence:  |
+| Writable outputs | QA report and approved temporary QA artifacts only, such as evidence logs or screenshots; no product source, tests, fixtures, snapshots, configuration, or documentation:  |
 
 Do not make raw credentials, tokens, secrets, personal data, production data, or sensitive request, response, or log values mandatory when a safer reviewable form is sufficient.
 
@@ -66,9 +70,9 @@ Do not make raw credentials, tokens, secrets, personal data, production data, or
 
 Use exactly one category for each finding: product defect; test or verification issue; environment/data/permission/dependency/tooling issue; requirement or acceptance-criteria issue; needs-human-judgment issue; temporarily unconfirmed issue.
 
-| Finding ID | Category | Status | Observed behavior | Expected behavior | Evidence reference | Impact | Next step |
-|---|---|---|---|---|---|---|---|
-| F- |  | FAIL/BLOCKED/NEEDS_HUMAN_REVIEW |  |  | E- |  |  |
+| Finding ID | Category | Status | Risk IDs | Verification IDs | Observed behavior | Expected behavior | Evidence reference | Impact | Next step |
+|---|---|---|---|---|---|---|---|---|---|
+| F- |  | FAIL/BLOCKED/NEEDS_HUMAN_REVIEW | R- | V- |  |  | E- |  |  |
 
 ## Unverified and Blocked Items
 
@@ -101,10 +105,14 @@ QA Conclusion Gate: COMPLETE/BLOCKED
 | Blocked, unverified, and omitted items reconciled with rerun conditions | COMPLETE/BLOCKED:  |
 | Human review items and decisions reconciled | COMPLETE/BLOCKED:  |
 | Residual risks, mitigations, and follow-up reconciled | COMPLETE/BLOCKED:  |
+| Verification traceability | Risk → Verification → Evidence → Status:  |
+| Finding traceability, when present | Finding → Risk / Verification / Evidence:  |
 | No unresolved blocker or critical human decision remains for `PASS` | COMPLETE/BLOCKED:  |
 
 | Overall status | Traceability |
 |---|---|
 | PASS/FAIL/BLOCKED/NEEDS_HUMAN_REVIEW | Risks: R-. Verification items: V-. Evidence: E-. Findings: F-. Blocked or unverified items: . Human review items: H-. Residual risks: R-. |
+
+Traceability contracts: every required verification uses `Risk → Verification → Evidence → Status`; each finding, when present, links `Finding → Risk / Verification / Evidence`.
 
 Conclusion: State what passed with evidence, what failed, what remains blocked or unverified, what requires human judgment, and which residual risks remain. `PASS` requires actual evidence for every required verification, no unresolved blocking risk, and no pending critical human decision. No evidence means no `PASS`.

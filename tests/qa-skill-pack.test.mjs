@@ -118,11 +118,21 @@ function assertNoSemanticFailures(testId, failures) {
 
 function containsAllPriorityNames(markdown) {
   return [
-    /Must\s+Verify/i,
-    /Should\s+Verify/i,
-    /Optional/i,
-    /Explicitly\s+Not\s+Verified/i,
-  ].every((pattern) => pattern.test(markdown));
+    'Must Verify',
+    'Should Verify',
+    'Optional',
+    'Explicitly Not Verified',
+  ].every((value) => markdown.includes(value));
+}
+
+function containsAllLayerNames(markdown) {
+  return [
+    'Static/unit',
+    'API/integration',
+    'E2E/system',
+    'Specialist non-functional',
+    'Manual acceptance',
+  ].every((value) => markdown.includes(value));
 }
 
 function extractRelativeMarkdownLinks(markdown) {
@@ -261,10 +271,20 @@ test('P1-SEMANTICS-003 preserves required Phase 1 semantic anchors', () => {
   const usingQa = readRequiredMarkdown('using-qa/SKILL.md', testId);
   const evidenceGuide = readRequiredMarkdown('references/evidence-guide.md', testId);
   const qaPlan = readRequiredMarkdown('qa-plan/SKILL.md', testId);
+  const riskChecklist = readRequiredMarkdown('references/risk-checklist.md', testId);
+  const qaExecute = readRequiredMarkdown('qa-execute/SKILL.md', testId);
+  const qaConclude = readRequiredMarkdown('qa-conclude/SKILL.md', testId);
+  const qaPrinciples = readRequiredMarkdown('references/qa-principles.md', testId);
   const qaReportTemplate = readRequiredMarkdown('templates/qa-report.md', testId);
+  const contractText = `${usingQa}\n${qaPlan}\n${qaExecute}\n${qaConclude}\n${qaPrinciples}\n${evidenceGuide}\n${qaReportTemplate}`;
 
   const semanticAnchorGroups = [
     ['manual trigger and one dedicated/reused QA subagent', [/manual(?:ly)?\s+(?:trigger|invoke|load|start)/i, /(?:one|single|dedicated|reused|same)\s+.*qa\s+subagent/i]],
+    ['main-agent handoff of repository/target scope and user context', [/main\s+agent/i, /main\s+agent[^\n]{0,220}(?:scope|repository|target|user\s+context)/i, /handover|hands\s+off|handoff|pass(?:es)?\s+off/i]],
+    ['QA subagent independently inspects the available Diff in qa-plan', [/`?qa\-?plan`?.{0,140}\bindependently\b/i, /`?actual\s+available\s+diff`?/i]],
+    ['qa-plan records Change Intake after inspecting Diff', [/`?qa\-?plan`?\s+begins\s+by/i, /\bindependently\b.{0,80}\b(?:read|reads|inspect|inspects|review|reviews)\b/, /actual\s+available\s+diff/i, /then\s+records\s+the\s+named\s+`?Change\s+Intake`?/i, /before\s+risk\s+planning/i]],
+    ['named Change Intake', [/named\s+Change\s+Intake/i]],
+    ['required intake fields', [/Observed\s+Facts/i, /Inferred\s+Intent/i, /Authoritative\s+Acceptance\s+Criteria/i, /Unresolved\s+Questions/i]],
     ['continuously maintained Markdown report', [/continuously|throughout|maintain/i, /markdown\s+report|qa-report\.md/i]],
     ['plan gate', [/plan\s+gate|planning\s+gate|gate\s+before\s+(?:execution|execute)/i]],
     ['targeted question or BLOCKED for missing critical context', [/targeted\s+question/i, /BLOCKED/i, /missing\s+critical\s+context/i]],
@@ -275,9 +295,10 @@ test('P1-SEMANTICS-003 preserves required Phase 1 semantic anchors', () => {
     ['four statuses', [/four\s+statuses|4\s+statuses/i]],
     ['no-evidence-no-PASS', [/no\s+evidence\s*,?\s*no\s+PASS|without\s+evidence\s+.*not\s+PASS/i]],
     ['visible omissions/blockers', [/visible\s+(?:omissions|blockers)|omissions\s+.*blockers|blockers\s+.*omissions/i]],
-    ['guarded Diff-related test updates', [/guarded\s+diff|diff-related\s+test\s+updates|test\s+updates\s+.*diff/i]],
-    ['product source hash and no product-source edit', [/product\s+source\s+hash/i, /no\s+product[-\s]source\s+edit|must\s+not\s+edit\s+product\s+source/i]],
-    ['no test deletion/weakening', [/no\s+test\s+deletion|must\s+not\s+delete\s+tests/i, /no\s+test\s+weakening|must\s+not\s+weaken\s+tests/i]],
+    ['explicit read-only policy and writable surfaces', [/read\s*[-\s]?only/i, /qa\s+report|temporary\s+artifacts?/i]],
+    ['verification traceability with status', [/risk[\s\S]{0,160}verification[\s\S]{0,160}evidence[\s\S]{0,160}status/i]],
+    ['finding traceability when present', [/finding[\s\S]{0,160}risk[\s\S]{0,160}verification[\s\S]{0,160}evidence/i]],
+    ['no test edits/read-only', [/must\s+not|do\s+not|never/i, /edit|change|modify|touch|write/i, /test\s+files?|tests?\b/i, /read\s*[-\s]?only|read\s+only/i]],
     ['rerun evidence', [/rerun\s+evidence|evidence\s+from\s+rerun/i]],
     ['human gate', [/human\s+gate|human\s+review|NEEDS_HUMAN_REVIEW/i]],
     ['no final release decision', [/no\s+final\s+release\s+decision|must\s+not\s+make\s+(?:the\s+)?final\s+release\s+decision/i]],
@@ -290,24 +311,97 @@ test('P1-SEMANTICS-003 preserves required Phase 1 semantic anchors', () => {
 
   const fileSpecificFailures = [];
 
-  if (!/product\s+source/i.test(usingQa) || !/must\s+not\s+edit\s+product\s+source|forbid(?:s|den)?\s+product\s+source\s+edit|no\s+product[-\s]source\s+edit/i.test(usingQa)) {
-    fileSpecificFailures.push('using-qa/SKILL.md must still forbid product source edits');
+  const readOnlyProhibitions = [
+    /(?:must\s+not|do\s+not|never|cannot)\s+(?:edit|change|modify|touch|write)\s+[\s\S]{0,220}(?:product\s+source|product\s+tests?|product\s+test\s+files?|project\s+files?|fixtures?|snapshots?|configuration|documentation)/i,
+  ];
+
+  for (const pattern of readOnlyProhibitions) {
+    if (!pattern.test(contractText)) {
+      fileSpecificFailures.push('workflow documentation must explicitly prohibit edits to product/project files');
+      break;
+    }
   }
 
-  if (!/(guarded|narrowly\s+guarded|only\s+when\s+.*approved).*Diff(?:.|\n){0,160}(?:stale\s+test|test[-\s]asset|test\s+update|update(?:d|s)?\s+(?:related\s+)?tests?)/i.test(usingQa)) {
-    fileSpecificFailures.push('using-qa/SKILL.md must permit narrowly guarded Diff-related stale-test/test-asset updates');
+  if (!/only\s+the\s+qa\s+report|qa\s+report\s+and\s+approved\s+temporary\s+artifacts?/i.test(contractText)) {
+    fileSpecificFailures.push('workflow should identify the QA report and approved temporary artifacts as writable QA outputs');
   }
 
-  if (/must\s+not\s+edit[^.\n]*\bproduct\s+tests?\b/i.test(usingQa)) {
-    fileSpecificFailures.push('using-qa/SKILL.md must not contain a blanket rule that the QA subagent must not edit product tests');
+  if (!/Change\s+Intake/i.test(corpus)) {
+    fileSpecificFailures.push('workflow contract must include a named Change Intake record');
   }
 
-  if (!/(?:must\s+not|never|do\s+not)\s+weaken(?:.|\n){0,120}(?:assertions?|thresholds?|test\s+intent)(?:.|\n){0,120}(?:obtain|force|achieve|get)\s+(?:a\s+)?\x60?PASS\x60?/i.test(evidenceGuide)) {
-    fileSpecificFailures.push('references/evidence-guide.md must say assertions, thresholds, and test intent are not weakened merely to obtain PASS');
+  const intakeFieldPatterns = [
+    [/Observed\s+Facts/i, 'Observed Facts'],
+    [/Inferred\s+Intent/i, 'Inferred Intent'],
+    [/Authoritative\s+Acceptance\s+Criteria/i, 'Authoritative Acceptance Criteria'],
+    [/Unresolved\s+Questions/i, 'Unresolved Questions'],
+  ];
+
+  for (const [pattern, label] of intakeFieldPatterns) {
+    if (!pattern.test(qaReportTemplate)) {
+      fileSpecificFailures.push(`workflow contract must include intake field: ${label}`);
+    }
   }
 
-  if (!/(?:business\s+value|asserted\s+value|expected\s+value)(?:.|\n){0,160}(?:change|update)(?:.|\n){0,160}(?:explicit(?:ly)?\s+approved\s+behavior|approved\s+behavior\s+requires|behavior\s+change\s+is\s+approved)/i.test(evidenceGuide)) {
-    fileSpecificFailures.push('references/evidence-guide.md must allow an asserted business value to change only when explicit approved behavior requires it');
+  if (!/Inferred\s+Intent[\s\S]{0,220}Confidence[\s\S]{0,220}Basis/i.test(qaReportTemplate)) {
+    fileSpecificFailures.push('Inferred Intent record must include both Confidence and Basis');
+  }
+
+  if (!/Authoritative\s+Acceptance\s+Criteria[\s\S]{0,220}Criterion[\s\S]{0,220}(?:Source\s+or\s+owner|Source\/owner)/i.test(qaReportTemplate)) {
+    fileSpecificFailures.push('Authoritative Acceptance Criteria must include Criterion and Source or owner');
+  }
+
+  const findingHeadersPresent = [
+    /\|\s*Risk\s+IDs\s*\|/i,
+    /\|\s*Verification\s+IDs\s*\|/i,
+    /\|\s*Evidence\s+reference\s*\|/i,
+  ].every((pattern) => pattern.test(qaReportTemplate));
+  if (!findingHeadersPresent) {
+    fileSpecificFailures.push('Findings table must expose explicit Risk IDs, Verification IDs, and Evidence reference columns');
+  }
+
+  if (!containsAllLayerNames(riskChecklist)) {
+    fileSpecificFailures.push('references/risk-checklist.md must expose exact validation layers: Static/unit, API/integration, E2E/system, Specialist non-functional, Manual acceptance');
+  }
+
+  if (!containsAllLayerNames(qaPlan)) {
+    fileSpecificFailures.push('qa-plan/SKILL.md must expose exact validation layers: Static/unit, API/integration, E2E/system, Specialist non-functional, Manual acceptance');
+  }
+
+  if (!containsAllLayerNames(qaReportTemplate)) {
+    fileSpecificFailures.push('templates/qa-report.md must expose exact validation layers: Static/unit, API/integration, E2E/system, Specialist non-functional, Manual acceptance');
+  }
+
+  if (!/(?:must\s+not|do\s+not|never|cannot)\s+(?:edit|change|modify|touch|write)\s+[^.\n]{0,260}(?:product\s+source|product\s+tests?|product\s+test\s+files?|project\s+files?|fixtures?|snapshots?|configuration|documentation)/i.test(contractText)) {
+    fileSpecificFailures.push('workflow must define read-only restrictions for product source, product tests, fixtures, snapshots, configuration, and documentation');
+  }
+
+  if (!/missing\s+or\s+contradictory\s+objective\s+acceptance\s+prerequisite[\s\S]{0,220}PLAN\s+GATE[\s\S]{0,80}BLOCKED/i.test(contractText)) {
+    fileSpecificFailures.push('unresolved critical or contradictory criteria must keep the Plan Gate as BLOCKED');
+  }
+
+  if (!/qa\s+subagent\s+[\s\S]{0,320}(?:independently\s+)?(?:reads?|inspects?|reviews?)\s+[\s\S]{0,320}diff/i.test(contractText)) {
+    fileSpecificFailures.push('QA subagent must independently inspect the available Diff');
+  }
+
+  const legacyContractPatterns = [
+    [/guarded\s+(?:Diff-related\s+)?stale\s+test/i, 'guarded stale-test update permission'],
+    [/guarded\s+test\s+asset/i, 'guarded test-asset update permission'],
+    [/product\s+source\s+hash/i, 'product-source hash protocol language'],
+    [/stable\s+manifest/i, 'stable manifest protocol language'],
+    [/product\s+source\s+hash[\s\S]{0,200}(?:exact\s+)?(?:hash\s+)?command\s+or\s+tool/i, 'exact hash command or tool protocol language'],
+    [/same\s+(?:path\s+set|file\s+set)[\s\S]{0,200}(?:algorithm|ordering|procedure)[\s\S]{0,200}before\s+and\s+after/i, 'before/after hash scope and procedure language'],
+    [/product\s+source\s+hash\s+before\s+and\s+after/i, 'product-source before/after hash language'],
+  ];
+
+  for (const relativePath of requiredProductFiles) {
+    const markdown = readRequiredMarkdown(relativePath, testId);
+
+    for (const [pattern, label] of legacyContractPatterns) {
+      if (pattern.test(markdown)) {
+        fileSpecificFailures.push(`${relativePath} still contains legacy ${label}`);
+      }
+    }
   }
 
   if (!containsAllPriorityNames(qaPlan)) {
@@ -333,6 +427,7 @@ test('P1-POLICY-006 keeps status precedence, evidence safety, gates, and taxonom
   const findingClassification = readRequiredMarkdown('references/finding-classification.md', testId);
   const humanGates = readRequiredMarkdown('references/human-gates.md', testId);
   const qaReportTemplate = readRequiredMarkdown('templates/qa-report.md', testId);
+  const policyContractText = `${usingQa}\n${qaPlan}\n${qaExecute}\n${qaConclude}\n${qaPrinciples}\n${evidenceGuide}\n${qaReportTemplate}`;
   const failures = [];
 
   const canonicalCategories = [
@@ -377,7 +472,30 @@ test('P1-POLICY-006 keeps status precedence, evidence safety, gates, and taxonom
     }
   }
 
+  for (const [relativePath, markdown] of [
+    ['qa-plan/SKILL.md', qaPlan],
+    ['references/risk-checklist.md', riskChecklist],
+    ['templates/qa-report.md', qaReportTemplate],
+  ]) {
+    if (!containsAllLayerNames(markdown)) {
+      failures.push(`${relativePath} must expose exact validation layers: Static/unit, API/integration, E2E/system, Specialist non-functional, Manual acceptance`);
+    }
+  }
+
   const policyRequirements = [
+    [policyContractText, 'using-qa/qa-principles/qa-plan', 'main-agent handoff to QA subagent and user context', /main\s+agent\s+(?:owns|hands\s+off|hands?)\s+.*(?:scope|repository|target|user\s+context)/i],
+    [policyContractText, 'using-qa/qa-execute', 'independent Diff review by subagent', /qa\s+subagent\s+[\s\S]{0,240}independently\s+[\s\S]{0,240}(?:reads?|inspects?|reviews?)\s+[\s\S]{0,240}diff/i],
+    [qaReportTemplate, 'templates/qa-report.md', 'named Change Intake record', /Change\s+Intake/],
+    [qaReportTemplate, 'templates/qa-report.md', 'observed facts field', /Observed\s+Facts/i],
+    [qaReportTemplate, 'templates/qa-report.md', 'inferred intent with confidence and basis', /Inferred\s+Intent[\s\S]{0,260}Confidence[\s\S]{0,260}Basis/i],
+    [qaReportTemplate, 'templates/qa-report.md', 'authoritative acceptance criteria criterion', /Authoritative\s+Acceptance\s+Criteria[\s\S]{0,260}Criterion/i],
+    [qaReportTemplate, 'templates/qa-report.md', 'authoritative acceptance criteria source or owner', /Authoritative\s+Acceptance\s+Criteria[\s\S]{0,260}Source\s+or\s+owner/i],
+    [qaReportTemplate, 'templates/qa-report.md', 'unresolved questions field', /Unresolved\s+Questions/i],
+    [policyContractText, 'all policy files', 'read-only workflow boundaries', /(?:must\s+not|do\s+not|never)\s+(?:edit|change|modify|touch|write)\s+(?:the\s+)?(?:product\s+source|product\s+tests?|fixtures?|snapshots?|configuration|documentation)/i],
+    [policyContractText, 'using-qa/SKILL.md|qa-report.md', 'writable outputs', /qa\s+report|approved\s+temporary\s+artifact/i],
+    [policyContractText, 'qa-conclude/templates', 'required verification traceability', /risk[\s\S]{0,120}verification[\s\S]{0,120}evidence[\s\S]{0,120}status/i],
+    [policyContractText, 'qa-conclude/templates', 'finding traceability when present', /finding[\s\S]{0,120}risk[\s\S]{0,120}(?:\/|\s+)verification[\s\S]{0,120}evidence/i],
+    [policyContractText, 'using-qa', 'Plan Gate remains BLOCKED when objective conditions are missing or contradictory', /missing\s+or\s+contradictory\s+objective\s+acceptance\s+prerequisite[\s\S]{0,220}PLAN\s+GATE[\s\S]{0,120}BLOCKED/i],
     [findingClassification, 'references/finding-classification.md', 'missing objective prerequisite', /missing\s+or\s+contradictory\s+objective\s+acceptance\s+prerequisite/i],
     [findingClassification, 'references/finding-classification.md', 'BLOCKED precedence', /affected\s+verification\s+and\s+overall\s+status[\s\S]{0,160}\bBLOCKED\b/i],
     [findingClassification, 'references/finding-classification.md', 'subjective human-review distinction', /(?:objective\s+evidence[\s\S]{0,160}subjective[\s\S]{0,160}NEEDS_HUMAN_REVIEW|NEEDS_HUMAN_REVIEW[\s\S]{0,160}objective\s+evidence[\s\S]{0,160}subjective)/i],
@@ -392,9 +510,6 @@ test('P1-POLICY-006 keeps status precedence, evidence safety, gates, and taxonom
     [evidenceGuide, 'references/evidence-guide.md', 'untrusted evidence inputs', /requirements?[\s\S]{0,160}Diffs?[\s\S]{0,160}logs?[\s\S]{0,160}test\s+output[\s\S]{0,200}untrusted\s+data/i],
     [evidenceGuide, 'references/evidence-guide.md', 'embedded instructions forbidden', /(?:do\s+not|never)\s+(?:follow|execute)[\s\S]{0,120}embedded\s+instructions?/i],
     [evidenceGuide, 'references/evidence-guide.md', 'risky command approval', /human\s+approval[\s\S]{0,200}(?:install|update)[\s\S]{0,200}(?:network|external\s+services?)[\s\S]{0,240}(?:production|sensitive)[\s\S]{0,240}(?:destructive|irreversible)/i],
-    [evidenceGuide, 'references/evidence-guide.md', 'recorded product-source path set', /record(?:ed)?\s+(?:the\s+)?(?:exact\s+)?product[-\s]source\s+(?:path\s+set|file\s+set|paths?)/i],
-    [evidenceGuide, 'references/evidence-guide.md', 'exact hash command or tool', /exact\s+(?:hash\s+)?command\s+or\s+tool/i],
-    [evidenceGuide, 'references/evidence-guide.md', 'same hash scope and procedure', /same\s+(?:path\s+set|file\s+set)[\s\S]{0,200}(?:algorithm|ordering|procedure)[\s\S]{0,200}before\s+and\s+after/i],
     [findingClassification, 'references/finding-classification.md', 'generic unavailable runner rule', /unavailable\s+required\s+runner[\s\S]{0,160}(?:tool|dependency|environment)/i],
     [qaReportTemplate, 'templates/qa-report.md', 'generic runner example', /unavailable\s+required\s+runner[\s\S]{0,160}missing-qa-runner/i],
   ];
@@ -403,6 +518,42 @@ test('P1-POLICY-006 keeps status precedence, evidence safety, gates, and taxonom
     if (!pattern.test(markdown)) {
       failures.push(`${relativePath} is missing ${label}`);
     }
+  }
+
+  const usingQaOwnershipPatterns = [
+    /one dedicated QA subagent session/i,
+    /reuses?\s+that same session/i,
+    /`?qa\-?plan`?\s*→\s*`?qa\-?execute`?\s*→\s*`?qa\-?conclude`?/i,
+    /`?qa\-?plan`?.{0,260}\bindependently\b.{0,160}(?:read|reads?|reading|inspect|inspecting|review|reviews|reviewing).{0,120}`?actual\s+available\s+diff`?/i,
+  ];
+  const usingQaDiffOrderPattern = /`?qa\-?plan`?.{0,220}\s+begins\s+by.{0,220}(?:read|reads?|reading|inspect|inspecting|review|reviews|reviewing).{0,260}`?actual\s+available\s+diff`?.{0,260}then\s+records\s+the\s+named\s+`?Change\s+Intake`?.{0,120}before\s+risk\s+planning/i;
+
+  for (const pattern of usingQaOwnershipPatterns) {
+    if (!pattern.test(usingQa)) {
+      failures.push(`using-qa/SKILL.md must include qa-plan ownership and workflow pattern: ${pattern.source}`);
+    }
+  }
+
+  const qaPlanLower = qaPlan.toLowerCase();
+  const qaPlanDiffInspectIndex = qaPlanLower.search(/independently[\s\S]{0,220}(?:reads?|reading|inspect|inspecting|review|reviews|reviewing)[\s\S]{0,260}actual\s+available\s+diff/i);
+  const qaPlanChangeIntakeIndex = qaPlanLower.search(/named[\s\S]{0,120}change[\s\S]{0,20}intake/i);
+  const qaPlanObjectiveIndex = qaPlanLower.indexOf('objective and scope', qaPlanChangeIntakeIndex);
+  const qaPlanRiskPlanningIndex = qaPlanLower.indexOf('risk analysis', qaPlanChangeIntakeIndex);
+
+  if (
+    qaPlanDiffInspectIndex < 0
+    || qaPlanChangeIntakeIndex < 0
+    || qaPlanDiffInspectIndex >= qaPlanChangeIntakeIndex
+    || qaPlanChangeIntakeIndex >= qaPlanObjectiveIndex
+    || qaPlanChangeIntakeIndex >= qaPlanRiskPlanningIndex
+  ) {
+    failures.push('qa-plan/SKILL.md must order: independent actual available Diff inspection -> named Change Intake -> Objective and Scope -> Risk Analysis');
+  }
+
+  const usingQaDiffOrderByOrder = /`?qa\-?plan`?[\s\S]{0,320}actual\s+available\s+diff[\s\S]{0,320}named\s+`?change\s+intake`?/i.test(usingQa) && /before\s+risk\s+planning/i.test(usingQa);
+  const usingQaDiffOrderFallbackPattern = /`?qa\-?plan`?.{0,220}\s+begins\s+by.{0,220}(?:read|reads?|reading|inspect|inspecting|review|reviews|reviewing).{0,260}`?actual\s+available\s+diff`?.{0,260}then\s+records\s+the\s+named\s+`?Change\s+Intake`?.{0,120}before\s+risk\s+planning/i;
+  if (!usingQaDiffOrderPattern.test(usingQa) && !usingQaDiffOrderByOrder && !usingQaDiffOrderFallbackPattern.test(usingQa)) {
+    failures.push('using-qa/SKILL.md must require qa-plan to inspect diff before recording Change Intake (before risk planning)');
   }
 
   assertNoSemanticFailures(testId, failures);
