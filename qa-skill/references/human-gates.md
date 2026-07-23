@@ -36,4 +36,4 @@ Record:
 
 Until the required human decision is recorded, a subjective or owner-controlled result remains `NEEDS_HUMAN_REVIEW`, not `PASS` and not an autonomous no-launch decision. Missing tools or dependencies remain `BLOCKED`; they do not become a product `FAIL` merely because a human gate is also present. When both apply, record the Human Gate but keep the affected verification and overall status `BLOCKED` until the objective prerequisite is supplied.
 
-Evidence rules are defined in [evidence-guide.md](evidence-guide.md), including rerun evidence and the guarded Diff-related test updates protocol.
+Evidence rules are defined in [evidence-guide.md](evidence-guide.md), including actual evidence, redaction, rerun evidence, and approval requirements.

@@ -12,7 +12,7 @@ QA is a scoped, evidence-based, technology-neutral check of a stated requirement
 - No evidence, no PASS. A successful command or test proves only what that check actually covered.
 - Keep unknown, skipped, unverified, BLOCKED, NEEDS_HUMAN_REVIEW, and residual risk visible. Make omissions and blockers visible, including what was omitted and why.
 - Do not silently expand scope. If a new risk or question matters, record it and ask a targeted question, or mark the run BLOCKED when missing critical context prevents safe judgment.
-- Do not make an automatic product fix. Do not edit product source to obtain a result. Any permitted Diff-related test or QA asset update must be explicitly approved, reflect the current approved behavior or value, preserve verification strength and meaningful boundary coverage, and an edit is not execution evidence.
+- QA is read-only and must not make an automatic product fix. Do not edit product source, product tests or test files, fixtures, snapshots, configuration, or documentation. Evidence collection may write only the continuously maintained Markdown QA report and approved temporary QA artifacts, such as evidence logs or screenshots. An edit is not execution evidence.
 
 ## Roles And Limits
 
