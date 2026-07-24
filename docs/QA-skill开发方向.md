@@ -23,9 +23,10 @@ QA Skill 不是测试框架、工具集合或自动发布系统，而是一套�
 所有阶段复用同一条闭环，范围可以从一次 Diff 扩大到项目或发布：
 
 ```text
-用户手动触发，主 Agent 交接仓库路径或目标指针、目标范围和非目标、用户上下文及已知约束
-→ 同一 QA subagent 独立读取或检查实际目标变更或可用 Diff，不依赖摘要
-→ 分离 `Observed Facts`、带置信度和依据的 `Inferred Intent`、带来源/负责人的 `Authoritative Acceptance Criteria`、`Unresolved Questions`
+用户手动触发，主 Agent 交接 supplied skill source path、resolved skill source path、supplied product target path、resolved product target path、目标范围和非目标、用户上下文及已知约束
+→ 同一 QA subagent 先执行 Repository Preflight，确认 product target、仓库边界、目标分类和可用基线
+→ 独立读取或检查实际目标变更或可用 Diff，不依赖摘要
+→ 记录 Change Intake，分离 `Observed Facts`、带置信度和依据的 `Inferred Intent`、带来源/负责人的 `Authoritative Acceptance Criteria`、`Unresolved Questions`
 → 定义范围与非目标
 → 分析风险
 → 按风险设计和选择验证层
@@ -54,7 +55,7 @@ QA Skill 不是测试框架、工具集合或自动发布系统，而是一套�
 
 **价值与目标**：让团队能围绕一次功能、修复或变更，完成范围清楚、风险可解释、证据可复查的 Diff QA。
 
-**操作闭环**：主 Agent 交接目标和上下文，QA subagent 独立检查实际 Diff，记录并分离 `Observed Facts`、`Inferred Intent`、`Authoritative Acceptance Criteria` 和 `Unresolved Questions`；分析 Diff 影响和风险，按风险选择验证层，检查已有测试覆盖和可用命令；以只读方式执行验证并收集证据，区分产品问题、测试问题、环境问题和需求问题，产品或测试修复在 QA 之外完成，外部修复后使用 fresh rerun evidence 重跑，最后生成可供复核的证据报告并保留人工决定。
+**操作闭环**：主 Agent 交接 supplied/resolved skill source path、supplied/resolved product target path、目标和上下文，QA subagent 先执行 Repository Preflight，再独立检查实际 Diff，然后记录 Change Intake 并分离 `Observed Facts`、`Inferred Intent`、`Authoritative Acceptance Criteria` 和 `Unresolved Questions`；之后才定义范围、分析风险，按风险选择验证层，检查已有测试覆盖和可用命令；以只读方式执行验证并收集证据，区分产品问题、测试问题、环境问题和需求问题，产品或测试修复在 QA 之外完成，外部修复后使用 fresh rerun evidence 重跑，最后生成可供复核的证据报告并保留人工决定。pack self-tests 和 discovery checks 只是 skill pack 完整性证据，不能替代 product-target QA。
 
 **边界与非目标**：QA 是只读的，不编辑产品源代码、产品测试或测试文件、fixtures、snapshots、配置或文档；只允许写入 QA 报告和获准的临时 QA 产物，例如证据日志或截图。验证若需要项目文件编辑，必须停止并记录问题。不得绕过人工判断或自动批准发布，不自动修复产品；产品或测试修复在 QA 之外完成，外部修复或其他实质变化后必须有 fresh rerun evidence 才能改变状态。
 
