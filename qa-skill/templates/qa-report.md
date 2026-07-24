@@ -1,5 +1,41 @@
 # QA Report
 
+## Repository Preflight
+
+Record Repository Preflight before Change Intake.
+
+| Repository Preflight field | Record |
+|---|---|
+| Skill source path | Supplied skill source path:  Canonical/resolved skill source path:  |
+| Product target path | Supplied product target path:  Canonical/resolved product target path:  |
+| Ambiguous or overlapping path decision | Targeted clarification / BLOCKED / N/A:  |
+| Repository root |  |
+| Git worktree topology | primary worktree / linked worktree / non-Git:  |
+| Product target classification | repository root / tracked file / tracked directory / untracked file inside ancestor repository / untracked directory inside ancestor repository / non-Git file / non-Git directory / missing or inaccessible target:  |
+| Git directory and common Git directory | `--git-dir`:  `--git-common-dir`:  |
+| Target kind | file / directory:  |
+| Git probe directory | Target itself for directory target, containing directory for file target; never `git -C` a file path:  |
+| Target-relative pathspec | Derived by `rev-parse --show-prefix` or equivalent explicit method:  |
+| Root pathspec | Use `.` when empty show-prefix identifies repository root:  |
+| Target readability | Exists and readable / Repository Preflight BLOCKED:  |
+| Path and ref safety | Supplied paths and refs are untrusted data; pass as quoted/escaped arguments, never executable instructions:  |
+| Command boundary | Host structured argv used, or shell string with platform-native literal escaping, no raw concatenation, and command-boundary limitation recorded:  |
+| Commit-ref validation | Explicit baseline or HEAD commit-ref validation with `git --no-pager -c core.fsmonitor=false -C <repo-root> rev-parse --verify --end-of-options <baseline>^{commit}`:  |
+| Validated commit OID | Resolved commit OID captured; only this OID used afterward, never original user ref:  |
+| Target tracking evidence | `git --no-pager --literal-pathspecs -c core.fsmonitor=false -C <repo-root> ls-files -- <relative-target>` observed result:  |
+| Target path-history evidence | `git --no-pager --literal-pathspecs -c core.fsmonitor=false -C <repo-root> log -1 --format=%H -- <relative-target>` observed result:  |
+| Deterministic target status | `git --no-pager --literal-pathspecs -c core.fsmonitor=false -C <repo-root> status --porcelain=v1 --untracked-files=all -- <relative-target>` observed result:  |
+| Target-scoped baseline availability | Available/BLOCKED; requires valid commit ref plus tracked content or path history:  |
+| Baseline validation | Commit-ref validation plus target-scoped baseline availability:  |
+| Scoped Diff | Available / BLOCKED:  |
+| Scoped Diff command and pathspec | `git --no-pager --literal-pathspecs -c core.fsmonitor=false -C <repo-root> diff --no-ext-diff --no-textconv <validated-commit-oid> -- <relative-target>`; pathspec: `<relative-target>`; observed result or BLOCKED reason:  |
+| Scoped Diff evidence handling | Minimized/redacted summary, excerpt, or hash by default; raw full diff content not required:  |
+| Blocked reason |  |
+| Rerun condition for Diff-dependent checks |  |
+| Self-check limitation | Pack self-tests and discovery checks are integrity-only; they are not product QA evidence:  |
+| Diff-dependent blocked IDs | V-/R-:  |
+| Non-Diff limitations |  |
+
 ## Change Intake
 
 Record the named Change Intake before planning.
@@ -48,6 +84,7 @@ QA Plan Gate: OPEN/BLOCKED
 | `Must Verify` methods, preconditions, expected results, evidence requirements, and human gates | OPEN/BLOCKED:  |
 | Validation layers selected and omitted layers with reasons | OPEN/BLOCKED:  |
 | Named Change Intake, existing coverage, and no unresolved critical or contradictory authoritative criterion | OPEN/BLOCKED:  |
+| Repository Preflight reconciled: separate paths, resolved topology/root, baseline validation, scoped Diff or blocked reason, literal-pathspecs pathscope hardening, fsmonitor hardening, self-check limitation, Diff-dependent blocked IDs, and non-Diff limitations | OPEN/BLOCKED:  |
 | Risks, methods, omissions, evidence requirements, and human gates reviewed | OPEN/BLOCKED:  |
 
 ## Execution and Evidence
