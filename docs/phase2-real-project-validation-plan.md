@@ -1,7 +1,7 @@
 # Phase 2 真实项目 Skill first 基准验证协议
 
-**状态：** 当前 draft corpus 已冻结，真实运行已尝试三轮，但尚未形成有效的 Skill-vs-Baseline effectiveness 结果。`run-20260804-01` 因 provider reasoning 配置无效，`run-20260804-02` 因证书错误被旧 harness 错误计分而作废，`run-20260804-03` 在修复后正确 fail-closed。  
-**评估对象：** 现有 Phase 2 Skill pack，不是新的生产 runtime。  
+**状态：** 当前 draft corpus 已冻结，真实运行已尝试三轮，但尚未形成有效的 Skill-vs-Baseline effectiveness 结果。`run-20260804-01` 因 provider reasoning 配置无效，`run-20260804-02` 因证书错误被旧 harness 错误计分而作废，`run-20260804-03` 在修复后正确 fail-closed。
+**评估对象：** 现有 Phase 2 Skill pack，不是新的生产 runtime。
 **结论边界：** 当前 draft corpus 不能支持任何已批准的 effectiveness claim。
 
 ## 1. 范围与边界
