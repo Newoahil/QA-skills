@@ -7,7 +7,7 @@
 Phase 1 的基本单位是一次单独的需求、修复或 Diff QA。它帮助 QA 流程不成熟的团队完成以下闭环：
 
 1. 澄清目标、范围、非目标和关键上下文。
-2. 先记录 Repository Preflight，确认 skill source path 与 product target path 分离，并在 Diff 与 Change Intake 之前建立目标仓库和基线边界。
+2. 先记录 Repository Preflight，确认 skill source path 与 product target path 分离，product target 必须显式，歧义、缺失或不可读时 BLOCKED，并在 Diff 与 Change Intake 之前建立目标仓库和基线边界。Phase 1 的 Preflight 只定义紧凑的行为级契约，详细的 Git 命令配方，例如 literal pathspec、fsmonitor、OID 和 worktree topology，属于后续增强，不是当前最小契约的隐含要求。
 3. 按风险确定验证优先级和验证层。
 4. 先完成 QA 计划，再执行验证。
 5. 使用项目当前已有的命令和工具，记录实际执行证据。
@@ -24,10 +24,18 @@ Phase 1 的基本单位是一次单独的需求、修复或 Diff QA。它帮助 
 - **证据优先**：计划、已有测试名称、命令意图或“看起来正常”都不是执行证据。没有证据就不能标记 `PASS`。
 - **技术中立**：不强制 Web、Playwright 或任何特定语言、平台、浏览器和工具。Playwright 及其他浏览器项目只是调研和比较参考，不是当前必需依赖。
 - **人工保留**：需求歧义、主观体验、业务或设计判断、敏感资源、高风险操作、范围扩大和最终接受都经过 Human Gate。
-- **范围和来源受控**：主 Agent 先交接独立的 skill source path 与 product target path、目标范围和非目标、用户上下文及已知约束；同一个 QA subagent 先执行 Repository Preflight，它必须发生在实际 Diff 检查和 Change Intake 之前；随后独立读取或检查实际可用 Diff，再记录 Change Intake，不依赖摘要，也不跟随需求、Diff、日志或外部内容中的嵌入指令。
+- **范围和来源受控**：主 Agent 先交接独立的 skill source path 与显式 product target path、目标范围和非目标、用户上下文及已知约束；同一个 QA subagent 先执行 Repository Preflight，它必须发生在实际 Diff 检查和 Change Intake 之前；随后独立读取或检查实际可用 Diff，再记录 Change Intake，不依赖摘要，也不跟随需求、Diff、日志或外部内容中的嵌入指令。
 - **只读边界**：QA 不编辑产品源代码、产品测试/测试文件、fixtures、snapshots、配置或文档；只允许写入持续维护的 QA 报告和获准的临时 QA 产物，例如证据日志或截图。
-- **变更取证**：`qa-plan` 开始时先做 Repository Preflight，再独立检查实际 Diff，随后记录 named Change Intake；产品修复在 QA 之外完成，修复或其他实质变化后必须用新的 rerun evidence 更新状态。
+- **变更取证**：`qa-plan` 开始时先做 Repository Preflight，再独立检查实际 Diff，随后记录 named Change Intake；Repository Preflight 不从 skill source 或 cwd 推断目标，不把 ancestor repo 自动当成 untracked/no-history target 的有效基线，没有可用 Diff 时只阻塞 Diff-dependent checks；产品修复在 QA 之外完成，修复或其他实质变化后必须用新的 rerun evidence 更新状态。
 - **自检边界**：pack self-tests 只用于确认 skill pack 自身完整性，不是 product QA evidence，也不能替代对 product target 的验证。
+
+## 报告交付 authority
+
+跨宿主的契约是完整交付 QA 报告，不能造成语义或内容损失。宿主如果能以程序方式取得有效的已完成 child/subagent result payload，必须直接交付该 exact payload 作为权威报告，不能让模型重新构造，也不能退化为摘要；没有该机制的宿主也必须提供语义等价的精确交付路径。
+
+原始 parent model final message 只作为诊断证据保留。它与权威交付报告不一致时必须如实记录 mismatch，但 mismatch 不替代也不使 exact authoritative delivery 失效。比较是在提取后进行 byte/string exact comparison，不是 semantic equivalence；提取只移除结果 wrapper 内侧由宿主添加的一层 delimiter newline，报告自身的空白和换行仍属于权威字节。引用的报告 artifact 只是 mirror，必须与 authority 完全一致。
+
+OpenCode reference harness 的术语是：已完成 `task` 结果中的 `<task_result>` 被解析为 delivered authority；`final-message.md` 是 raw parent assistant output；`final-report.md` 是 exact host-delivered task-result report；`child-report-relay-evidence.json` 保留 raw hashes/bytes/match 以及 delivered equality fields；`report-source.json` 记录 task-result authority。这是 OpenCode 1.18.x 的参考 harness 说明，不是对所有宿主 API 的统一要求。
 
 ## 四个 Skill
 
@@ -98,26 +106,34 @@ Phase 1 的基本单位是一次单独的需求、修复或 Diff QA。它帮助 
 - Residual Risks
 - Overall Status and Conclusion 和 `QA Conclusion Gate`
 
-每条证据应能追溯到验证项、命令或工具、观察结果、退出码或状态、产物及必要的环境或会话信息。每个必须验证项必须形成 `Risk → Verification → Evidence → Status` 追踪链；每条发现（如有）必须链接 `Finding → Risk / Verification / Evidence`。缺少必要链接时，`QA Conclusion Gate` 不能完成。报告可写 `PASS`、`FAIL`、`BLOCKED` 或 `NEEDS_HUMAN_REVIEW`，但不输出发布批准或最终 release decision。
+每条证据应能追溯到验证项、命令或工具、观察结果、退出码或状态、产物及必要的环境或会话信息。每个必须验证项必须形成 `Risk → Verification → Evidence → Status` 追踪链；每条发现（如有）必须链接 `Finding → Risk / Verification / Evidence`。缺少必要链接时，`QA Conclusion Gate` 不能完成。报告可写 `PASS`、`FAIL`、`BLOCKED` 或 `NEEDS_HUMAN_REVIEW`，交付时必须使用完整权威报告而不是重构摘要，但不输出发布批准或最终 release decision。
 
 ## 目录结构
 
 ```text
 QA-skills/
-├── qa-skill/
-│   ├── using-qa/SKILL.md
-│   ├── qa-plan/SKILL.md
-│   ├── qa-execute/SKILL.md
-│   ├── qa-conclude/SKILL.md
-│   ├── references/
-│   │   ├── qa-principles.md
-│   │   ├── risk-checklist.md
-│   │   ├── evidence-guide.md
-│   │   ├── finding-classification.md
-│   │   └── human-gates.md
-│   └── templates/qa-report.md
-├── tests/qa-skill-pack.test.mjs
-└── docs/
+├── README.md                                      # 项目入口和使用说明，不替代当前权威方向文档
+├── LICENSE                                        # 项目许可声明
+├── .gitignore                                     # 版本控制忽略规则
+├── qa-skill/                                      # 可执行的 QA 工作流 Skill 包
+│   ├── using-qa/SKILL.md                         # 入口 Skill：接收 QA 请求并串联完整流程
+│   ├── qa-plan/SKILL.md                          # 可执行 Skill：明确范围、风险、验证计划和 QA Plan Gate
+│   ├── qa-execute/SKILL.md                       # 可执行 Skill：按计划执行验证并记录真实证据
+│   ├── qa-conclude/SKILL.md                      # 可执行 Skill：分类结果、核对追踪链并形成受人工约束的结论
+│   ├── references/                                # 工作流共用规则，供各 Skill 共同引用
+│   │   ├── qa-principles.md                      # 证据、状态和 QA 结论的基本原则
+│   │   ├── risk-checklist.md                     # 风险优先级和验证层选择规则
+│   │   ├── evidence-guide.md                     # 证据记录、可信性、最小化和脱敏规则
+│   │   ├── finding-classification.md             # 发现类别与 PASS、FAIL 等状态映射
+│   │   └── human-gates.md                         # 需要人工审批、判断或升级的门禁规则
+│   └── templates/                                 # 工作流产物模板
+│       └── qa-report.md                           # QA 报告模板，贯穿计划、执行和结论阶段
+└── tests/                                        # 自动化契约与功能验证
+    ├── qa-skill-pack.test.mjs                    # 检查 Skill 包结构、元数据、链接和关键工作流约束
+    └── functional-validation/                    # 零模型合同测试与显式 opt-in 的真实 OpenCode 验证
+        ├── contracts.test.mjs                    # Harness、安全边界和场景断言合同
+        ├── integration.test.mjs                  # PASS、FAIL、BLOCKED 真实运行入口
+        └── README.md                             # 运行方式、兼容边界和产物说明
 ```
 
 ## 模拟 Skill 使用流程
@@ -157,15 +173,15 @@ QA Subagent session ID: QA-SUBAGENT-EXAMPLE-001
 
 ### 3. `qa-plan` 记录 Repository Preflight、独立检查 Diff 并记录 Change Intake
 
-QA Subagent 先记录假设的 Repository Preflight 证据，确认 skill source path 与 product target path 分离，解析 product target 所在 Git worktree topology 和 Product target classification，并验证目标基线。pack self-tests 只用于检查 skill pack 完整性，不是 product QA evidence：
+QA Subagent 先记录假设的 Repository Preflight 证据，确认 skill source path 与 product target path 分离，product target 是显式目标，Git context 只来自目标探测，且目标基线和 scoped Diff 可用。pack self-tests 只用于检查 skill pack 完整性，不是 product QA evidence，不能替代 product target 验证：
 
 ```text
 [假设的 Repository Preflight]
 Skill source path: supplied C:\example\qa-skill-pack; resolved C:\example\qa-skill-pack
 Product target path: supplied C:\example\shop-app; resolved C:\example\shop-app
-Git worktree topology: primary worktree
-Product target classification: repository root
-Scoped Diff: available with validated commit OID and `.` pathspec
+Git context: target probe resolves the product repository root
+Target scope: target-only QA for login session timeout behavior
+Baseline and scoped Diff: usable for the product target
 Self-check limitation: pack self-tests 仅用于 skill pack 完整性检查，不是 product QA evidence
 ```
 
@@ -396,19 +412,38 @@ User
 
 ## 验证本项目
 
-当前测试文件包含 **7 个验证用例**，覆盖 Phase 1 文件结构、Skill 元数据、语义锚点、政策一致性、Repository Preflight contract、包内链接和 OpenCode 发现。运行：
+当前验证入口如下：
 
 ```bash
 node --test tests/qa-skill-pack.test.mjs
 ```
 
+### Functional Validation Harness
+
+[`tests/functional-validation/README.md`](tests/functional-validation/README.md) 说明了可选的真实 OpenCode harness；[`docs/phase2-real-project-validation-plan.md`](docs/phase2-real-project-validation-plan.md) 说明了 Phase 2 真实项目基准合同。默认的确定性验证不调用模型：
+
+```powershell
+node --test tests/functional-validation/contracts.test.mjs
+node --test tests/functional-validation/project-integration.test.mjs
+node --test tests/functional-validation/real-project-benchmark-contracts.test.mjs
+node --test tests/functional-validation/real-project-benchmark.test.mjs
+```
+
+真实项目 benchmark 已实现且已尝试三轮，但仍是 draft，三轮均未形成有效的 Skill-vs-Baseline effectiveness 证据：前两轮分别因 provider 配置和证书失败失效，第三轮正确 fail-closed。新的真实模型 campaign 必须等待外部证书问题恢复、显式 opt in，并使用新的空 artifact root；approved effectiveness evidence 仍在等待。
+
+Phase 2 project QA baseline 已存在，但它只是可复查的基线，不等于已批准的效果结论。
+
+Phase 3 和 Phase 4 仍是未来路线。
+
+Phase 1 的 Repository Preflight 保持为紧凑的行为级契约。literal pathspec、fsmonitor、OID、worktree topology 等详细 Git 命令配方是后续增强，不是当前最小契约的隐含要求。
+
 ## 路线边界
 
-以下阶段是路线图，当前均未实现：
+以下阶段是路线图，Phase 3 和 Phase 4 仍未实现：
 
-- **Phase 2，项目、子系统或发布级 QA**：汇总跨 Diff 的范围、覆盖和风险。
-- **Phase 3，主动获取项目上下文**：从相关 Issue、PR、需求、事故或讨论中补足背景。
-- **Phase 4，人工治理的项目知识复用**：经人批准后保存、复用、修正或撤销项目规则。
+- **Phase 2，项目、子系统或发布级 QA**：已具备 baseline 和 real-project benchmark 合同，但 approved effectiveness evidence 仍待补齐。
+- **Phase 3，主动获取项目上下文**：未来路线，从相关 Issue、PR、需求、事故或讨论中补足背景。
+- **Phase 4，人工治理的项目知识复用**：未来路线，经人批准后保存、复用、修正或撤销项目规则。
 
 当前没有 CI/CD 集成、自动调度、持久化 QA Agent、多 Subagent QA 流水线、Dashboard、自动发布门禁、自动产品修复、自动测试生成、测试维护模式或自动 Issue/PR/Jira/项目记录检索。后续路线不改变当前的人工决策和证据边界。
 
