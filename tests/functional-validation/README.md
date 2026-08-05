@@ -1,17 +1,18 @@
 # Functional Validation Harness
 
-This directory holds the opt in functional validation harness for the current `qa-skill` pack and the Phase 2 real project benchmark. The draft corpus is frozen at `benchmarks/real-projects/manifest.json` and `C:\Users\lhw\AppData\Local\Temp\opencode\qa-skill-real-project-corpus`. Three real campaigns have been attempted, but none provides valid Skill-vs-Baseline effectiveness evidence: the first had invalid provider reasoning configuration, the second was invalidated by certificate failures and obsolete scoring behavior, and the third correctly failed closed on the same external certificate instability.
+This directory holds the opt in functional validation harness for the current `qa-skill` pack and the Phase 2 real project benchmark. The deterministic functional suite now covers triage-first Lite and Full routing, Lite eligibility, representative Full triggers, exact report relay, and the same read-only four-status contract that the docs describe; the pack-contract suite separately enforces the complete declared Full-trigger matrix. The draft corpus is still frozen at `benchmarks/real-projects/manifest.json` and `C:\Users\lhw\AppData\Local\Temp\opencode\qa-skill-real-project-corpus`. Three real campaigns have been attempted, but none provides valid Skill-vs-Baseline effectiveness evidence: the first had invalid provider reasoning configuration, the second was invalidated by certificate failures and obsolete scoring behavior, and the third correctly failed closed on the same external certificate instability.
 
 ## Deterministic Tests
 
-Run the contract checks for the frozen corpus and the CLI contract:
+Run the deterministic contract checks for Lite, Full, and the frozen corpus contract:
 
 ```powershell
+node --test tests/functional-validation/contracts.test.mjs
 node --test tests/functional-validation/real-project-benchmark-contracts.test.mjs
 node --test tests/functional-validation/real-project-benchmark.test.mjs
 ```
 
-These tests verify the frozen draft manifest, strict opt in parsing, fixed manifest backed model, agent, and timeout values, direct argv execution, no retry policy, redacted evidence, and assessor only oracle handling.
+These tests verify the triage-first QA-Lite contract, representative Full-route escalation behavior, the unchanged Full route contract, the frozen draft manifest, strict opt in parsing, fixed manifest backed model, agent, and timeout values, direct argv execution, no retry policy, redacted evidence, and assessor only oracle handling. The full textual trigger matrix is validated by `tests/qa-skill-pack.test.mjs`.
 
 ## Real Project Benchmark
 
@@ -28,13 +29,13 @@ The CLI contract is fixed.
 7. Optional `--pair` narrows to one pair.
 8. Optional `--snapshot` narrows to one snapshot.
 
-The manifest itself pins `model`, `agent`, and `timeoutMs` in `runConfig`. There are no env knobs for those values now.
+The manifest itself pins `model`, `agent`, and `timeoutMs` in `runConfig`. There are no env knobs for those values now, and the manifest semantics are unchanged by the Lite or Full routing docs.
 
 The benchmark consumes direct Node or Python argv arrays as plain argv. It does not add qa runtime adapters or language adapters.
 
 The harness reads only the local provider config file, extracts the provider definition matching manifest model `cpa`, and passes only that provider definition through `OPENCODE_CONFIG_CONTENT`. Host plugins, MCPs, skills, other providers, and credential values are excluded from the isolated config path; provider values are redacted in artifacts.
 
-The current draft corpus has 2 real Node PR pairs and 1 Python public fix pair. It is still draft, so it cannot support approved effectiveness claims.
+The current draft corpus has 2 real Node PR pairs and 1 Python public fix pair. It is still draft, so it cannot support approved effectiveness claims. The benchmark manifest and its scoring semantics stay frozen, and this README does not redefine them.
 
 ### Future fresh-campaign command
 

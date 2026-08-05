@@ -1,6 +1,6 @@
 # QA Skill Pack
 
-面向一次需求、修复或代码 Diff 的、以证据为基础的技术中立 QA 工作流。当前仓库完成 **Phase 1**，提供一套由用户向主 Agent 手动触发、由同一个专用 QA subagent 会话连续执行的文档型 Skill Pack。
+面向一次需求、修复或代码 Diff 的、以证据为基础的技术中立 QA 工作流。当前仓库完成 **Phase 1**，提供一套由用户向主 Agent 手动触发、由同一个专用 QA subagent 会话连续执行的文档型 Skill Pack。Phase 1 现在包含 triage-first 的 QA-Lite 分流，但它仍然只是单需求、单 Diff 的 QA 路线，不是 Phase 2 的 project QA 模式。
 
 ## 当前范围：Phase 1
 
@@ -14,12 +14,25 @@ Phase 1 的基本单位是一次单独的需求、修复或 Diff QA。它帮助 
 6. 分类发现，保留未验证项、阻塞项、人工判断项和剩余风险。
 7. 持续维护一份可供人工复核的 Markdown QA 报告。
 
+QA-Lite 只适用于一个明确边界内的低风险需求、修复或 Diff，前提是目标和范围都明确，且产品目标里已经有现成、安全、可本地运行的验证方式。只要出现歧义、跨模块或架构影响、安全或隐私风险、数据迁移、权限、发布、运维风险、Must Verify 所需环境或工具或数据不确定、生成式验证或修复或恢复或历史比较或能力调度，或者用户明确要求 Full、项目级、审计级或全量 QA，就必须走 Full。
+
 这是流程方法和报告规范，不是测试框架、测试平台或自动发布系统。它不替代人工 QA，也不做最终验收或发布决定。
+
+## 六个 Skill / Profile Components
+
+| Skill | 职责 |
+|---|---|
+| [`using-qa`](qa-skill/using-qa/SKILL.md) | 手动入口、角色边界、总流程、状态优先级和停止条件。 |
+| [`qa-triage`](qa-skill/qa-triage/SKILL.md) | 先判定 `Profile Decision: LITE` 还是 `Profile Decision: FULL`。 |
+| [`qa-lite`](qa-skill/qa-lite/SKILL.md) | 单边界低风险 QA-Lite 路径，保留只读、四状态和 exact relay 交付。 |
+| [`qa-plan`](qa-skill/qa-plan/SKILL.md) | Full 路线的计划、风险和 `QA Plan Gate`。 |
+| [`qa-execute`](qa-skill/qa-execute/SKILL.md) | 只执行已批准的计划，记录真实结果和证据，维护同一份报告。 |
+| [`qa-conclude`](qa-skill/qa-conclude/SKILL.md) | 对发现、未验证项、阻塞项和人工判断项分类，检查 Conclusion Gate，形成有边界的结论。 |
 
 ## 核心特征
 
-- **严格的阶段顺序**：`qa-plan → qa-execute → qa-conclude`。没有 `QA Plan Gate: OPEN`，不能执行验证。
-- **单会话连续性**：一次 QA 运行只使用一个专用 QA subagent，并在计划、执行、结论三个阶段复用同一会话。当前实现不是多 Agent 流水线。
+- **严格的 triage-first 顺序**：`using-qa -> qa-triage -> (qa-lite OR qa-plan -> qa-execute -> qa-conclude)`。没有 `QA Plan Gate: OPEN`，不能执行 Full 路线验证。
+- **单 child, 单会话**：一次 QA 运行只使用一个专用 QA subagent，并在 triage、Lite 或 Full 的后续阶段复用同一会话。当前实现不是多 Agent 流水线。
 - **风险驱动**：从五个可选验证层中按风险选择，不执行固定测试套餐。
 - **证据优先**：计划、已有测试名称、命令意图或“看起来正常”都不是执行证据。没有证据就不能标记 `PASS`。
 - **技术中立**：不强制 Web、Playwright 或任何特定语言、平台、浏览器和工具。Playwright 及其他浏览器项目只是调研和比较参考，不是当前必需依赖。
@@ -37,30 +50,20 @@ Phase 1 的基本单位是一次单独的需求、修复或 Diff QA。它帮助 
 
 OpenCode reference harness 的术语是：已完成 `task` 结果中的 `<task_result>` 被解析为 delivered authority；`final-message.md` 是 raw parent assistant output；`final-report.md` 是 exact host-delivered task-result report；`child-report-relay-evidence.json` 保留 raw hashes/bytes/match 以及 delivered equality fields；`report-source.json` 记录 task-result authority。这是 OpenCode 1.18.x 的参考 harness 说明，不是对所有宿主 API 的统一要求。
 
-## 四个 Skill
-
-| Skill | 职责 |
-|---|---|
-| [`using-qa`](qa-skill/using-qa/SKILL.md) | 手动入口、角色边界、总流程、状态优先级和停止条件。 |
-| [`qa-plan`](qa-skill/qa-plan/SKILL.md) | 先执行 Repository Preflight，再独立检查实际 Diff，随后记录 Change Intake，然后才进入范围和风险规划，并打开或阻塞 Plan Gate。 |
-| [`qa-execute`](qa-skill/qa-execute/SKILL.md) | 只执行已批准的计划，记录真实结果和证据，维护同一份报告。 |
-| [`qa-conclude`](qa-skill/qa-conclude/SKILL.md) | 对发现、未验证项、阻塞项和人工判断项分类，检查 Conclusion Gate，形成有边界的结论。 |
-
-共享规则位于 [`qa-skill/references/`](qa-skill/references/)，报告模板位于 [`qa-skill/templates/qa-report.md`](qa-skill/templates/qa-report.md)。
+共享规则位于 [`qa-skill/references/`](qa-skill/references/)，QA-Lite 规则位于 [`qa-skill/references/qa-lite-triage.md`](qa-skill/references/qa-lite-triage.md)，报告模板位于 [`qa-skill/templates/qa-lite-report.md`](qa-skill/templates/qa-lite-report.md) 与 [`qa-skill/templates/qa-report.md`](qa-skill/templates/qa-report.md)。
 
 ## 强制工作流
 
 ```text
 手动触发
   → using-qa
-  → 主 Agent 交接 skill source path、product target path、范围/非目标、用户上下文和约束
-  → qa-plan：同一个 QA subagent 先记录 Repository Preflight，再独立读取或检查实际可用 Diff，并记录 named Change Intake
-  → QA Plan Gate: OPEN（否则 BLOCKED 并停止）
-  → qa-execute
-  → qa-conclude
-  → QA Conclusion Gate: COMPLETE / BLOCKED
+  → qa-triage
+  → qa-lite -> QA Lite Gate
+    或 qa-plan -> qa-execute -> qa-conclude -> QA Conclusion Gate
   → 交付报告，保留人工决策
 ```
+
+`qa-triage` 只做路由，不写验证结论。Lite 只会在单一、明确、低风险、可本地安全验证的目标上被选中。只要出现模糊范围、跨模块或架构影响、安全、隐私、数据迁移、权限、发布、运维风险、环境或工具或数据不确定、生成式验证或修复或恢复或历史比较或能力调度，或者用户明确要求 Full、项目级、审计级或全量 QA，就应路由到 Full，然后继续 `qa-plan -> qa-execute -> qa-conclude`。
 
 缺少影响目标、预期结果或必须验证项执行的关键上下文时，应先提出针对性问题。无法补齐时，记录 `BLOCKED` 并停止，而不是猜测后继续。执行过程中不得静默扩大范围。产品修复在 QA 之外完成；外部修复或其他实质变化后，必须重新执行受影响检查并记录 fresh rerun evidence，才能改变状态。
 
@@ -91,7 +94,7 @@ OpenCode reference harness 的术语是：已完成 `task` 结果中的 `<task_r
 
 ## QA 报告输出
 
-一次运行从 Repository Preflight 开始持续维护同一份 Markdown 报告。报告模板包含：
+一次运行在 triage 后持续维护一份权威 Markdown 报告。Lite 使用紧凑的 `qa-lite-report.md`；Full 使用 `qa-report.md`。Lite 运行中升级 Full 时扩展同一份报告并保留已有证据，不创建平行报告。Full 报告模板包含：
 
 - Repository Preflight
 - Change Intake
@@ -117,17 +120,21 @@ QA-skills/
 ├── .gitignore                                     # 版本控制忽略规则
 ├── qa-skill/                                      # 可执行的 QA 工作流 Skill 包
 │   ├── using-qa/SKILL.md                         # 入口 Skill：接收 QA 请求并串联完整流程
-│   ├── qa-plan/SKILL.md                          # 可执行 Skill：明确范围、风险、验证计划和 QA Plan Gate
-│   ├── qa-execute/SKILL.md                       # 可执行 Skill：按计划执行验证并记录真实证据
-│   ├── qa-conclude/SKILL.md                      # 可执行 Skill：分类结果、核对追踪链并形成受人工约束的结论
+│   ├── qa-triage/SKILL.md                        # 路由 Skill：判定 Lite 或 Full
+│   ├── qa-lite/SKILL.md                          # Lite Profile：单边界、只读、四状态、exact relay
+│   ├── qa-plan/SKILL.md                          # Full Skill：明确范围、风险、验证计划和 QA Plan Gate
+│   ├── qa-execute/SKILL.md                       # Full Skill：按计划执行验证并记录真实证据
+│   ├── qa-conclude/SKILL.md                      # Full Skill：分类结果、核对追踪链并形成受人工约束的结论
 │   ├── references/                                # 工作流共用规则，供各 Skill 共同引用
 │   │   ├── qa-principles.md                      # 证据、状态和 QA 结论的基本原则
+│   │   ├── qa-lite-triage.md                     # Lite 资格与 Full 触发规则
 │   │   ├── risk-checklist.md                     # 风险优先级和验证层选择规则
 │   │   ├── evidence-guide.md                     # 证据记录、可信性、最小化和脱敏规则
 │   │   ├── finding-classification.md             # 发现类别与 PASS、FAIL 等状态映射
 │   │   └── human-gates.md                         # 需要人工审批、判断或升级的门禁规则
 │   └── templates/                                 # 工作流产物模板
-│       └── qa-report.md                           # QA 报告模板，贯穿计划、执行和结论阶段
+│       ├── qa-lite-report.md                     # QA-Lite 报告模板，保留 exact authoritative relay
+│       └── qa-report.md                          # Full QA 报告模板，贯穿计划、执行和结论阶段
 └── tests/                                        # 自动化契约与功能验证
     ├── qa-skill-pack.test.mjs                    # 检查 Skill 包结构、元数据、链接和关键工作流约束
     └── functional-validation/                    # 零模型合同测试与显式 opt-in 的真实 OpenCode 验证
@@ -441,7 +448,7 @@ Phase 1 的 Repository Preflight 保持为紧凑的行为级契约。literal pat
 
 以下阶段是路线图，Phase 3 和 Phase 4 仍未实现：
 
-- **Phase 2，项目、子系统或发布级 QA**：已具备 baseline 和 real-project benchmark 合同，但 approved effectiveness evidence 仍待补齐。
+- **Phase 2，项目、子系统或发布级 QA**：已具备 baseline 和 real-project benchmark 合同，但 approved effectiveness evidence 仍待补齐。QA-Lite 不会改写这条语义，它只是 Phase 1 的 triage-first 路由。
 - **Phase 3，主动获取项目上下文**：未来路线，从相关 Issue、PR、需求、事故或讨论中补足背景。
 - **Phase 4，人工治理的项目知识复用**：未来路线，经人批准后保存、复用、修正或撤销项目规则。
 

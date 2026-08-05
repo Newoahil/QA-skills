@@ -6,6 +6,10 @@
 
 QA Skill 不是测试框架、工具集合或自动发布系统，而是一套可复用的质量验证方法。它先建立可信的标准流程，再逐步适配项目上下文和项目知识。
 
+当前 Phase 1 的实际运行顺序已经更新为 `using-qa -> qa-triage -> qa-lite OR 共享的 Full 路线 qa-plan -> qa-execute -> qa-conclude`。QA-Lite 只适用于单个、边界明确、低风险的需求、修复或 Diff，并且必须有显式 target/scope 和现成、安全、可本地运行的验证器；只要存在歧义、跨模块或架构影响、高风险约束、环境或工具不确定，或用户明确要求 full/project/audit/whole-project 路线，就路由到 Full。
+
+QA-Lite 仍保留单 child、单 session、只读、证据优先、Human Gate 和外部修复后 fresh rerun evidence 的约束；它不引入自动修复，也不放松 PASS 只能由实际证据支持的规则。
+
 ## 两项核心能力
 
 ### 1. 可复用的标准质量验证流程
@@ -18,9 +22,11 @@ QA Skill 不是测试框架、工具集合或自动发布系统，而是一套�
 
 能力 1 是基础，能力 2 是适配层。项目适配可以改变验证内容、优先级和执行方式，但不能改变核心证据规则和人工决策规则。提效的目标是减少遗漏和重复判断，不是追求自动化数量。
 
+Phase 2 的项目路线基线与 Phase 1 的 triage-first 路线是分开的。`using-project-qa` 仍承载项目路线的 M1-M6 基线，QA-Lite 不是 project mode，且 approved effectiveness evidence 仍然 pending；本文档不重定义这条基线。
+
 ## 一套共享 QA 工作流
 
-所有阶段复用同一条闭环，范围可以从一次 Diff 扩大到项目或发布：
+Phase 1 复用同一 child/session，在 `using-qa -> qa-triage` 之后分流到 QA-Lite 或 Full 路线；Full 路线保持 `qa-plan -> qa-execute -> qa-conclude` 不变。范围聚焦单个 Diff 或单次变更，不把项目级 baseline 语义并入 Phase 1：
 
 ```text
 用户手动触发，主 Agent 交接 supplied skill source path、resolved skill source path、supplied product target path、resolved product target path、目标范围和非目标、用户上下文及已知约束
