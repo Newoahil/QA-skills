@@ -3,8 +3,11 @@ export const scenarios = Object.freeze([
     id: 'pass-membership-discount',
     title: 'membership discount applies exactly once',
     expectedVerdict: 'PASS',
+    expectedProfile: 'FULL',
     expectedVerificationExitCode: 0,
+    expectedReportOutput: 'OK membership discount behavior: member=90 guest=100',
     requiredEvidence: ['R01', 'V01', 'E01'],
+    escalationReason: 'default full Phase 1 continuity fixture',
     product: {
       changedPath: 'src/discount.mjs',
       baselineFiles: {
@@ -49,6 +52,7 @@ export const scenarios = Object.freeze([
     prompt: [
       'Run the QA skill workflow against the explicit product target for the membership discount Diff.',
       'Scope: only the changed membership discount behavior and the authoritative criterion in requirements/membership-discount.md.',
+      'User requirement: perform a complete QA review rather than a compact check, while still preserving the one-child Phase 1 workflow.',
       'Non-goals: release decision, code changes, network access, dependency installation, and global configuration changes.',
       'Use the project-provided verification command and preserve read-only product behavior.',
     ].join('\n'),
@@ -57,8 +61,11 @@ export const scenarios = Object.freeze([
     id: 'fail-rounding-regression',
     title: 'candidate floors cents instead of rounding half up',
     expectedVerdict: 'FAIL',
+    expectedProfile: 'FULL',
     expectedVerificationExitCode: 1,
+    expectedReportOutput: 'tax rounding defect: expected 10.24 received 10.23',
     requiredEvidence: ['R02', 'V02', 'E02', 'F02'],
+    escalationReason: 'ambiguous acceptance and defect classification require Full planning and conclusion',
     product: {
       changedPath: 'src/tax.mjs',
       baselineFiles: {
@@ -102,6 +109,7 @@ export const scenarios = Object.freeze([
     prompt: [
       'Run the QA skill workflow against the explicit product target for the tax rounding Diff.',
       'Scope: only the changed cent-rounding behavior and the authoritative criterion in requirements/tax-rounding.md.',
+      'Context: the shared tax helper is consumed by invoice totals and receipt summaries, so classify evidence against those shared-consumer risks without expanding beyond the provided verifier.',
       'Non-goals: release decision, code changes, network access, dependency installation, and global configuration changes.',
       'Use the project-provided verification command and classify a demonstrated behavior mismatch as product evidence, not infrastructure.',
     ].join('\n'),
@@ -110,8 +118,11 @@ export const scenarios = Object.freeze([
     id: 'blocked-missing-acceptance-data',
     title: 'critical acceptance data artifact is absent',
     expectedVerdict: 'BLOCKED',
+    expectedProfile: 'FULL',
     expectedVerificationExitCode: 2,
+    expectedReportOutput: 'missing prerequisite: acceptance-data/currency-cases.json',
     requiredEvidence: ['R03', 'V03', 'E03'],
+    escalationReason: 'environment/data prerequisite risk requires Full escalation',
     missingPrerequisite: 'acceptance-data/currency-cases.json',
     rerunCondition: 'Provide acceptance-data/currency-cases.json, then rerun node verify-currency-format.mjs and the affected QA scenario.',
     product: {
@@ -159,6 +170,62 @@ export const scenarios = Object.freeze([
       'Scope: only the changed currency formatting behavior and the authoritative criterion in requirements/currency-format.md.',
       'Non-goals: release decision, code changes, network access, dependency installation, and global configuration changes.',
       'The acceptance data artifact named by the requirement is authoritative; do not invent expected cases when it is absent.',
+    ].join('\n'),
+  },
+  {
+    id: 'lite-static-label-copy',
+    title: 'single-module copy label change is lite eligible',
+    expectedVerdict: 'PASS',
+    expectedProfile: 'LITE',
+    expectedVerificationExitCode: 0,
+    expectedReportOutput: 'OK profile label behavior: Beta access',
+    requiredEvidence: ['R04', 'V04', 'E04'],
+    liteEligibility: 'single changed module, explicit acceptance criterion, existing fast verifier, no ambiguity, no cross-module impact, no high-risk permission or environment dependency',
+    product: {
+      changedPath: 'src/label.mjs',
+      baselineFiles: {
+        'README.md': '# Fixture product\n\nRequirement lives in `requirements/profile-label.md`.\n',
+        'requirements/profile-label.md': [
+          '# Authoritative acceptance criterion',
+          '',
+          'Source or owner: Fixture Content Owner.',
+          'Criterion: `profileLabel()` must return `Beta access` for the small copy-only label update.',
+          'Verification command: `node verify-profile-label.mjs`.',
+          '',
+        ].join('\n'),
+        'src/label.mjs': [
+          'export function profileLabel() {',
+          '  return "Beta program";',
+          '}',
+          '',
+        ].join('\n'),
+        'verify-profile-label.mjs': [
+          'import { profileLabel } from "./src/label.mjs";',
+          '',
+          'const actual = profileLabel();',
+          'if (actual !== "Beta access") {',
+          '  console.error(`profile label mismatch: ${actual}`);',
+          '  process.exit(1);',
+          '}',
+          'console.log("OK profile label behavior: Beta access");',
+          '',
+        ].join('\n'),
+      },
+      candidateFiles: {
+        'src/label.mjs': [
+          'export function profileLabel() {',
+          '  return "Beta access";',
+          '}',
+          '',
+        ].join('\n'),
+      },
+      verifyCommand: ['node', 'verify-profile-label.mjs'],
+    },
+    prompt: [
+      'Run the QA skill workflow against the explicit product target for the profile label Diff.',
+      'Scope: only the changed single-module copy label behavior and the authoritative criterion in requirements/profile-label.md.',
+      'Non-goals: release decision, code changes, network access, dependency installation, global configuration changes, cross-module regression hunting, permissions, and environment provisioning.',
+      'Use the project-provided verification command and preserve read-only product behavior.',
     ].join('\n'),
   },
 ]);

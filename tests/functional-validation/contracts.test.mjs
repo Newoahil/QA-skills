@@ -47,6 +47,7 @@ function withTempRoot(callback) {
 const completePassReport = [
   'QA Plan Gate: OPEN',
   'QA Conclusion Gate: COMPLETE',
+  'Profile Decision: FULL',
   'Overall Status: PASS',
   'Risk R01 Verification V01 Evidence E01 Status PASS',
   'Command: node verify-membership-discount.mjs',
@@ -59,6 +60,7 @@ const completePassReport = [
 const passReportTableEvidence = [
   'QA Plan Gate: OPEN',
   'QA Conclusion Gate: COMPLETE',
+  'Profile Decision: FULL',
   'Overall Status: PASS',
   '| Evidence ID | Verification ID | Command | Result | Artifact or reference |',
   '|---|---|---|---|---|',
@@ -234,6 +236,7 @@ const okFailChildReportRelayEvidence = {
 const completeFailReport = [
   'QA Plan Gate: OPEN',
   'QA Conclusion Gate: COMPLETE',
+  'Profile Decision: FULL',
   'Overall Status: FAIL',
   'Risk R02 Verification V02 Evidence E02 Finding F02 Status FAIL',
   'product defect: expected behavior was not met',
@@ -248,6 +251,7 @@ const completeFailReport = [
 const spacedFailTraceabilityReport = [
   'QA Plan Gate: OPEN',
   'QA Conclusion Gate: COMPLETE',
+  'Profile Decision: FULL',
   'Overall Status: FAIL',
   '## Risk Analysis',
   `R02: ${'Scoped concern detail. '.repeat(12)}`,
@@ -283,6 +287,7 @@ const okReportAuthorityEvidence = {
 const attempt4PassReport = [
   'QA Plan Gate: OPEN',
   'QA Conclusion Gate: COMPLETE',
+  'Profile Decision: FULL',
   'Overall Status: PASS',
   '| Evidence ID | Verification ID | Command | Result | Artifact or reference |',
   '|---|---|---|---|---|',
@@ -298,6 +303,7 @@ const attempt4PassReport = [
 const passReportWithRealBlockedRow = [
   'QA Plan Gate: OPEN',
   'QA Conclusion Gate: COMPLETE',
+  'Profile Decision: FULL',
   'Overall Status: PASS',
   '| Evidence ID | Verification ID | Command | Result | Artifact or reference |',
   '|---|---|---|---|---|',
@@ -307,19 +313,68 @@ const passReportWithRealBlockedRow = [
   '',
 ].join('\n');
 
+const compactLiteReport = [
+  'Profile Decision: LITE',
+  'Route: qa-triage -> qa-lite',
+  'QA Lite Gate:',
+  '| Gate field | Record |',
+  '|---|---|',
+  '| Repository Preflight before Diff/source inspection | PASS: explicit target and read-only boundary checked before source inspection |',
+  '| Change Intake complete | PASS: single changed file and requirement captured |',
+  '| Risk - Verification - Evidence chain complete | PASS: R04 -> V04 -> E04 -> PASS |',
+  '| Findings linked to evidence | PASS: no findings for objective criterion; evidence E04 reviewed |',
+  '| Blocked, unverified, human review, and residual risks reconciled | PASS: no blocked or human review item remains; residual risks visible |',
+  '| Exact relay / authoritative report delivery evidence | PASS: child task_result is the delivered authority |',
+  'Repository Preflight: explicit target verified before Change Intake.',
+  'Product Target: supplied fixture target for lite-static-label-copy.',
+  'Change Intake: one changed file src/label.mjs; authoritative requirement requirements/profile-label.md; no cross-module scope.',
+  'Risk | Verification | Evidence | Status',
+  'R04 | V04 | E04 | PASS',
+  'Command: node verify-profile-label.mjs',
+  'Exit code: 0',
+  'Output: OK profile label behavior: Beta access',
+  'Unverified Items: none for the Lite scope.',
+  'Blocked Items: none.',
+  'Human Review Items: none required for objective copy criterion.',
+  'Residual Risks: Full regression, cross-module behavior, permissions, and environment risks were not in scope.',
+  'Overall Status: PASS',
+  'Traceability: R04 -> V04 -> E04 -> PASS',
+  '',
+].join('\n');
+
+const liteToolUseEvent = {
+  type: 'tool_use',
+  part: {
+    callID: 'tool-lite-001',
+    title: 'node verify-profile-label.mjs',
+    state: {
+      status: 'completed',
+      input: { command: 'node verify-profile-label.mjs' },
+      output: 'OK profile label behavior: Beta access\n',
+      error: '',
+      metadata: { exit: 0 },
+    },
+  },
+};
+
 test('FV-SCENARIOS-001 defines PASS, FAIL, and BLOCKED scenarios without model-visible oracle metadata', () => {
   assert.deepEqual(
     scenarios.map((scenario) => scenario.id),
-    ['pass-membership-discount', 'fail-rounding-regression', 'blocked-missing-acceptance-data'],
+    ['pass-membership-discount', 'fail-rounding-regression', 'blocked-missing-acceptance-data', 'lite-static-label-copy'],
   );
 
   for (const scenario of scenarios) {
     assert.match(scenario.expectedVerdict, /^(PASS|FAIL|BLOCKED)$/);
+    assert.match(scenario.expectedProfile, /^(LITE|FULL)$/);
     assert.ok(!JSON.stringify(scenario.product).includes(scenario.expectedVerdict));
     assert.ok(!scenario.prompt.includes(scenario.expectedVerdict));
     assert.ok(scenario.requiredEvidence.every((identifier) => !/(?:PASS|FAIL|BLOCKED)/i.test(identifier)));
     assert.ok(scenario.requiredEvidence.length > 0);
   }
+
+  assert.equal(scenarios.filter((scenario) => scenario.expectedProfile === 'LITE').length, 1);
+  assert.equal(scenarios.filter((scenario) => scenario.expectedProfile === 'FULL' && /ambiguous/i.test(scenario.escalationReason || '')).length, 1);
+  assert.equal(scenarios.filter((scenario) => scenario.expectedProfile === 'FULL' && /environment|prerequisite|permission|cross-module/i.test(scenario.escalationReason || '')).length, 1);
 });
 
 test('FV-PROMPT-010 builds prompts without hidden oracle classifications or exact rerun answers', () => withTempRoot((root) => {
@@ -334,6 +389,12 @@ test('FV-PROMPT-010 builds prompts without hidden oracle classifications or exac
     assert.doesNotMatch(prompt, new RegExp(`expected\\s+exit\\s+code\\s*:?\\s*${scenario.expectedVerificationExitCode}|exit\\s+code\\s*:?\\s*${scenario.expectedVerificationExitCode}`, 'i'), `${scenario.id}: prompt leaked expected exit code`);
     assert.ok(!/(?:E|R|V|F)-(?:PASS|FAIL|BLOCKED)-/i.test(prompt), `${scenario.id}: prompt leaked status-labelled IDs`);
     if (scenario.rerunCondition) assert.ok(!prompt.includes(scenario.rerunCondition), `${scenario.id}: prompt leaked hidden exact rerun condition`);
+    if (scenario.liteEligibility) assert.ok(!prompt.includes(scenario.liteEligibility), `${scenario.id}: prompt leaked lite eligibility metadata`);
+    if (scenario.escalationReason) assert.ok(!prompt.includes(scenario.escalationReason), `${scenario.id}: prompt leaked escalation metadata`);
+    assert.ok(!prompt.includes(scenario.expectedProfile), `${scenario.id}: prompt leaked expected profile label`);
+    assert.doesNotMatch(prompt, /Visible Lite eligibility facts|Visible Full escalation facts/i);
+    assert.doesNotMatch(prompt, /Lite scenarios use|Full escalation scenarios continue/i);
+    assert.doesNotMatch(prompt, /Profile Decision: (?:LITE|FULL)/);
   }
 }));
 
@@ -347,7 +408,7 @@ test('BUG-PARENT-QA-SELF-EXECUTION-026 prompt requires one general QA child and 
 
   assert.match(prompt, /exactly one `task` call/i);
   assert.match(prompt, /subagent_type:\s*"general"/i);
-  assert.match(prompt, /same child[\s\S]{0,120}qa-plan[\s\S]{0,120}qa-execute[\s\S]{0,120}qa-conclude/i);
+  assert.match(prompt, /same child[\s\S]{0,160}qa-triage[\s\S]{0,160}qa-plan[\s\S]{0,120}qa-execute[\s\S]{0,120}qa-conclude/i);
   assert.match(prompt, /parent[\s\S]{0,120}must not[\s\S]{0,160}inspect/i);
   assert.match(prompt, /parent[\s\S]{0,120}must not[\s\S]{0,160}verifier/i);
   assert.match(prompt, /parent[\s\S]{0,120}must not[\s\S]{0,160}report/i);
@@ -553,7 +614,7 @@ test('BUG-PARENT-BOUNDARY-EVIDENCE-032 rejects parent-side QA tools and multiple
 test('BUG-CHILD-REPORT-RELAY-033 enforces strict child marker and exact parent relay without persisting report text', () => {
   assert.equal(typeof harness.extractTaskResultReport, 'function', 'extractTaskResultReport export is required');
   assert.equal(typeof harness.buildChildReportRelayEvidence, 'function', 'buildChildReportRelayEvidence export is required');
-  const childReport = 'QA Plan Gate: OPEN\nOverall Status: BLOCKED\nR03 -> V03 -> E03 -> BLOCKED\nRequired prerequisite acceptance-data/currency-cases.json was absent.';
+  const childReport = 'QA Plan Gate: OPEN\nProfile Decision: FULL\nOverall Status: BLOCKED\nR03 -> V03 -> E03 -> BLOCKED\nRequired prerequisite acceptance-data/currency-cases.json was absent.';
   const parentTaskEvent = (output, overrides = {}) => ({
     type: 'tool_use',
     sessionID: overrides.sessionID || 'ses_parent_001',
@@ -604,6 +665,15 @@ test('BUG-CHILD-REPORT-RELAY-033 enforces strict child marker and exact parent r
   assert.equal(harness.extractTaskResultReport({ events: [parentTaskEvent(wrappedOutput), parentTaskEvent(wrappedOutput, { callID: 'task-call-002', childSessionId: 'ses_child_002' })], parentSessionId: 'ses_parent_001' }).ok, false, 'multiple task events must be rejected');
   assert.equal(harness.extractTaskResultReport({ events: [parentTaskEvent(wrappedOutput, { status: 'running' })], parentSessionId: 'ses_parent_001' }).ok, false, 'non-completed task event must be rejected');
   assert.equal(harness.extractTaskResultReport({ events: [parentTaskEvent(42)], parentSessionId: 'ses_parent_001' }).ok, false, 'non-string task output must be rejected');
+
+  const wrappedLiteOutput = `<task_metadata>\nsession_id: ses_child_001\n</task_metadata>\n<task_result>\n${compactLiteReport}\n</task_result>`;
+  const extractedLite = harness.extractTaskResultReport({ events: [parentTaskEvent(wrappedLiteOutput)], parentSessionId: 'ses_parent_001' });
+  assert.equal(extractedLite.ok, true);
+  assert.equal(extractedLite.text, compactLiteReport);
+  const liteRelay = harness.buildChildReportRelayEvidence({ childText: extractedLite.text, parentText: compactLiteReport, expectedVerdict: 'PASS' });
+  assert.equal(liteRelay.ok, true, `Lite relay must share exact child report semantics: ${liteRelay.issues.join('; ')}`);
+  assert.equal(harness.buildChildReportRelayEvidence({ childText: extractedLite.text, parentText: compactLiteReport.replace('R04 | V04 | E04 | PASS', 'R04 | V04 | E99 | PASS'), expectedVerdict: 'PASS' }).ok, false, 'Lite tampered evidence ID must fail exact relay');
+  assert.equal(harness.buildReportAuthorityEvidence({ selectedReportSource: { source: 'task-result', relativePath: null, reportText: `${compactLiteReport}\n`, issues: [] }, authoritativeText: compactLiteReport }).ok, false, 'Lite authority must reject byte changes');
 
   const relayEvidence = harness.buildChildReportRelayEvidence({
     childText: childReport,
@@ -747,6 +817,85 @@ test('FV-COMMAND-EVIDENCE-018 accepts PASS table evidence with official tool_use
   }));
 });
 
+test('FV-LITE-PROFILE-044 accepts compact Lite report with qa-triage to qa-lite evidence', () => {
+  const liteScenario = scenarios.find((scenario) => scenario.expectedProfile === 'LITE');
+  const evidence = extractModelCommandEvidence({
+    events: [liteToolUseEvent],
+    expectedCommand: liteScenario.product.verifyCommand.join(' '),
+  });
+  const relayEvidence = harness.buildChildReportRelayEvidence({
+    childText: compactLiteReport,
+    parentText: compactLiteReport,
+    expectedVerdict: 'PASS',
+  });
+  const authorityEvidence = harness.buildReportAuthorityEvidence({
+    selectedReportSource: { source: 'task-result', relativePath: null, reportText: compactLiteReport, issues: [] },
+    authoritativeText: compactLiteReport,
+  });
+
+  assert.equal(evidence.ok, true);
+  assert.equal(relayEvidence.deliveryOk, true);
+  assert.equal(authorityEvidence.ok, true);
+  const liteOutcomeInput = {
+    scenario: liteScenario,
+    qaVerdict: 'PASS',
+    finalText: compactLiteReport,
+    infrastructureStatus: { status: 'COMPLETED' },
+    oracle: { checkedAfterModel: true, matchesExpectedExitCode: true },
+    postflight: { productUnchanged: true, skillUnchanged: true, runtimeConfigUnchanged: true, integrityIssues: [] },
+    modelCommandEvidence: evidence,
+    reportDiagnostics: { warnings: [], blockingIssues: [] },
+    agentTopology: okAgentTopology,
+    parentBoundaryEvidence: okParentBoundaryEvidence,
+    childReportRelayEvidence: relayEvidence,
+    reportAuthorityEvidence: authorityEvidence,
+  };
+  assert.doesNotThrow(() => assertScenarioOutcome(liteOutcomeInput));
+
+  assert.throws(
+    () => assertScenarioOutcome({
+      ...liteOutcomeInput,
+      finalText: compactLiteReport.replace('Profile Decision: LITE', 'Profile Decision: FULL'),
+    }),
+    /Profile Decision|Lite/i,
+  );
+  assert.throws(
+    () => assertScenarioOutcome({
+      ...liteOutcomeInput,
+      finalText: compactLiteReport.replace('Human Review Items: none required for objective copy criterion.', 'Human Review Items: pending owner acceptance for copy tone.'),
+    }),
+    /Human Review Items|unresolved/i,
+  );
+  assert.throws(
+    () => assertScenarioOutcome({
+      ...liteOutcomeInput,
+      finalText: compactLiteReport.replace('Blocked Items: none.', 'Blocked Items: BLOCKED by missing staging account.'),
+    }),
+    /Blocked Items|unresolved/i,
+  );
+  assert.throws(
+    () => assertScenarioOutcome({
+      ...liteOutcomeInput,
+      finalText: `${compactLiteReport}\n## Human Review\n\n| Human gate ID | Decision/status |\n|---|---|\n| H04 | NEEDS_HUMAN_REVIEW |`,
+    }),
+    /Human Review section|unresolved/i,
+  );
+  assert.throws(
+    () => assertScenarioOutcome({
+      ...liteOutcomeInput,
+      finalText: `${compactLiteReport}\n## Blocked/Unverified\n\n| Item ID | Status | Blocker or unverified reason |\n|---|---|---|\n| B04 | BLOCKED | missing staging account |`,
+    }),
+    /Blocked\/Unverified section|unresolved/i,
+  );
+  assert.throws(
+    () => assertScenarioOutcome({
+      ...liteOutcomeInput,
+      finalText: `${compactLiteReport}\nQA Plan Gate: OPEN`,
+    }),
+    /Full QA Plan Gate|Lite/i,
+  );
+});
+
 test('FV-COMMAND-EVIDENCE-019 accepts status-preserving read-only wrapper and warns on non-applicable blocked rows', () => {
   const evidence = extractModelCommandEvidence({
     events: [passWrapperToolUseEvent],
@@ -823,6 +972,7 @@ test('FV-DIAGNOSTICS-021 allows negated no-unresolved-blocker PASS and rejects r
   );
 
   const blockedReportWithExpectedBlockedRow = [
+    'Profile Decision: FULL',
     'Overall Status: BLOCKED',
     '| Evidence ID | Verification ID | Command | Result | Artifact or reference |',
     '|---|---|---|---|---|',
@@ -1050,6 +1200,32 @@ test('BUG-REPORT-AUTHORITY-037 uses task-result report as authority and rejects 
   );
 }));
 
+test('FV-PROFILE-043 prompt requires triage-first Lite routing and same-child Full escalation', () => withTempRoot((root) => {
+  const materialized = materializeCurrentSkill({ packRoot, runRoot: root });
+  const liteScenario = scenarios.find((scenario) => scenario.expectedProfile === 'LITE');
+  const fullScenario = scenarios.find((scenario) => /ambiguous/i.test(scenario.escalationReason || ''));
+  const litePrompt = buildScenarioPrompt({
+    scenario: liteScenario,
+    skillSourcePath: path.join(materialized.projectRoot, '.opencode', 'skills'),
+    productTargetPath: path.join(materialized.projectRoot, 'targets', liteScenario.id),
+  });
+  const fullPrompt = buildScenarioPrompt({
+    scenario: fullScenario,
+    skillSourcePath: path.join(materialized.projectRoot, '.opencode', 'skills'),
+    productTargetPath: path.join(materialized.projectRoot, 'targets', fullScenario.id),
+  });
+
+  assert.match(litePrompt, /triage-first routing/i);
+  assert.match(litePrompt, /qa-triage/i);
+  assert.match(litePrompt, /qa-lite/i);
+  assert.match(litePrompt, /Profile Decision line/i);
+  assert.doesNotMatch(litePrompt, /Profile Decision: (?:LITE|FULL)/);
+  assert.match(litePrompt, /Product Target[\s\S]{0,120}Repository Preflight[\s\S]{0,120}Change Intake/i);
+  assert.match(litePrompt, /Unverified[\s\S]{0,80}Blocked[\s\S]{0,80}Human Review[\s\S]{0,80}Residual Risk/i);
+  assert.match(fullPrompt, /same child[\s\S]{0,160}qa-triage[\s\S]{0,160}qa-plan[\s\S]{0,120}qa-execute[\s\S]{0,120}qa-conclude/i);
+  assert.doesNotMatch(fullPrompt, /Profile Decision: (?:LITE|FULL)/);
+}));
+
 test('BUG-REPORT-AUTHORITY-041 enforces cited mirror check through delivered authority helper', () => withTempRoot((root) => {
   assert.equal(typeof harness.buildDeliveredReportAuthorityEvidence, 'function', 'buildDeliveredReportAuthorityEvidence export is required');
   const materialized = materializeCurrentSkill({ packRoot, runRoot: root });
@@ -1198,7 +1374,9 @@ test('FV-SKILL-006 copies and hashes the current qa-skill tree into an isolated 
   assert.equal(readFileSync(copiedSkill, 'utf8'), readFileSync(path.join(packRoot, 'using-qa', 'SKILL.md'), 'utf8'));
   assert.equal(materialized.sourceHash, hashDirectory(packRoot).sha256);
   assert.equal(materialized.copiedHash, hashDirectory(path.join(materialized.projectRoot, '.opencode', 'skills')).sha256);
-  assert.ok(materialized.manifest.files.some((entry) => entry.path === 'using-qa/SKILL.md'));
+  for (const skillPath of ['using-qa/SKILL.md', 'qa-triage/SKILL.md', 'qa-lite/SKILL.md']) {
+    assert.ok(materialized.manifest.files.some((entry) => entry.path === skillPath), `${skillPath} must be materialized`);
+  }
 
   const discovery = validateProjectSkillDiscovery({ projectRoot: materialized.projectRoot, isolatedRoot: path.join(root, 'discovery-home') });
   assert.equal(discovery.ok, true, `materialized project skills must be discoverable: ${discovery.stderr}`);
@@ -1317,12 +1495,14 @@ test('BUG-BLOCKED-PREREQ-WORD-ORDER-028 accepts absent prerequisite and supplied
     reportAuthorityEvidence: okReportAuthorityEvidence,
   };
   const realBlockedWording = [
+    'Profile Decision: FULL',
     'Overall Status: BLOCKED',
     'Traceability: R03 -> V03 -> E03 -> BLOCKED',
     'Required prerequisite acceptance-data/currency-cases.json was absent, so expected cases could not be verified.',
     'QA can continue only until acceptance-data/currency-cases.json is supplied and the verifier is rerun.',
   ].join('\n');
   const runOnlyAfterWording = [
+    'Profile Decision: FULL',
     'Overall Status: BLOCKED',
     'Traceability: R03 -> V03 -> E03 -> BLOCKED',
     'Required prerequisite acceptance-data/currency-cases.json was absent, so expected cases could not be verified.',
@@ -1452,6 +1632,7 @@ test('BUG-BLOCKED-AVAILABILITY-RERUN-036 accepts exact prerequisite availability
     reportAuthorityEvidence: okReportAuthorityEvidence,
   };
   const retainedAvailabilityWording = [
+    'Profile Decision: FULL',
     'Overall Status: BLOCKED',
     'Traceability: R03 -> V03 -> E03 -> BLOCKED',
     'Required prerequisite acceptance-data/currency-cases.json was absent, so expected cases could not be verified.',
@@ -1459,6 +1640,7 @@ test('BUG-BLOCKED-AVAILABILITY-RERUN-036 accepts exact prerequisite availability
     'Preconditions: acceptance-data/currency-cases.json exists in the product target.',
   ].join('\n');
   const noConditionalRerun = [
+    'Profile Decision: FULL',
     'Overall Status: BLOCKED',
     'Traceability: R03 -> V03 -> E03 -> BLOCKED',
     'Required prerequisite acceptance-data/currency-cases.json was absent, so expected cases could not be verified.',
@@ -1484,17 +1666,17 @@ test('FV-ASSERT-008 separates infrastructure errors from product FAIL and enforc
   assert.equal(summarizeInfrastructure({ spawnError: null, timedOut: false, exitCode: 0, jsonlErrors: [], finalText: 'Overall Status: PASS', qaVerdict: 'PASS' }).status, 'COMPLETED');
 
   assert.throws(
-    () => assertScenarioOutcome({ scenario: scenarios[0], qaVerdict: 'PASS', finalText: 'QA Plan Gate: OPEN\nQA Conclusion Gate: COMPLETE\nOverall Status: PASS\nRisk R01 Verification V01 Evidence E01 Status PASS', infrastructureStatus: { status: 'COMPLETED' }, agentTopology: okAgentTopology, parentBoundaryEvidence: okParentBoundaryEvidence, childReportRelayEvidence: okChildReportRelayEvidence, reportAuthorityEvidence: okReportAuthorityEvidence }),
+    () => assertScenarioOutcome({ scenario: scenarios[0], qaVerdict: 'PASS', finalText: 'QA Plan Gate: OPEN\nQA Conclusion Gate: COMPLETE\nProfile Decision: FULL\nOverall Status: PASS\nRisk R01 Verification V01 Evidence E01 Status PASS', infrastructureStatus: { status: 'COMPLETED' }, agentTopology: okAgentTopology, parentBoundaryEvidence: okParentBoundaryEvidence, childReportRelayEvidence: okChildReportRelayEvidence, reportAuthorityEvidence: okReportAuthorityEvidence }),
     /command|exit/i,
   );
   assert.throws(
-    () => assertScenarioOutcome({ scenario: scenarios[2], qaVerdict: 'BLOCKED', finalText: 'Overall Status: BLOCKED\nR03 V03 E03', infrastructureStatus: { status: 'COMPLETED' }, agentTopology: okAgentTopology, parentBoundaryEvidence: okParentBoundaryEvidence, childReportRelayEvidence: okBlockedChildReportRelayEvidence, reportAuthorityEvidence: okReportAuthorityEvidence }),
+    () => assertScenarioOutcome({ scenario: scenarios[2], qaVerdict: 'BLOCKED', finalText: 'Profile Decision: FULL\nOverall Status: BLOCKED\nR03 V03 E03', infrastructureStatus: { status: 'COMPLETED' }, agentTopology: okAgentTopology, parentBoundaryEvidence: okParentBoundaryEvidence, childReportRelayEvidence: okBlockedChildReportRelayEvidence, reportAuthorityEvidence: okReportAuthorityEvidence }),
     /prerequisite/i,
   );
   assert.doesNotThrow(() => assertScenarioOutcome({
     scenario: scenarios[1],
     qaVerdict: 'FAIL',
-    finalText: 'QA Plan Gate: OPEN\nQA Conclusion Gate: COMPLETE\nOverall Status: FAIL\nRisk R02 Verification V02 Evidence E02 Finding F02 Status FAIL\nproduct defect: expected behavior was not met\nCommand: node verify-tax-rounding.mjs\nExit code: 1\nOutput: tax rounding defect: expected 10.24 received 10.23',
+    finalText: 'QA Plan Gate: OPEN\nQA Conclusion Gate: COMPLETE\nProfile Decision: FULL\nOverall Status: FAIL\nRisk R02 Verification V02 Evidence E02 Finding F02 Status FAIL\nproduct defect: expected behavior was not met\nCommand: node verify-tax-rounding.mjs\nExit code: 1\nOutput: tax rounding defect: expected 10.24 received 10.23',
     infrastructureStatus: { status: 'COMPLETED' },
     modelCommandEvidence: { ok: true, expectedCommand: 'node verify-tax-rounding.mjs', actualCommand: 'node verify-tax-rounding.mjs', command: 'node verify-tax-rounding.mjs', invocationKind: 'exact', status: 'completed', exit: 1, output: 'tax rounding defect: expected 10.24 received 10.23' },
     oracle: { checkedAfterModel: true, matchesExpectedExitCode: true },
@@ -1506,11 +1688,11 @@ test('FV-ASSERT-008 separates infrastructure errors from product FAIL and enforc
     reportAuthorityEvidence: okReportAuthorityEvidence,
   }));
   assert.throws(
-    () => assertScenarioOutcome({ scenario: scenarios[0], qaVerdict: 'PASS', finalText: 'QA Plan Gate: OPEN\nQA Conclusion Gate: COMPLETE\nOverall Status: PASS\nRisk R01 Verification V01 Evidence E01 Status PASS\nCommand: node verify-membership-discount.mjs\nExit code: 0\nOutput: OK membership discount behavior: member=90 guest=100', infrastructureStatus: { status: 'COMPLETED' }, modelCommandEvidence: { ok: true, expectedCommand: 'node verify-membership-discount.mjs', actualCommand: 'node verify-membership-discount.mjs', command: 'node verify-membership-discount.mjs', invocationKind: 'exact', status: 'completed', exit: 0, output: 'OK membership discount behavior: member=90 guest=100' }, oracle: { matchesExpectedExitCode: false }, postflight: { productUnchanged: true, skillUnchanged: true, runtimeConfigUnchanged: true, integrityIssues: [] }, agentTopology: okAgentTopology, parentBoundaryEvidence: okParentBoundaryEvidence, childReportRelayEvidence: okChildReportRelayEvidence, reportAuthorityEvidence: okReportAuthorityEvidence }),
+    () => assertScenarioOutcome({ scenario: scenarios[0], qaVerdict: 'PASS', finalText: 'QA Plan Gate: OPEN\nQA Conclusion Gate: COMPLETE\nProfile Decision: FULL\nOverall Status: PASS\nRisk R01 Verification V01 Evidence E01 Status PASS\nCommand: node verify-membership-discount.mjs\nExit code: 0\nOutput: OK membership discount behavior: member=90 guest=100', infrastructureStatus: { status: 'COMPLETED' }, modelCommandEvidence: { ok: true, expectedCommand: 'node verify-membership-discount.mjs', actualCommand: 'node verify-membership-discount.mjs', command: 'node verify-membership-discount.mjs', invocationKind: 'exact', status: 'completed', exit: 0, output: 'OK membership discount behavior: member=90 guest=100' }, oracle: { matchesExpectedExitCode: false }, postflight: { productUnchanged: true, skillUnchanged: true, runtimeConfigUnchanged: true, integrityIssues: [] }, agentTopology: okAgentTopology, parentBoundaryEvidence: okParentBoundaryEvidence, childReportRelayEvidence: okChildReportRelayEvidence, reportAuthorityEvidence: okReportAuthorityEvidence }),
     /oracle/i,
   );
   assert.throws(
-    () => assertScenarioOutcome({ scenario: scenarios[0], qaVerdict: 'PASS', finalText: 'QA Plan Gate: OPEN\nQA Conclusion Gate: COMPLETE\nOverall Status: PASS\nRisk R01 Verification V01 Evidence E01 Status PASS\nCommand: node verify-membership-discount.mjs\nExit code: 0\nOutput: OK membership discount behavior: member=90 guest=100', infrastructureStatus: { status: 'COMPLETED' }, modelCommandEvidence: { ok: true, expectedCommand: 'node verify-membership-discount.mjs', actualCommand: 'node verify-membership-discount.mjs', command: 'node verify-membership-discount.mjs', invocationKind: 'exact', status: 'completed', exit: 0, output: 'OK membership discount behavior: member=90 guest=100' }, oracle: { checkedAfterModel: true, matchesExpectedExitCode: true }, postflight: { productUnchanged: false, skillUnchanged: true, runtimeConfigUnchanged: true, integrityIssues: ['product changed'] }, agentTopology: okAgentTopology, parentBoundaryEvidence: okParentBoundaryEvidence, childReportRelayEvidence: okChildReportRelayEvidence, reportAuthorityEvidence: okReportAuthorityEvidence }),
+    () => assertScenarioOutcome({ scenario: scenarios[0], qaVerdict: 'PASS', finalText: 'QA Plan Gate: OPEN\nQA Conclusion Gate: COMPLETE\nProfile Decision: FULL\nOverall Status: PASS\nRisk R01 Verification V01 Evidence E01 Status PASS\nCommand: node verify-membership-discount.mjs\nExit code: 0\nOutput: OK membership discount behavior: member=90 guest=100', infrastructureStatus: { status: 'COMPLETED' }, modelCommandEvidence: { ok: true, expectedCommand: 'node verify-membership-discount.mjs', actualCommand: 'node verify-membership-discount.mjs', command: 'node verify-membership-discount.mjs', invocationKind: 'exact', status: 'completed', exit: 0, output: 'OK membership discount behavior: member=90 guest=100' }, oracle: { checkedAfterModel: true, matchesExpectedExitCode: true }, postflight: { productUnchanged: false, skillUnchanged: true, runtimeConfigUnchanged: true, integrityIssues: ['product changed'] }, agentTopology: okAgentTopology, parentBoundaryEvidence: okParentBoundaryEvidence, childReportRelayEvidence: okChildReportRelayEvidence, reportAuthorityEvidence: okReportAuthorityEvidence }),
     /integrity|mutation/i,
   );
 });

@@ -21,7 +21,7 @@ import { TextDecoder } from 'node:util';
 const secretKeyPattern = /(?:token|secret|password|credential|cookie|auth|key)/i;
 const verdictLinePattern = /^\s*(?:[-*]\s*)?(?:\*\*)?(?:Overall\s+Status|QA\s+Verdict)\s*:?(?:\*\*)?\s*:??\s*(?:\*\*)?(PASS|FAIL|BLOCKED|NEEDS_HUMAN_REVIEW)\b(?:\*\*)?/im;
 const verdictTablePattern = /^\s*\|\s*(?:\*\*)?(?:Overall\s+Status|QA\s+Verdict)(?:\*\*)?\s*\|\s*(?:\*\*)?(PASS|FAIL|BLOCKED|NEEDS_HUMAN_REVIEW)\b(?:\*\*)?\s*\|/im;
-const requiredSkillNames = ['using-qa', 'qa-plan', 'qa-execute', 'qa-conclude'];
+const requiredSkillNames = ['using-qa', 'qa-triage', 'qa-lite', 'qa-plan', 'qa-execute', 'qa-conclude'];
 export const defaultTimeoutMs = 600000;
 
 const providerModelPattern = /^[A-Za-z0-9][A-Za-z0-9._-]*\/[A-Za-z0-9][A-Za-z0-9._-]*$/;
@@ -1163,6 +1163,56 @@ function assertTraceabilityChain({ finalText, evidenceIds, verdict }) {
   );
 }
 
+function assertLiteReportContract({ scenario, finalText }) {
+  assert.equal(scenario.expectedProfile, 'LITE', 'lite report contract only applies to Lite scenarios');
+  assert.match(finalText, /^Profile Decision: LITE$/m, 'Lite report must expose the selected profile');
+  assert.match(finalText, /qa-triage\s*(?:->|→)\s*qa-lite/i, 'Lite report must expose qa-triage -> qa-lite routing');
+  assert.match(finalText, /QA\s+Lite\s+Gate/i, 'Lite report must include QA Lite Gate lifecycle evidence');
+  assert.doesNotMatch(finalText, /QA\s+Plan\s+Gate/i, 'Lite report must not use Full QA Plan Gate');
+  assert.doesNotMatch(finalText, /QA\s+Conclusion\s+Gate/i, 'Lite report must not use Full QA Conclusion Gate');
+  const gateFields = [
+    'Repository Preflight before Diff/source inspection',
+    'Change Intake complete',
+    'Risk - Verification - Evidence chain complete',
+    'Findings linked to evidence',
+    'Blocked, unverified, human review, and residual risks reconciled',
+    'Exact relay / authoritative report delivery evidence',
+  ];
+  for (const gateField of gateFields) {
+    assert.match(finalText, new RegExp(`\\|\\s*${escapeRegExp(gateField)}\\s*\\|\\s*PASS\\s*:`, 'i'), `Lite report must include PASS gate row: ${gateField}`);
+  }
+  assert.match(finalText, /Repository Preflight/i, 'Lite report must include explicit preflight evidence');
+  assert.match(finalText, /Product Target\s*:/i, 'Lite report must name the explicit product target');
+  assert.match(finalText, /Change Intake/i, 'Lite report must include compact Change Intake');
+  assert.match(finalText, /Risk\s*[-→>]\s*Verification\s*[-→>]\s*Evidence\s*[-→>]\s*Status|Risk\s*\|\s*Verification\s*\|\s*Evidence\s*\|\s*Status/i, 'Lite report must include Risk-Verification-Evidence-Status mapping');
+  assert.equal(strictStatusMarkers(finalText).exact.length, 1, 'Lite report must contain one standalone Overall Status line');
+  for (const heading of ['Unverified', 'Blocked', 'Human', 'Residual']) {
+    assert.match(finalText, new RegExp(heading, 'i'), `Lite report must keep ${heading} visibility`);
+  }
+  for (const label of ['Blocked Items', 'Human Review Items']) {
+    const line = new RegExp(`^${label}:\\s*(.*)$`, 'im').exec(finalText);
+    assert.ok(line, `Lite report must include ${label}`);
+    const content = line[1];
+    const hasUnresolvedState = /\b(?:unresolved|pending|blocked|needs_human_review)\b/i.test(content);
+    const hasResolvedWording = /\b(?:none|resolved|no unresolved|not required)\b/i.test(content);
+    assert.equal(hasUnresolvedState && !hasResolvedWording, false, `Lite PASS cannot leave ${label} unresolved`);
+  }
+  for (const heading of ['Human Review', 'Blocked/Unverified', 'Blocked', 'Unverified']) {
+    const content = markdownSectionContent(finalText, heading);
+    if (!content) continue;
+    const hasUnresolvedStatus = /\b(?:unresolved|pending|BLOCKED|NEEDS_HUMAN_REVIEW)\b/.test(content);
+    const hasResolvedWording = /\b(?:none|resolved|no unresolved|not required)\b/i.test(content);
+    assert.equal(hasUnresolvedStatus && !hasResolvedWording, false, `Lite PASS cannot leave ${heading} section unresolved`);
+  }
+  assertIncludesAll(finalText, scenario.requiredEvidence, 'Lite evidence identifiers');
+}
+
+function markdownSectionContent(text, heading) {
+  const escapedHeading = escapeRegExp(heading);
+  const pattern = new RegExp(`^#{2,6}\\s+${escapedHeading}\\s*$([\\s\\S]*?)(?=^#{2,6}\\s+|(?![\\s\\S]))`, 'im');
+  return pattern.exec(text)?.[1] || '';
+}
+
 function hasBlockedRerunCondition({ finalText, missingPrerequisite, verifyCommand }) {
   const escapedPrerequisite = escapeRegExp(missingPrerequisite);
   const escapedCommand = escapeRegExp(verifyCommand);
@@ -1193,23 +1243,29 @@ export function assertScenarioOutcome({ scenario, qaVerdict, finalText, infrastr
 
   if (scenario.expectedVerdict === 'PASS') {
     assertIncludesAll(finalText, scenario.requiredEvidence, 'PASS evidence identifiers');
-    assert.match(finalText, /QA\s+Plan\s+Gate\s*:\s*OPEN/i);
-    assert.match(finalText, /QA\s+Conclusion\s+Gate\s*:\s*COMPLETE/i);
-    assert.match(finalText, /Risk[\s\S]{0,120}Verification[\s\S]{0,120}Evidence[\s\S]{0,120}Status|R01\s*->\s*V01\s*->\s*E01\s*->\s*PASS/i);
-    assertReportEvidenceLine({ scenario, finalText, expectedCommand: scenario.product.verifyCommand.join(' '), expectedStatus: 'PASS', expectedOutput: 'OK membership discount behavior: member=90 guest=100' });
-    assertModelCommandEvidence({ evidence: modelCommandEvidence, expectedCommand: scenario.product.verifyCommand.join(' '), expectedExit: 0, expectedOutput: 'OK membership discount behavior: member=90 guest=100' });
+    if (scenario.expectedProfile !== 'LITE') {
+      assert.match(finalText, /^Profile Decision: FULL$/m, 'Full report must expose escalation profile decision when profile metadata is present');
+      assert.match(finalText, /QA\s+Plan\s+Gate\s*:\s*OPEN/i);
+      assert.match(finalText, /QA\s+Conclusion\s+Gate\s*:\s*COMPLETE/i);
+    }
+    assert.match(finalText, /Risk[\s\S]{0,120}Verification[\s\S]{0,120}Evidence[\s\S]{0,120}Status|R\d+\s*->\s*V\d+\s*->\s*E\d+\s*->\s*PASS/i);
+    if (scenario.expectedProfile === 'LITE') assertLiteReportContract({ scenario, finalText });
+    assertReportEvidenceLine({ scenario, finalText, expectedCommand: scenario.product.verifyCommand.join(' '), expectedStatus: 'PASS', expectedOutput: scenario.expectedReportOutput });
+    assertModelCommandEvidence({ evidence: modelCommandEvidence, expectedCommand: scenario.product.verifyCommand.join(' '), expectedExit: scenario.expectedVerificationExitCode, expectedOutput: scenario.expectedReportOutput });
   }
 
   if (scenario.expectedVerdict === 'FAIL') {
     assertIncludesAll(finalText, scenario.requiredEvidence, 'FAIL risk verification evidence finding identifiers');
     assert.match(finalText, /product defect|expected behavior was not met|unmet expected behavior/i);
     assertTraceabilityChain({ finalText, evidenceIds: scenario.requiredEvidence, verdict: scenario.expectedVerdict });
-    assertReportEvidenceLine({ scenario, finalText, expectedCommand: scenario.product.verifyCommand.join(' '), expectedStatus: 'FAIL', expectedOutput: 'tax rounding defect: expected 10.24 received 10.23' });
-    assertModelCommandEvidence({ evidence: modelCommandEvidence, expectedCommand: scenario.product.verifyCommand.join(' '), expectedExit: 1, expectedOutput: 'tax rounding defect: expected 10.24 received 10.23' });
+    if (scenario.expectedProfile === 'FULL') assert.match(finalText, /^Profile Decision: FULL$/m, 'Full report must expose escalation profile decision when profile metadata is present');
+    assertReportEvidenceLine({ scenario, finalText, expectedCommand: scenario.product.verifyCommand.join(' '), expectedStatus: 'FAIL', expectedOutput: scenario.expectedReportOutput });
+    assertModelCommandEvidence({ evidence: modelCommandEvidence, expectedCommand: scenario.product.verifyCommand.join(' '), expectedExit: scenario.expectedVerificationExitCode, expectedOutput: scenario.expectedReportOutput });
   }
 
   if (scenario.expectedVerdict === 'BLOCKED') {
     assertIncludesAll(finalText, scenario.requiredEvidence, 'BLOCKED risk verification evidence identifiers');
+    if (scenario.expectedProfile === 'FULL') assert.match(finalText, /^Profile Decision: FULL$/m, 'Full report must expose escalation profile decision when profile metadata is present');
     assert.ok(finalText.includes(scenario.missingPrerequisite), `missing exact prerequisite: ${scenario.missingPrerequisite}`);
     const escapedPrerequisite = escapeRegExp(scenario.missingPrerequisite);
     assert.match(
@@ -1321,9 +1377,11 @@ export function buildScenarioPrompt({ scenario, skillSourcePath, productTargetPa
   return [
     scenario.prompt,
     '',
-    'Use the current project skill `using-qa`, then continue through `qa-plan`, `qa-execute`, and `qa-conclude` in one QA run.',
-    'Parent delegation boundary: make exactly one `task` call with subagent_type: "general"; use that same child for qa-plan, qa-execute, and qa-conclude. The parent must not inspect product files, run the verifier, generate the report, or create additional QA children.',
+    'Use the current project skill `using-qa`, then perform triage-first routing with `qa-triage` before selecting the QA profile.',
+    'Routing contract: after qa-triage, the same child must follow the workflow-selected route. A compact route uses qa-lite. An escalated route continues in that same child through qa-plan, qa-execute, and qa-conclude. Do not skip qa-triage.',
+    'Parent delegation boundary: make exactly one `task` call with subagent_type: "general"; use that same child for qa-triage and, if escalated, qa-plan, qa-execute, and qa-conclude. The parent must not inspect product files, run the verifier, generate the report, or create additional QA children.',
     'Report output discipline: the child must return the complete child report as plain report text only through its task result. The child must not include literal `<task_result>` or `</task_result>` tags; the task tool supplies the wrapper. After the one `task` call completes, the parent must extract the full report content inside `<task_result>` and use that content as the entire final assistant message, verbatim. This parent relay is the final message. No summary, rewrite, reformat, normalization, omission, reordering, prefix, suffix, or additional commentary is allowed. Both outputs must contain exactly one standalone unprefixed line `Overall Status: <workflow-selected-status>`; replace the placeholder. Markdown heading, list, emphasis, or table forms are not substitutes.',
+    'Profile/report contract: include exactly one standalone Profile Decision line based on qa-triage without using a placeholder. Compact reports must use a QA Lite Gate and show explicit Product Target and Repository Preflight, Change Intake, Risk → Verification → Evidence → Status, exactly one standalone Overall Status, and visible Unverified, Blocked, Human Review, and Residual Risk entries. Escalated reports must preserve the qa-plan, qa-execute, and qa-conclude gates and exact evidence/status semantics.',
     'Artifact/prerequisite discipline: must not write, create, modify, or cite any report or artifact under the product target, including qa-report.md. Do not run the verifier when a named required prerequisite is absent.',
     `Supplied skill source path: ${skillSourcePath}`,
     `Resolved skill source path: ${skillSourcePath}`,
