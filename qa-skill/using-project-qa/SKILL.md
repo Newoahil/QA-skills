@@ -5,7 +5,7 @@ description: Explicit whole-project QA for the current project through a safe pr
 
 # Using Project QA
 
-Use this skill only after an explicit whole-project QA request for a supplied product target. This is the Phase 2 project route; it must not broaden, overload, or replace Phase 1 `using-qa`. Phase 1 `using-qa` remains the requirement, fix, or Diff route for single-Diff QA.
+Use this skill only after an explicit whole-project QA request for a supplied product target. This is the Phase 2 project route; it must not broaden, overload, or replace Phase 1 `using-qa`. Phase 1 `using-qa` remains the requirement, fix, or Diff route for single-Diff QA. `qa-lite` is not a project-wide mode or direct route; QA-Lite remains inside Phase 1 triage for one bounded requirement, fix, or Diff.
 
 ## Roles
 

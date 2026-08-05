@@ -15,7 +15,8 @@ const phase2M1SkillNames = ['using-project-qa'];
 const phase2M2SkillNames = ['project-qa-plan'];
 const phase2M3SkillNames = ['project-qa-execute', 'project-qa-conclude'];
 const phase2M4SkillNames = ['project-qa-repair'];
-const requiredSkillNames = [...phase1SkillNames, ...phase2M1SkillNames, ...phase2M2SkillNames, ...phase2M3SkillNames, ...phase2M4SkillNames];
+const qaLiteSkillNames = ['qa-triage', 'qa-lite'];
+const requiredSkillNames = [...phase1SkillNames, ...phase2M1SkillNames, ...phase2M2SkillNames, ...phase2M3SkillNames, ...phase2M4SkillNames, ...qaLiteSkillNames];
 
 const phase1CoreFiles = Object.freeze([
   'using-qa/SKILL.md',
@@ -73,6 +74,18 @@ const phase2ExtensionFiles = Object.freeze([
 const requiredProductFiles = Object.freeze([
   ...phase1CoreFiles,
   ...phase2ExtensionFiles,
+]);
+
+const qaLiteFiles = Object.freeze([
+  'qa-triage/SKILL.md',
+  'qa-lite/SKILL.md',
+  'references/qa-lite-triage.md',
+  'templates/qa-lite-report.md',
+]);
+
+const requiredAllProductFiles = Object.freeze([
+  ...requiredProductFiles,
+  ...qaLiteFiles,
 ]);
 
 const requiredSkillFiles = requiredSkillNames.map((skillName) => `${skillName}/SKILL.md`);
@@ -303,8 +316,20 @@ test('P1-STRUCT-001 exposes exactly the required QA skill pack files', () => {
 
   assert.deepEqual(
     actualFiles,
-    [...requiredProductFiles].sort((left, right) => left.localeCompare(right)),
-    `${testId}: qa-skill must contain exactly the Phase 1 core plus declared Phase 2 M1-M6 files and no extras`,
+    [...requiredAllProductFiles].sort((left, right) => left.localeCompare(right)),
+    `${testId}: qa-skill must contain exactly the Phase 1 core, Phase 2 M1-M6 files, and the additive QA-Lite files, with no extras`,
+  );
+});
+
+test('P1-STRUCT-LITE-002 adds required QA-Lite artifacts to the same closed pack manifest', () => {
+  const testId = 'P1-STRUCT-LITE-002';
+  const actualFiles = regularFilesUnder(packRoot);
+  const presentLiteFiles = actualFiles.filter((relativePath) => qaLiteFiles.includes(relativePath));
+
+  assert.deepEqual(
+    presentLiteFiles.sort((left, right) => left.localeCompare(right)),
+    [...qaLiteFiles].sort((left, right) => left.localeCompare(right)),
+    `${testId}: qa-skill must contain exactly the additive QA-Lite artifact subset`,
   );
 });
 
@@ -320,7 +345,7 @@ test('P2-M1-STRUCT-001 preserves the declared Phase 2 M1 extension files', () =>
 test('P2-M2-STRUCT-001 exposes exactly the declared Phase 2 extension files through M6', () => {
   const testId = 'P2-M2-STRUCT-001';
   const actualFiles = regularFilesUnder(packRoot);
-  const phase2Files = actualFiles.filter((relativePath) => !phase1CoreFiles.includes(relativePath));
+  const phase2Files = actualFiles.filter((relativePath) => !phase1CoreFiles.includes(relativePath) && !qaLiteFiles.includes(relativePath));
 
   assert.deepEqual(
     phase2Files,
@@ -621,6 +646,80 @@ test('P1-SEMANTICS-003 preserves required Phase 1 semantic anchors', () => {
   assertNoSemanticFailures(testId, fileSpecificFailures);
 });
 
+test('P1-ROUTING-009 requires one-child triage-first routing with deterministic Full fallback', () => {
+  const testId = 'P1-ROUTING-009';
+  const usingQa = readRequiredMarkdown('using-qa/SKILL.md', testId);
+  const qaTriage = readRequiredMarkdown('qa-triage/SKILL.md', testId);
+  const qaLite = readRequiredMarkdown('qa-lite/SKILL.md', testId);
+  const qaPlan = readRequiredMarkdown('qa-plan/SKILL.md', testId);
+  const qaExecute = readRequiredMarkdown('qa-execute/SKILL.md', testId);
+  const qaConclude = readRequiredMarkdown('qa-conclude/SKILL.md', testId);
+  const contractText = `${usingQa}\n${qaTriage}\n${qaLite}\n${qaPlan}\n${qaExecute}\n${qaConclude}`;
+
+  const requiredPatterns = [
+    [/one\s+dedicated\s+QA\s+subagent\s+session/i, 'one child/session route owner'],
+    [/reuses?\s+that\s+same\s+session/i, 'same QA session across the route'],
+    [/using-qa[\s\S]{0,240}qa-triage/i, 'using-qa routes to qa-triage first'],
+    [/qa-triage[\s\S]{0,220}(?:`?qa-lite`?|`?qa-plan`?)[\s\S]{0,220}`?qa-execute`?[\s\S]{0,220}`?qa-conclude`?/i, 'triage routes through qa-lite or qa-plan then execute and conclude'],
+    [/(?:`?qa-plan`?\s*→\s*`?qa-execute`?\s*→\s*`?qa-conclude`?|`?qa-plan`?[\s\S]{0,220}`?qa-execute`?[\s\S]{0,220}`?qa-conclude`?)/i, 'exact full route remains plan->execute->conclude'],
+    [/(?:re-evaluate|escalat|fallback|route[s]?) to Full/i, 'explicit escalation action'],
+    [/ambiguous[\s\S]{0,260}(?:must|should|routes?|reroute|redirect|escalat)[\s\S]{0,260}`?qa-plan`?/i, 'ambiguous cases escalate to Full'],
+  ];
+
+  for (const [pattern, label] of requiredPatterns) {
+    assert.match(contractText, pattern, `${testId}: missing ${label}`);
+  }
+});
+
+test('P1-LITE-SEMANTICS-010 enforces Lite eligibility, escalation, and evidence integrity', () => {
+  const testId = 'P1-LITE-SEMANTICS-010';
+  const usingQa = readRequiredMarkdown('using-qa/SKILL.md', testId);
+  const qaTriage = readRequiredMarkdown('qa-triage/SKILL.md', testId);
+  const qaLite = readRequiredMarkdown('qa-lite/SKILL.md', testId);
+  const qaLiteTriageReference = readRequiredMarkdown('references/qa-lite-triage.md', testId);
+  const qaLiteReport = readRequiredMarkdown('templates/qa-lite-report.md', testId);
+  const contractText = `${usingQa}\n${qaTriage}\n${qaLite}\n${qaLiteTriageReference}\n${qaLiteReport}`;
+
+  const routeEscalationPatterns = [
+    [/cross-module[\s\S]{0,220}(?:architecture|scope|risk)[\s\S]{0,220}(?:escalat|route|forward|redirect)[\s\S]{0,220}(?:to\s+`?qa-plan`?|to\s+Full)/i, 'cross-module/architecture escalation'],
+    [/(?:security|privacy)[\s\S]{0,220}(?:issue|concern|constraint|scope|gap)[\s\S]{0,220}(?:escalat|forward|route)[\s\S]{0,220}(?:to\s+`?qa-plan`?|to\s+Full)/i, 'security/privacy escalation'],
+    [/data\s+migration[\s\S]{0,220}(?:risk|impact|scope)[\s\S]{0,220}(?:escalat|forward|route)[\s\S]{0,220}(?:to\s+`?qa-plan`?|to\s+Full)/i, 'data migration escalation'],
+    [/(?:permissions?|release|authorization)[\s\S]{0,220}(?:risk|constraint|request|scope)[\s\S]{0,220}(?:escalat|route|escalates?)[\s\S]{0,220}(?:to\s+`?qa-plan`?|to\s+Full)/i, 'permissions/release escalation'],
+    [/(?:environment|tool|data)\s+uncertainty[\s\S]{0,220}Must\s+Verify[\s\S]{0,220}(?:escalat|route)[\s\S]{0,220}(?:to\s+`?qa-plan`?|to\s+Full)/i, 'environment/tool/data uncertainty escalation for Must Verify'],
+    [/(?:generated\s+validation|generated\s+checks|generated\s+tests|`?generated`?)[\s\S]{0,220}(?:escalat|remain|route)[\s\S]{0,220}(?:to\s+`?qa-plan`?|to\s+Full)/i, 'generated validation escalation'],
+    [/(?:repair|recovery|history|capability\s+scheduling)[\s\S]{0,220}(?:escalat|remain|route)[\s\S]{0,220}(?:to\s+`?qa-plan`?|to\s+Full)/i, 'repair/recovery/history/capability scheduling escalation'],
+    [/(?:explicit\s+full|whole-?project|project\-?wide|audit)[\s\S]{0,220}(?:request|mode|goal|run)[\s\S]{0,220}(?:escalat|route|falls?\s+back)[\s\S]{0,220}(?:to\s+`?qa-plan`?|to\s+Full)/i, 'explicit Full/whole-project/audit request escalation'],
+  ];
+
+  const liteSemanticPatterns = [
+    [/explicit\s+product\s+target/i, 'Lite route preserves explicit product target'],
+    [/(?:preflight\s+[\s\S]{0,220}before\s+[\s\S]{0,220}(?:actual\s+)?Diff|preflight\s+[\s\S]{0,220}(?:Diff|source))/i, 'Lite runs preflight before Diff/source inspection'],
+    [/(?:must\s+not|do\s+not|never)\s+(?:edit|change|modify|touch|write)\s+[\s\S]{0,220}(?:product\s+source|product\s+target|product\s+tests?|fixtures?|snapshots?|configuration|documentation)/i, 'Lite keeps read-only boundaries'],
+    [/(?:no\s+evidence|without\s+evidence)[\s\S]{0,220}(?:must not|cannot|never|->)\s+PASS/i, 'Lite keeps no-evidence no-PASS'],
+    [/four\s+statuses|4\s+statuses/i, 'Lite exposes exactly four statuses'],
+    [/Overall\s+Status:\s*PASS\/FAIL\/BLOCKED\/NEEDS_HUMAN_REVIEW/i, 'Lite report exposes canonical overall status line'],
+    [/Risk\s*(?:-|→)\s*Verification\s*(?:-|→)\s*Evidence/i, 'Lite output uses traceability chain'],
+    [/human\s+gate|NEEDS_HUMAN_REVIEW/i, 'Lite keeps Human Gate semantics'],
+    [/fresh\s+rerun\s+evidence/i, 'Lite reruns tracked after external repair'],
+    [/(?:exact\s+relay|authoritative\s+report|child-report-relay-evidence|report-source)/i, 'Lite exact relay delivery'],
+  ];
+
+  const failures = [];
+  for (const [pattern, label] of routeEscalationPatterns) {
+    if (!pattern.test(contractText)) {
+      failures.push(`qa-lite routing must enforce ${label}`);
+    }
+  }
+
+  for (const [pattern, label] of liteSemanticPatterns) {
+    if (!pattern.test(contractText)) {
+      failures.push(`qa-lite contract missing ${label}`);
+    }
+  }
+
+  assertNoSemanticFailures(testId, failures);
+});
+
 test('P1-POLICY-006 keeps status precedence, evidence safety, gates, and taxonomy consistent', () => {
   const testId = 'P1-POLICY-006';
   const usingQa = readRequiredMarkdown('using-qa/SKILL.md', testId);
@@ -898,6 +997,14 @@ test('P2-M1-ENTRY-002 gives using-project-qa ownership of explicit whole-project
   for (const [pattern, label] of requiredPatterns) {
     assert.match(usingProjectQa, pattern, `${testId}: using-project-qa/SKILL.md is missing ${label}`);
   }
+
+  if (/qa-lite/i.test(usingProjectQa)) {
+    assert.match(
+      usingProjectQa,
+      /`?qa-lite`?\s*(?:is|serves|acts|belongs|remains|works|is\s+not)?[\s\S]{0,220}(?:not|never|must\s+not)\s+(?:a|an|the)?[\s\S]{0,140}(?:project|project-?wide)[\s\S]{0,120}(?:mode|direct\s+route)/i,
+      `${testId}: using-project-qa/SKILL.md is missing QA-Lite is explicitly not a project mode/direct route`,
+    );
+  }
 });
 
 test('P2-M1-MODE-003 defaults to PROJECT_QA_ONLY and requires explicit repair authorization', () => {
@@ -1148,7 +1255,7 @@ test('P1-LINKS-004 resolves all in-pack relative Markdown references', () => {
   const testId = 'P1-LINKS-004';
   const realPackRoot = resolveRealPathIfPresent(packRoot);
 
-  for (const relativePath of requiredProductFiles) {
+  for (const relativePath of requiredAllProductFiles) {
     const markdown = readRequiredMarkdown(relativePath, testId);
     const sourceDirectory = path.dirname(path.join(packRoot, relativePath));
 
@@ -1179,7 +1286,7 @@ test('P1-DISCOVERY-005 discovers all declared QA skills through isolated OpenCod
     const opencodeCommand = process.platform === 'win32' ? 'opencode.cmd debug skill' : 'opencode';
     const opencodeArgs = process.platform === 'win32' ? [] : ['debug', 'skill'];
     const result = spawnSync(opencodeCommand, opencodeArgs, {
-      cwd: repositoryRoot,
+      cwd: isolatedRoot,
       shell: process.platform === 'win32',
       env: {
         ...process.env,
