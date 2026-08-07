@@ -35,6 +35,155 @@ import { scenarios } from './scenarios.mjs';
 const repositoryRoot = path.dirname(path.dirname(import.meta.dirname));
 const packRoot = path.join(repositoryRoot, 'qa-skill');
 
+const qaApplicabilityCategories = Object.freeze([
+  'Static/build',
+  'Unit',
+  'Integration',
+  'Contract/API',
+  'E2E',
+  'Database/migration',
+  'Security',
+  'Performance',
+  'Compatibility',
+  'Accessibility/visual',
+  'Regression',
+]);
+
+const qaApplicabilityAssessments = new Set(['Required', 'Recommended', 'Not Applicable', 'Blocked', 'Deferred']);
+
+const qaApplicabilityMatrixHeader = Object.freeze([
+  '| Category | Assessment | Change or project basis | Risk / verification IDs | Coverage sufficiency / readiness | Evidence / result | Deferred / blocked resolution | Residual risk |',
+  '|---|---|---|---|---|---|---|---|',
+]);
+
+function buildQaApplicabilityMatrix(rows) {
+  assert.deepEqual(rows.map(([category]) => category), qaApplicabilityCategories);
+  return [
+    ...qaApplicabilityMatrixHeader,
+    ...rows.map((row) => `| ${row.join(' | ')} |`),
+  ].join('\n');
+}
+
+const fullPassQaApplicabilityMatrixRows = Object.freeze([
+  ['Static/build', 'Required', 'local source and exported calculation changed in the membership discount fixture', 'R01 / V01', 'ready: verifier command exercised the changed calculation', 'E01 PASS', 'none', 'none'],
+  ['Unit', 'Not Applicable', 'fixture exposes a single script-level behavior check and has no separate unit test layer', 'N/A', 'not executed because no separate unit harness exists for this target', 'N/A', 'none', 'unit granularity outside this fixture not assessed'],
+  ['Integration', 'Not Applicable', 'membership discount fixture has no component boundary or external service collaboration', 'N/A', 'not executed because no integration boundary exists', 'N/A', 'none', 'integration behavior outside scope not assessed'],
+  ['Contract/API', 'Not Applicable', 'no public request response schema or exported API contract changed in the fixture', 'N/A', 'not executed because there is no API surface', 'N/A', 'none', 'contract drift outside scope not assessed'],
+  ['E2E', 'Not Applicable', 'fixture has no browser multi-service or full-system user path', 'N/A', 'not executed because no E2E surface exists', 'N/A', 'none', 'system behavior outside scope not assessed'],
+  ['Database/migration', 'Not Applicable', 'no schema migration persistence or data-shape change is present', 'N/A', 'not executed because no data layer exists', 'N/A', 'none', 'data-layer behavior outside scope not assessed'],
+  ['Security', 'Not Applicable', 'discount calculation fixture has no authentication authorization input boundary or sensitive data path', 'N/A', 'not executed because no security boundary exists', 'N/A', 'none', 'security behavior outside scope not assessed'],
+  ['Performance', 'Not Applicable', 'constant-time fixture calculation has no load latency or algorithmic sensitivity', 'N/A', 'not executed because no performance-sensitive path exists', 'N/A', 'none', 'load behavior outside scope not assessed'],
+  ['Compatibility', 'Not Applicable', 'fixture runs as a local Node verifier without platform-specific runtime branching', 'N/A', 'not executed beyond the local verifier runtime', 'N/A', 'none', 'other platforms not assessed'],
+  ['Accessibility/visual', 'Not Applicable', 'membership discount fixture has no rendered UI visual asset or assistive technology surface', 'N/A', 'not executed because no rendering surface exists', 'N/A', 'none', 'visual behavior outside scope not assessed'],
+  ['Regression', 'Required', 'changed discount behavior can affect the existing expected membership outcome', 'R01 / V01', 'ready: targeted regression verifier executed', 'E01 PASS', 'none', 'broader suite not executed'],
+]);
+
+const fullFailQaApplicabilityMatrixRows = Object.freeze([
+  ['Static/build', 'Required', 'local source and rounding logic changed in the tax rounding fixture', 'R02 / V02', 'ready: verifier command exercised the changed calculation', 'E02 FAIL', 'none', 'none'],
+  ['Unit', 'Recommended', 'focused numeric rounding behavior is adjacent to a unit-level calculation', 'R02 / V02', 'ready: covered by the same verifier output', 'E02 FAIL', 'none', 'separate unit harness not executed'],
+  ['Integration', 'Not Applicable', 'tax rounding fixture has no component boundary or external service collaboration', 'N/A', 'not executed because no integration boundary exists', 'N/A', 'none', 'integration behavior outside scope not assessed'],
+  ['Contract/API', 'Not Applicable', 'no public request response schema or exported API contract changed in the fixture', 'N/A', 'not executed because there is no API surface', 'N/A', 'none', 'contract drift outside scope not assessed'],
+  ['E2E', 'Not Applicable', 'fixture has no browser multi-service or full-system user path', 'N/A', 'not executed because no E2E surface exists', 'N/A', 'none', 'system behavior outside scope not assessed'],
+  ['Database/migration', 'Not Applicable', 'no schema migration persistence or data-shape change is present', 'N/A', 'not executed because no data layer exists', 'N/A', 'none', 'data-layer behavior outside scope not assessed'],
+  ['Security', 'Not Applicable', 'tax rounding fixture has no authentication authorization input boundary or sensitive data path', 'N/A', 'not executed because no security boundary exists', 'N/A', 'none', 'security behavior outside scope not assessed'],
+  ['Performance', 'Not Applicable', 'single rounding calculation has no load latency or algorithmic sensitivity', 'N/A', 'not executed because no performance-sensitive path exists', 'N/A', 'none', 'load behavior outside scope not assessed'],
+  ['Compatibility', 'Not Applicable', 'fixture runs as a local Node verifier without platform-specific runtime branching', 'N/A', 'not executed beyond the local verifier runtime', 'N/A', 'none', 'other platforms not assessed'],
+  ['Accessibility/visual', 'Not Applicable', 'tax rounding fixture has no rendered UI visual asset or assistive technology surface', 'N/A', 'not executed because no rendering surface exists', 'N/A', 'none', 'visual behavior outside scope not assessed'],
+  ['Regression', 'Required', 'changed rounding behavior can affect the existing expected tax outcome', 'R02 / V02', 'ready: targeted regression verifier executed', 'E02 FAIL', 'none', 'broader suite not executed'],
+]);
+
+const litePassQaApplicabilityMatrixRows = Object.freeze([
+  ['Static/build', 'Required', 'local source exports the label value selected by the Lite requirement', 'R04 / V04', 'ready: verifier command exercised the exported value', 'E04 PASS', 'none', 'none'],
+  ['Unit', 'Not Applicable', 'Lite target exposes one exported constant and has no separate unit test layer', 'N/A', 'not executed because the existing verifier is the scoped behavior check', 'N/A', 'none', 'unit granularity outside this fixture not assessed'],
+  ['Integration', 'Not Applicable', 'Lite target has no component boundary external service or cross-module interaction', 'N/A', 'not executed because no integration boundary exists', 'N/A', 'none', 'integration behavior outside scope not assessed'],
+  ['Contract/API', 'Not Applicable', 'exported label value is not a request response schema or public service contract', 'N/A', 'not executed because there is no API contract surface', 'N/A', 'none', 'contract drift outside scope not assessed'],
+  ['E2E', 'Not Applicable', 'Lite target is a non-rendering exported label value with no full-system user path', 'N/A', 'not executed because no E2E surface exists', 'N/A', 'none', 'system behavior outside scope not assessed'],
+  ['Database/migration', 'Not Applicable', 'no schema migration persistence or data-shape change is present', 'N/A', 'not executed because no data layer exists', 'N/A', 'none', 'data-layer behavior outside scope not assessed'],
+  ['Security', 'Not Applicable', 'exported label value has no authentication authorization input boundary or sensitive data path', 'N/A', 'not executed because no security boundary exists', 'N/A', 'none', 'security behavior outside scope not assessed'],
+  ['Performance', 'Not Applicable', 'constant exported label has no load latency or algorithmic sensitivity', 'N/A', 'not executed because no performance-sensitive path exists', 'N/A', 'none', 'load behavior outside scope not assessed'],
+  ['Compatibility', 'Not Applicable', 'fixture runs as a local Node verifier without platform-specific runtime branching', 'N/A', 'not executed beyond the local verifier runtime', 'N/A', 'none', 'other platforms not assessed'],
+  ['Accessibility/visual', 'Not Applicable', 'Lite target is a non-rendering exported label value with no visual or assistive technology surface', 'N/A', 'not executed because no rendering surface exists', 'N/A', 'none', 'visual behavior outside scope not assessed'],
+  ['Regression', 'Required', 'changed exported label can affect the existing expected label outcome', 'R04 / V04', 'ready: targeted regression verifier executed', 'E04 PASS', 'none', 'broader suite not executed'],
+]);
+
+const compactQaApplicabilityMatrix = buildQaApplicabilityMatrix(fullPassQaApplicabilityMatrixRows);
+const fullFailQaApplicabilityMatrix = buildQaApplicabilityMatrix(fullFailQaApplicabilityMatrixRows);
+const litePassQaApplicabilityMatrix = buildQaApplicabilityMatrix(litePassQaApplicabilityMatrixRows);
+
+function parseMarkdownTableRow(line) {
+  return line.trim().slice(1, -1).split('|').map((cell) => cell.trim());
+}
+
+function extractQaApplicabilityMatrix(reportText) {
+  const lines = reportText.split('\n');
+  const markerIndex = lines.findIndex((line) => line.trim() === 'QA Applicability Matrix:');
+  assert.notEqual(markerIndex, -1, 'report must include a QA Applicability Matrix marker');
+
+  const firstTableIndex = lines.findIndex((line, index) => index > markerIndex && line.trim().startsWith('|'));
+  assert.notEqual(firstTableIndex, -1, 'QA Applicability Matrix must include a markdown table');
+
+  const tableLines = [];
+  for (let index = firstTableIndex; index < lines.length && lines[index].trim().startsWith('|'); index += 1) {
+    tableLines.push(lines[index]);
+  }
+
+  assert.ok(tableLines.length >= qaApplicabilityCategories.length + 2, 'QA Applicability Matrix must include header, separator, and all category rows');
+  assert.deepEqual(parseMarkdownTableRow(tableLines[0]), parseMarkdownTableRow(qaApplicabilityMatrixHeader[0]), 'QA Applicability Matrix header must use canonical columns');
+
+  return {
+    rows: tableLines.slice(2).map(parseMarkdownTableRow),
+    matrixText: tableLines.join('\n'),
+  };
+}
+
+function assertPreservesCompactQaApplicabilityMatrix(reportText, message = 'report must preserve the canonical QA applicability matrix') {
+  const { rows, matrixText } = extractQaApplicabilityMatrix(reportText);
+  assert.equal(rows.length, qaApplicabilityCategories.length, `${message}: matrix must contain exactly 11 canonical category rows`);
+  const outsideMatrixText = reportText.replace(matrixText, '');
+  const evidenceIdsOutsideMatrix = new Set(outsideMatrixText.match(/\bE\d+\b/g) || []);
+  const rowsByCategory = new Map();
+
+  for (const row of rows) {
+    assert.equal(row.length, 8, `${message}: every matrix row must have 8 cells`);
+    const [category, assessment, basis, riskVerificationIds, readiness, evidenceResult, resolution, residualRisk] = row;
+    assert.equal(qaApplicabilityAssessments.has(assessment), true, `${message}: ${category} has invalid assessment ${assessment}`);
+    assert.equal(rowsByCategory.has(category), false, `${message}: ${category} must appear exactly once in the report matrix`);
+    rowsByCategory.set(category, row);
+
+    if (assessment === 'Required' || assessment === 'Recommended') {
+      const evidenceIds = evidenceResult.match(/\bE\d+\b/g) || [];
+      assert.ok(evidenceIds.length > 0, `${message}: ${category} ${assessment} row must include an evidence ID`);
+      for (const evidenceId of evidenceIds) {
+        assert.equal(evidenceIdsOutsideMatrix.has(evidenceId), true, `${message}: ${category} references ${evidenceId} without report evidence outside the matrix`);
+      }
+      assert.match(riskVerificationIds, /\bR\d+\b[\s/,-]+\bV\d+\b/, `${message}: ${category} executable row must include risk and verification IDs`);
+    }
+
+    if (assessment === 'Not Applicable') {
+      assert.doesNotMatch(basis, /^(?:N\/A|none|not applicable|not required)$/i, `${message}: ${category} Not Applicable row must include a factual basis`);
+      assert.ok(basis.length >= 24, `${message}: ${category} Not Applicable factual basis is too thin`);
+    }
+
+    if (assessment === 'Blocked') {
+      const blockedMetadata = `${basis} ${readiness} ${resolution}`;
+      assert.match(blockedMetadata, /(?:missing|absent|unavailable|required prerequisite|prerequisite)/i, `${message}: ${category} Blocked row must name the missing prerequisite`);
+      assert.match(blockedMetadata, /(?:rerun|run .*(?:after|when|once)|after .*supplied|after .*available)/i, `${message}: ${category} Blocked row must include a rerun condition`);
+    }
+
+    if (assessment === 'Deferred') {
+      const deferredMetadata = `${basis} ${readiness} ${resolution}`;
+      assert.match(deferredMetadata, /\bowner\b/i, `${message}: ${category} Deferred row must include an owner`);
+      assert.match(deferredMetadata, /(?:trigger|rerun|run .*(?:after|when|once))/i, `${message}: ${category} Deferred row must include a trigger or rerun condition`);
+      assert.doesNotMatch(residualRisk, /^(?:N\/A|none)$/i, `${message}: ${category} Deferred row must include residual risk`);
+      assert.ok(residualRisk.length >= 12, `${message}: ${category} Deferred residual risk is too thin`);
+    }
+  }
+
+  for (const category of qaApplicabilityCategories) {
+    assert.equal(rowsByCategory.has(category), true, `${message}: ${category} must appear exactly once in the report matrix`);
+  }
+}
+
 function withTempRoot(callback) {
   const root = mkdtempSync(path.join(tmpdir(), 'qa-functional-contract-'));
   try {
@@ -49,6 +198,8 @@ const completePassReport = [
   'QA Conclusion Gate: COMPLETE',
   'Profile Decision: FULL',
   'Overall Status: PASS',
+  'QA Applicability Matrix:',
+  compactQaApplicabilityMatrix,
   'Risk R01 Verification V01 Evidence E01 Status PASS',
   'Command: node verify-membership-discount.mjs',
   'Exit code: 0',
@@ -238,6 +389,8 @@ const completeFailReport = [
   'QA Conclusion Gate: COMPLETE',
   'Profile Decision: FULL',
   'Overall Status: FAIL',
+  'QA Applicability Matrix:',
+  fullFailQaApplicabilityMatrix,
   'Risk R02 Verification V02 Evidence E02 Finding F02 Status FAIL',
   'product defect: expected behavior was not met',
   'Command: node verify-tax-rounding.mjs',
@@ -321,10 +474,13 @@ const compactLiteReport = [
   '|---|---|',
   '| Repository Preflight before Diff/source inspection | PASS: explicit target and read-only boundary checked before source inspection |',
   '| Change Intake complete | PASS: single changed file and requirement captured |',
+  '| QA applicability matrix complete | PASS: 11 canonical categories assessed before Lite status reconciliation |',
   '| Risk - Verification - Evidence chain complete | PASS: R04 -> V04 -> E04 -> PASS |',
   '| Findings linked to evidence | PASS: no findings for objective criterion; evidence E04 reviewed |',
   '| Blocked, unverified, human review, and residual risks reconciled | PASS: no blocked or human review item remains; residual risks visible |',
   '| Exact relay / authoritative report delivery evidence | PASS: child task_result is the delivered authority |',
+  'QA Applicability Matrix:',
+  litePassQaApplicabilityMatrix,
   'Repository Preflight: explicit target verified before Change Intake.',
   'Product Target: supplied fixture target for lite-static-label-copy.',
   'Change Intake: one changed file src/label.mjs; authoritative requirement requirements/profile-label.md; no cross-module scope.',
@@ -341,6 +497,57 @@ const compactLiteReport = [
   'Traceability: R04 -> V04 -> E04 -> PASS',
   '',
 ].join('\n');
+
+test('FV-MATRIX-CONTRACT-045 validates QA applicability matrix semantics against report evidence', () => {
+  assert.doesNotThrow(() => assertPreservesCompactQaApplicabilityMatrix(completePassReport));
+  assert.doesNotThrow(() => assertPreservesCompactQaApplicabilityMatrix(completeFailReport));
+  assert.doesNotThrow(() => assertPreservesCompactQaApplicabilityMatrix(compactLiteReport));
+
+  assert.throws(
+    () => assertPreservesCompactQaApplicabilityMatrix(
+      completePassReport
+        .replace('Risk R01 Verification V01 Evidence E01 Status PASS\n', '')
+        .replace('Traceability: R01 -> V01 -> E01 -> PASS', 'Traceability: R01 -> V01 -> PASS'),
+    ),
+    /without report evidence outside the matrix/i,
+  );
+  assert.throws(
+    () => assertPreservesCompactQaApplicabilityMatrix(completePassReport.replace('fixture exposes a single script-level behavior check and has no separate unit test layer', 'N/A')),
+    /factual basis/i,
+  );
+
+  const blockedMatrix = buildQaApplicabilityMatrix([
+    ...fullPassQaApplicabilityMatrixRows.slice(0, 1),
+    ['Unit', 'Blocked', 'unit fixture data unavailable', 'R05 / V05', 'blocked until data exists', 'N/A', 'missing prerequisite unit-data.json', 'unit risk remains'],
+    ...fullPassQaApplicabilityMatrixRows.slice(2),
+  ]);
+  assert.throws(
+    () => assertPreservesCompactQaApplicabilityMatrix([
+      'QA Applicability Matrix:',
+      blockedMatrix,
+      'Risk R01 Verification V01 Evidence E01 Status PASS',
+      'Traceability: R01 -> V01 -> E01 -> PASS',
+      '',
+    ].join('\n')),
+    /rerun condition/i,
+  );
+
+  const deferredMatrix = buildQaApplicabilityMatrix([
+    ...fullPassQaApplicabilityMatrixRows.slice(0, 1),
+    ['Unit', 'Deferred', 'owner: QA lead deferred separate unit harness', 'R05 / V05', 'trigger: run once unit harness exists', 'N/A', 'owner: QA lead; trigger: unit harness exists', 'none'],
+    ...fullPassQaApplicabilityMatrixRows.slice(2),
+  ]);
+  assert.throws(
+    () => assertPreservesCompactQaApplicabilityMatrix([
+      'QA Applicability Matrix:',
+      deferredMatrix,
+      'Risk R01 Verification V01 Evidence E01 Status PASS',
+      'Traceability: R01 -> V01 -> E01 -> PASS',
+      '',
+    ].join('\n')),
+    /residual risk/i,
+  );
+});
 
 const liteToolUseEvent = {
   type: 'tool_use',
@@ -670,10 +877,22 @@ test('BUG-CHILD-REPORT-RELAY-033 enforces strict child marker and exact parent r
   const extractedLite = harness.extractTaskResultReport({ events: [parentTaskEvent(wrappedLiteOutput)], parentSessionId: 'ses_parent_001' });
   assert.equal(extractedLite.ok, true);
   assert.equal(extractedLite.text, compactLiteReport);
+  assertPreservesCompactQaApplicabilityMatrix(extractedLite.text, 'Lite task_result extraction must preserve every matrix row byte-exactly');
   const liteRelay = harness.buildChildReportRelayEvidence({ childText: extractedLite.text, parentText: compactLiteReport, expectedVerdict: 'PASS' });
   assert.equal(liteRelay.ok, true, `Lite relay must share exact child report semantics: ${liteRelay.issues.join('; ')}`);
+  assertPreservesCompactQaApplicabilityMatrix(compactLiteReport, 'Lite relay fixture must preserve the exact canonical matrix');
   assert.equal(harness.buildChildReportRelayEvidence({ childText: extractedLite.text, parentText: compactLiteReport.replace('R04 | V04 | E04 | PASS', 'R04 | V04 | E99 | PASS'), expectedVerdict: 'PASS' }).ok, false, 'Lite tampered evidence ID must fail exact relay');
   assert.equal(harness.buildReportAuthorityEvidence({ selectedReportSource: { source: 'task-result', relativePath: null, reportText: `${compactLiteReport}\n`, issues: [] }, authoritativeText: compactLiteReport }).ok, false, 'Lite authority must reject byte changes');
+
+  const wrappedFullOutput = `<task_metadata>\nsession_id: ses_child_001\n</task_metadata>\n<task_result>\n${completePassReport}\n</task_result>`;
+  const extractedFull = harness.extractTaskResultReport({ events: [parentTaskEvent(wrappedFullOutput)], parentSessionId: 'ses_parent_001' });
+  assert.equal(extractedFull.ok, true);
+  assert.equal(extractedFull.text, completePassReport);
+  assertPreservesCompactQaApplicabilityMatrix(extractedFull.text, 'Full task_result extraction must preserve every matrix row byte-exactly');
+  const fullRelay = harness.buildChildReportRelayEvidence({ childText: extractedFull.text, parentText: completePassReport, expectedVerdict: 'PASS' });
+  assert.equal(fullRelay.ok, true, `Full relay must preserve exact child report semantics: ${fullRelay.issues.join('; ')}`);
+  assertPreservesCompactQaApplicabilityMatrix(completePassReport, 'Full relay fixture must preserve the exact canonical matrix');
+  assert.equal(harness.buildChildReportRelayEvidence({ childText: extractedFull.text, parentText: completePassReport.replace(compactQaApplicabilityMatrix, compactQaApplicabilityMatrix.replace('| Regression | Required |', '| Regression | Recommended |')), expectedVerdict: 'PASS' }).ok, false, 'Full tampered matrix assessment must fail exact relay');
 
   const relayEvidence = harness.buildChildReportRelayEvidence({
     childText: childReport,
@@ -836,6 +1055,7 @@ test('FV-LITE-PROFILE-044 accepts compact Lite report with qa-triage to qa-lite 
   assert.equal(evidence.ok, true);
   assert.equal(relayEvidence.deliveryOk, true);
   assert.equal(authorityEvidence.ok, true);
+  assertPreservesCompactQaApplicabilityMatrix(compactLiteReport, 'Lite report fixture must include all canonical matrix rows before status reconciliation');
   const liteOutcomeInput = {
     scenario: liteScenario,
     qaVerdict: 'PASS',
@@ -851,6 +1071,7 @@ test('FV-LITE-PROFILE-044 accepts compact Lite report with qa-triage to qa-lite 
     reportAuthorityEvidence: authorityEvidence,
   };
   assert.doesNotThrow(() => assertScenarioOutcome(liteOutcomeInput));
+  assertPreservesCompactQaApplicabilityMatrix(liteOutcomeInput.finalText, 'Lite status reconciliation must leave the matrix unchanged');
 
   assert.throws(
     () => assertScenarioOutcome({
@@ -1161,6 +1382,8 @@ test('BUG-REPORT-AUTHORITY-037 uses task-result report as authority and rejects 
   const matchingSource = selectReportSource({ finalMessage: authoritativeText, projectRoot: materialized.projectRoot });
   const matchingAuthority = harness.buildReportAuthorityEvidence({ selectedReportSource: matchingSource, authoritativeText });
   assert.equal(matchingAuthority.ok, true);
+  assertPreservesCompactQaApplicabilityMatrix(authoritativeText, 'task-result authority must carry the complete Full matrix');
+  assertPreservesCompactQaApplicabilityMatrix(matchingSource.reportText, 'matching artifact mirror must carry the same complete Full matrix');
   assert.doesNotMatch(JSON.stringify(matchingAuthority), /Overall Status:|QA Plan Gate|reportText/i);
   assert.doesNotThrow(() => assertScenarioOutcome({
     scenario: scenarios[0],
@@ -1233,6 +1456,8 @@ test('BUG-REPORT-AUTHORITY-041 enforces cited mirror check through delivered aut
     'QA Plan Gate: OPEN',
     'QA Conclusion Gate: COMPLETE',
     'Overall Status: PASS',
+    'QA Applicability Matrix:',
+    compactQaApplicabilityMatrix,
     'Report artifact: qa-report.md',
     'Traceability: R01 -> V01 -> E01 -> PASS',
     '',
@@ -1250,12 +1475,14 @@ test('BUG-REPORT-AUTHORITY-041 enforces cited mirror check through delivered aut
   assert.equal(diverged.selectedMatchesAuthoritative, true, 'task-result authority must remain exact even when its cited mirror diverges');
   assert.equal(diverged.mirrorMatchesAuthoritative, false);
   assert.equal(diverged.issues.join('\n').includes('mirror'), true);
+  assertPreservesCompactQaApplicabilityMatrix(authoritativeText, 'delivered task-result authority must preserve the complete matrix even when mirror diverges');
 
   writeFileSync(mirrorPath, exactMirror, 'utf8');
   const aligned = harness.buildDeliveredReportAuthorityEvidence({ authoritativeText, projectRoot: materialized.projectRoot });
   assert.equal(aligned.ok, true);
   assert.equal(aligned.selectedMatchesAuthoritative, true);
   assert.equal(aligned.mirrorMatchesAuthoritative, true);
+  assertPreservesCompactQaApplicabilityMatrix(readFileSync(mirrorPath, 'utf8'), 'aligned cited mirror must preserve the complete matrix byte-exactly');
 
   const nonCitedText = [
     'QA Plan Gate: OPEN',
@@ -1535,6 +1762,8 @@ test('BUG-REPORT-AUTHORITY-038 treats task-result as authoritative even when fin
 
   assert.equal(childText.includes(conclusionGateRow), true);
   assert.equal(parentText.includes(conclusionGateRow), false, 'raw parent report must omit the conclusion gate row');
+  assertPreservesCompactQaApplicabilityMatrix(childText, 'Full FAIL child report must include all canonical matrix rows before relay');
+  assertPreservesCompactQaApplicabilityMatrix(parentText, 'raw parent report omission fixture must preserve the matrix while omitting only the conclusion row');
 
   const relayEvidence = harness.buildChildReportRelayEvidence({
     childText,
@@ -1575,6 +1804,7 @@ test('BUG-REPORT-AUTHORITY-038 treats task-result as authoritative even when fin
   const selectedText = selectedReportSource.reportText;
   assert.equal(selectedText, authoritativeText, 'task-result selection must match authoritative report byte-exactly');
   assert.equal(Buffer.byteLength(selectedText, 'utf8'), Buffer.byteLength(authoritativeText, 'utf8'));
+  assertPreservesCompactQaApplicabilityMatrix(selectedText, 'authoritative task-result report must preserve the complete Full FAIL matrix');
 
   const modelCommandEvidence = {
     ok: true,
@@ -1605,6 +1835,7 @@ test('BUG-REPORT-AUTHORITY-038 treats task-result as authoritative even when fin
   assert.notEqual(childText, parentText);
   assert.notEqual(relayEvidence.childBytes, relayEvidence.parentBytes);
   assert.doesNotThrow(() => assertScenarioOutcome(scenarioInput));
+  assertPreservesCompactQaApplicabilityMatrix(scenarioInput.finalText, 'FAIL status reconciliation must leave the matrix unchanged');
 
   const trailingNewlineMismatch = `${childText}\n`;
   const trailingNewlineMismatchAuthority = harness.buildReportAuthorityEvidence({

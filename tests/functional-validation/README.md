@@ -1,6 +1,6 @@
 # Functional Validation Harness
 
-This directory holds the opt in functional validation harness for the current `qa-skill` pack and the Phase 2 real project benchmark. The deterministic functional suite now covers triage-first Lite and Full routing, Lite eligibility, representative Full triggers, exact report relay, and the same read-only four-status contract that the docs describe; the pack-contract suite separately enforces the complete declared Full-trigger matrix. The draft corpus is still frozen at `benchmarks/real-projects/manifest.json` and `C:\Users\lhw\AppData\Local\Temp\opencode\qa-skill-real-project-corpus`. Three real campaigns have been attempted, but none provides valid Skill-vs-Baseline effectiveness evidence: the first had invalid provider reasoning configuration, the second was invalidated by certificate failures and obsolete scoring behavior, and the third correctly failed closed on the same external certificate instability.
+This directory holds the opt in functional validation harness for the current `qa-skill` pack and the Phase 2 real project benchmark. The deterministic functional suite preserves the complete QA applicability matrix through Lite and Full exact relay, authority handling, and the same read-only four-status contract that the docs describe; the pack-contract suite separately enforces the complete declared Full-trigger matrix. The draft corpus is still frozen at `benchmarks/real-projects/manifest.json` and `C:\Users\lhw\AppData\Local\Temp\opencode\qa-skill-real-project-corpus`. Three real campaigns have been attempted, but none provides valid Skill-vs-Baseline effectiveness evidence: the first had invalid provider reasoning configuration, the second was invalidated by certificate failures and obsolete scoring behavior, and the third correctly failed closed on the same external certificate instability.
 
 ## Deterministic Tests
 
@@ -8,11 +8,30 @@ Run the deterministic contract checks for Lite, Full, and the frozen corpus cont
 
 ```powershell
 node --test tests/functional-validation/contracts.test.mjs
+node --test tests/functional-validation/qa-plan-validator.test.mjs
 node --test tests/functional-validation/real-project-benchmark-contracts.test.mjs
 node --test tests/functional-validation/real-project-benchmark.test.mjs
 ```
 
-These tests verify the triage-first QA-Lite contract, representative Full-route escalation behavior, the unchanged Full route contract, the frozen draft manifest, strict opt in parsing, fixed manifest backed model, agent, and timeout values, direct argv execution, no retry policy, redacted evidence, and assessor only oracle handling. The full textual trigger matrix is validated by `tests/qa-skill-pack.test.mjs`.
+These tests verify the triage-first QA-Lite contract, representative Full-route escalation behavior, the unchanged Full route contract, the frozen draft manifest, strict opt in parsing, fixed manifest backed model, agent, and timeout values, direct argv execution, no retry policy, redacted evidence, assessor only oracle handling, preservation of the full matrix through exact relay and authority selection, and the runtime `qa-plan/v1` planner contract. The full textual trigger matrix is validated by `tests/qa-skill-pack.test.mjs`.
+
+## qa-plan/v1 Planner Validator
+
+The planner sidecar is a two-stage JSON companion maintained by the same QA subagent. `plan` records `method`, `preconditions`, `expectedResult`, and `requiredEvidence`; `conclusion` adds `status`, `evidenceRefs`, and `conclusion`.
+
+Plan-stage check:
+
+```powershell
+node "<resolved skill source path>\tools\validate-qa-plan.mjs" "<plan.json>" --json
+```
+
+Conclusion-stage check:
+
+```powershell
+node "<resolved skill source path>\tools\validate-qa-plan.mjs" "<plan.json>" --json --require-conclusion
+```
+
+Exit code `0` means valid, `1` means contract mismatch, and `2` means usage, load, or read failure. Success only means consistency, not product evidence, report authority, Human Gate approval, or release approval. If Node is unavailable, do not install anything. Use the same schema, rubric, and gate rules manually.
 
 ## Real Project Benchmark
 
