@@ -5,11 +5,13 @@ description: QA planning, requirement, fix, and Diff requests: defines scope, ri
 
 # QA Plan
 
-Run this skill only inside the single QA subagent session started by [`../using-qa/SKILL.md`](../using-qa/SKILL.md). It is technology neutral and uses the host's available continuation mechanism without assuming a harness-specific task schema. It plans; it does not execute tests or edit product source, product tests, documentation, or other project files. QA is read-only and may write only the QA report and approved temporary QA artifacts, such as evidence logs or screenshots.
+Run this skill only inside the single QA subagent session started by [`../using-qa/SKILL.md`](../using-qa/SKILL.md). It is technology neutral and uses the host's available continuation mechanism without assuming a harness-specific task schema. It plans; it does not execute tests or edit product source, product tests, documentation, or other project files. QA is read-only and may write only the QA report and approved temporary QA artifacts, such as evidence logs or screenshots. For the shared matrix and profile contract, see [applicability rubric](../references/applicability-rubric.md) and [QA profiles](../references/qa-profiles.md).
 
 ## Planning Contract
 
 Open the one report created from [`../templates/qa-report.md`](../templates/qa-report.md) and update these sections before any execution:
+
+The same QA subagent acts as the Planner after triage, preflight, and intake. It creates or updates exactly one `qa-plan/v1` JSON planning artifact for the run, stores it as an approved temporary QA artifact, and keeps the Markdown report authoritative. The JSON artifact is a planning companion only. It is never product evidence, Human Gate approval, or a release decision.
 
 First, run Repository Preflight before Diff inspection and Change Intake. Repository Preflight precedes independent actual available Diff inspection and the named Change Intake. Record the preflight result in the report before planning.
 
@@ -31,9 +33,27 @@ Before `Objective and Scope` and before risk planning, record a named `Change In
 3. `Risk Analysis`: identify risks and assign each one a priority of `Must Verify`, `Should Verify`, `Optional`, or `Explicitly Not Verified`, with a reason.
 4. `Verification Plan`: map every `Must Verify` and selected `Should Verify` risk to a validation method and evidence requirement.
 
+If the run carries `rigor: Audit`, the route still remains Full. Record `approvalRef` in the Planner artifact before treating Audit rigor as approved.
+
+## Canonical Applicability Matrix
+
+Use the shared authority in [`../references/risk-checklist.md`](../references/risk-checklist.md) as the source of truth for the matrix. Before the gate can open, write the applicability matrix with one row for each canonical category: Static/build, Unit, Integration, Contract/API, E2E, Database/migration, Security, Performance, Compatibility, Accessibility/visual, and Regression.
+
+Each row must record the category, the assessment, a short rationale, and the risk to verification linkage. For `Required` rows, record the authoritative criteria mapping, the `Must Verify` mapping, the changed or affected behavior, and the readiness needed to verify it. For `Recommended` rows, record why the category is a meaningful adjacent or supporting check. For `Not Applicable` rows, give factual project or scope evidence that shows the category is outside the current boundary. For `Blocked` rows, record the missing prerequisites and the rerun conditions. For `Deferred` rows, record the owner, the trigger, the rerun condition, and the residual risk.
+
+Required rows must also record positive, negative, and boundary cases when they matter, plus any project-owned thresholds or limits. Coverage sufficiency must be recorded, and it is sufficient only when the record maps to the authoritative criteria, the `Must Verify` items, and the changed or affected behavior.
+
+Regression selection must be documented formally. Record which changed behavior, direct callers, shared dependencies, public contracts, config or data surfaces, adjacent failure paths, and historical defects justify the regression rows, and record any regression candidates that were rejected with the reason they were not selected.
+
+Do not silently omit a category. The matrix is complete only when all 11 categories have been assessed and each row is present once.
+
+If the Planner artifact is used for Lite, it must contain no `Blocked` or `Deferred` matrix rows. Any invalidated Lite eligibility or unsupported matrix row escalates the run to Full before execution or conclusion.
+
 Use the five selectable validation layers in [`../references/risk-checklist.md`](../references/risk-checklist.md): `Static/unit`, `API/integration`, `E2E/system`, `Specialist non-functional`, and `Manual acceptance`. Select layers by risk, not by a fixed technology package. Make every omitted layer visible with its reason. Do not force Web or Playwright.
 
-Each `Must Verify` risk needs a row or equivalent record containing: risk, method, preconditions, expected result, actual evidence location or description, and human gate. A plan that says “run tests” without these fields is incomplete. Apply the evidence rules in [`../references/evidence-guide.md`](../references/evidence-guide.md), the status rules in [`../references/qa-principles.md`](../references/qa-principles.md), and the human gate rules in [`../references/human-gates.md`](../references/human-gates.md).
+Before stating `QA Plan Gate: OPEN`, run `node "<resolved skill source path>/tools/validate-qa-plan.mjs" "<plan.json>" --json` when Node is already available and no install is needed. Use the resolved skill source path rather than cwd or the product target. The validator reads only the Planner artifact and bundled schema, never product commands or product files. A contract failure blocks plan readiness. Validation success means planning consistency only, not evidence. If Node is unavailable, do not install anything and do not block product QA only for that reason; record deterministic validation unavailable and manually enforce the same schema, rubric, and gate rules.
+
+Each `Must Verify` risk needs a row or equivalent record containing: risk, method, preconditions, expected result, required evidence, and human gate. Actual status and evidence references are added after execution, not invented during planning. A plan that says “run tests” without these fields is incomplete. Apply the evidence rules in [`../references/evidence-guide.md`](../references/evidence-guide.md), the status rules in [`../references/qa-principles.md`](../references/qa-principles.md), and the human gate rules in [`../references/human-gates.md`](../references/human-gates.md).
 
 ### Status Precedence And Evidence Safety
 
@@ -51,7 +71,9 @@ Do not edit tests or documentation during planning, and do not treat edits as ex
 
 End the report's `Verification Plan` with a named **QA Plan Gate**. The gate passes only when the complete Change Intake is recorded; Objective and Scope, Inputs and Assumptions, Risk Analysis, and Verification Plan are complete; scope and non-goals are explicit; critical authoritative criteria are resolved and not contradictory; every `Must Verify` risk has a method, preconditions, expected result, evidence requirement, and human gate; omitted layers are visible; existing coverage is inspected and recorded; and all critical-context questions are answered or marked `BLOCKED`. A missing or contradictory objective acceptance prerequisite keeps `QA Plan Gate: BLOCKED`.
 
-The QA subagent must state `QA Plan Gate: OPEN` or `QA Plan Gate: BLOCKED` in the report. No execution command, test run, product-source change, PASS claim, or transition to [`../qa-execute/SKILL.md`](../qa-execute/SKILL.md) is allowed while the gate is blocked or unnamed. Once open, preserve the plan and continue the same report and the same QA subagent session.
+The QA applicability matrix is part of the Verification Plan, and `QA Plan Gate` cannot open until all 11 canonical categories are assessed with one row each, every `Required` item is mapped to verification and readiness, coverage sufficiency is recorded, and formal regression selection and rejection notes are recorded. For Lite runs, any `Blocked` or `Deferred` matrix row invalidates Lite and forces Full before the gate can open.
+
+The QA subagent must state `QA Plan Gate: OPEN` or `QA Plan Gate: BLOCKED` in the report. No execution command, test run, product-source change, PASS claim, or transition to [`../qa-execute/SKILL.md`](../qa-execute/SKILL.md) is allowed while the gate is blocked or unnamed. Once open, preserve the plan and continue the same report and the same QA subagent session. `QA Plan Gate: OPEN` is only a planning consistency result, never evidence.
 
 ## Non-goals
 

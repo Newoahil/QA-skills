@@ -25,6 +25,17 @@ For each planned item, in plan order:
 4. Immediately update the same Markdown report after every result. Keep planned, executed, skipped, and blocked items visible.
 5. Clean up project-created data, processes, sessions, and temporary artifacts. Record anything that could not be cleaned up.
 
+## Applicability Matrix Evidence Mapping
+
+Record each planned applicability row before execution turns into evidence. Applicability assessments stay distinct from execution statuses, so `Required`, `Recommended`, `Not Applicable`, `Blocked`, and `Deferred` describe the row, while `PASS`, `FAIL`, `BLOCKED`, and `NEEDS_HUMAN_REVIEW` describe execution status.
+
+For every planned row:
+
+1. Link the evidence record to the row's canonical category and verification ID, and keep the Risk → Verification → Evidence → Status chain visible.
+2. Execute only rows approved as `Required` or `Recommended`.
+3. Preserve `Not Applicable`, `Blocked`, and `Deferred` rows as applicability records, not as executed results.
+4. Record the exact category linkage, the observed result, any evidence ID, and any fresh rerun evidence after external correction or other material change.
+
 Use the [evidence guide](../references/evidence-guide.md) and [QA report template](../templates/qa-report.md). Minimize and redact evidence before recording it. Do not include credentials, tokens, secrets, personal data, PII, production data, or sensitive request, response, or log content when a safer hash, path, redacted excerpt, or summary is sufficient. Record the risky-command human approval or Human Gate reference, or `N/A` when no risky command was used. No evidence, no PASS. An unavailable required runner, tool, dependency, environment, data source, or permission is an environment/data/permission/dependency/tooling issue with status `BLOCKED`, not a product `FAIL`. A product `FAIL` requires evidence that expected behavior was not met.
 
 ## Required Finding Record
