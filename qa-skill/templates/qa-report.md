@@ -26,6 +26,43 @@ Record the named Change Intake before planning.
 | Authoritative Acceptance Criteria | Criterion:  Source or owner:  |
 | Unresolved Questions |  |
 
+## Structured QA Plan Artifact
+
+`qa-plan/v1` planning and reconciliation metadata only. It is not product QA evidence, the authoritative report, Human Gate approval, or a release decision.
+
+| Artifact field | Record |
+|---|---|
+| Artifact reference/path | `plan.json` or equivalent local path:  |
+| Schema/version | `qa-plan/v1` |
+| Profile Decision | `LITE` / `FULL`:  |
+| Rigor | `Standard` / `Audit` / `N/A`:  |
+| Approval reference | Required only when `Rigor` is `Audit`:  |
+| Plan-stage validator | Available when Node is already available:  Invocation: `node "<resolved skill source path>/tools/validate-qa-plan.mjs" "<plan.json>" --json`  Result:  |
+| Conclusion-stage validator | Invocation: `node "<resolved skill source path>/tools/validate-qa-plan.mjs" "<plan.json>" --json --require-conclusion`  Result:  |
+| Authority boundary | JSON sidecar is planning and reconciliation metadata only. It is not product QA evidence, the authoritative report, Human Gate approval, or a release decision. |
+
+## QA Applicability Matrix
+
+Allowed assessments: `Required`, `Recommended`, `Not Applicable`, `Blocked`, `Deferred`.
+
+Use one fixed row for each category. Keep the basis, readiness, omissions, rerun conditions, and residual risk auditable.
+
+| Category | Assessment | Change or project basis | Risk / verification IDs | Coverage sufficiency / readiness | Evidence / result | Deferred / blocked resolution | Residual risk |
+|---|---|---|---|---|---|---|---|
+| Static/build |  |  |  |  |  |  |  |
+| Unit |  |  |  |  |  |  |  |
+| Integration |  |  |  |  |  |  |  |
+| Contract/API |  |  |  |  |  |  |  |
+| E2E |  |  |  |  |  |  |  |
+| Database/migration |  |  |  |  |  |  |  |
+| Security |  |  |  |  |  |  |  |
+| Performance |  |  |  |  |  |  |  |
+| Compatibility |  |  |  |  |  |  |  |
+| Accessibility/visual |  |  |  |  |  |  |  |
+| Regression |  |  |  |  |  |  |  |
+
+Plan Gate and Conclusion Gate must reconcile this matrix. The Plan Gate stays BLOCKED until all 11 rows have an assessment, a basis, and a readiness decision. The Conclusion Gate stays BLOCKED until every `Required`, `Recommended`, `Not Applicable`, `Blocked`, or `Deferred` row is reconciled against evidence, factual justification, omissions, rerun conditions, and residual risk.
+
 ## Objective and Scope
 
 | Field | Record |
@@ -63,7 +100,9 @@ QA Plan Gate: OPEN/BLOCKED
 | `Must Verify` methods, preconditions, expected results, evidence requirements, and human gates | OPEN/BLOCKED:  |
 | Validation layers selected and omitted layers with reasons | OPEN/BLOCKED:  |
 | Named Change Intake, existing coverage, and no unresolved critical or contradictory authoritative criterion | OPEN/BLOCKED:  |
+| QA applicability matrix complete, with all 11 categories assessed and readable before opening | OPEN/BLOCKED:  |
 | Repository Preflight reconciled: separate paths, explicit target decision, Git context, target-only scope, usable scoped Diff or blocked reason, and non-Diff limitations | OPEN/BLOCKED:  |
+| Structured QA Plan Artifact contract is valid or a manual fallback is disclosed before OPEN; a validator contract failure blocks readiness | OPEN/BLOCKED:  |
 | Risks, methods, omissions, evidence requirements, and human gates reviewed | OPEN/BLOCKED:  |
 
 ## Execution and Evidence
@@ -123,6 +162,8 @@ Overall Status: PASS/FAIL/BLOCKED/NEEDS_HUMAN_REVIEW
 | Blocked, unverified, and omitted items reconciled with rerun conditions | COMPLETE/BLOCKED:  |
 | Human review items and decisions reconciled | COMPLETE/BLOCKED:  |
 | Residual risks, mitigations, and follow-up reconciled | COMPLETE/BLOCKED:  |
+| QA applicability matrix reconciled, with every `Required`, `Recommended`, `Not Applicable`, `Blocked`, or `Deferred` row tied back to evidence, factual justification, omissions, reruns, and residual risk | COMPLETE/BLOCKED:  |
+| Structured QA Plan Artifact conclusion contract recorded with `--require-conclusion` validation or disclosed manual fallback; a validator contract failure blocks the conclusion output contract | COMPLETE/BLOCKED:  |
 | Verification traceability | Risk → Verification → Evidence → Status:  |
 | Finding traceability, when present | Finding → Risk / Verification / Evidence:  |
 | No unresolved blocker or critical human decision remains for `PASS` | COMPLETE/BLOCKED:  |
