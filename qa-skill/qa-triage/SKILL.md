@@ -5,7 +5,7 @@ description: Triage-first router for single requirement, fix, or Diff QA: determ
 
 # QA Triage
 
-Run this skill only inside the one dedicated QA subagent session started by [`../using-qa/SKILL.md`](../using-qa/SKILL.md). `qa-triage` is routing state, not evidence: it records eligibility facts and the `Profile Decision`, then reuses that same session for either [`../qa-lite/SKILL.md`](../qa-lite/SKILL.md) or the unchanged Full route, [`../qa-plan/SKILL.md`](../qa-plan/SKILL.md) -> [`../qa-execute/SKILL.md`](../qa-execute/SKILL.md) -> [`../qa-conclude/SKILL.md`](../qa-conclude/SKILL.md).
+Run this skill only inside the one dedicated QA subagent session started by [`../using-qa/SKILL.md`](../using-qa/SKILL.md). `qa-triage` is routing state, not evidence: it records eligibility facts and the `Profile Decision`, then reuses that same session for either [`../qa-lite/SKILL.md`](../qa-lite/SKILL.md) or the unchanged Full route, [`../qa-plan/SKILL.md`](../qa-plan/SKILL.md) -> [`../qa-execute/SKILL.md`](../qa-execute/SKILL.md) -> [`../qa-conclude/SKILL.md`](../qa-conclude/SKILL.md). For profile and rigor rules, see [QA profiles](../references/qa-profiles.md).
 
 ## Deterministic All-Or-Full Rule
 
@@ -32,6 +32,10 @@ Record `Profile Decision: FULL` and continue the same QA subagent through [`../q
 - Environment uncertainty, tool uncertainty, data uncertainty, permission uncertainty, dependency uncertainty, or runner uncertainty that affects any `Must Verify` item must escalate and route to Full through `qa-plan`.
 - Generated validation, generated checks, generated tests, generated assets, repair, recovery, resume, history comparison, capability discovery, capability scheduling, or resource scheduling remain Full and route to `qa-plan`.
 - Explicit full request, whole-project request, project-wide mode or goal, audit request, release QA, full QA, or whole-product QA falls back or routes to Full through `qa-plan`.
+
+## Rigor Note
+
+When the run needs extra review depth, record `rigor: Standard` or `rigor: Audit` on the same run. `Audit` is still Full route, not a third route decision, and it requires `approvalRef` before the Planner can treat the rigor as approved.
 
 ## Routing Output
 
