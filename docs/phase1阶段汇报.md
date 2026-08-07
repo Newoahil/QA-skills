@@ -1,8 +1,8 @@
 # QA Skill Phase 1 阶段汇报
 
-**更新日期：** 2026-08-03
+**更新日期：** 2026-08-06
 **项目：** QA Skill Pack
-**阶段结论：** Phase 1 完成度 100%，49/49 全部通过
+**阶段结论：** Phase 1 完成度 100%，Phase 1 deterministic subset 83/83 全部通过
 
 ## Phase 1 范围
 
@@ -12,7 +12,7 @@ Phase 1 聚焦单次需求、缺陷修复或代码 Diff 的 QA 闭环，不涉�
 |---|---|
 | 触发方式 | 用户手动触发 |
 | QA 单位 | 一次需求 / 一次修复 / 一次 Diff |
-| 执行模式 | 一个专用 QA subagent，同一会话内复用 `qa-plan -> qa-execute -> qa-conclude` |
+| 执行模式 | 一个专用 QA subagent，同一会话内复用 `using-qa -> qa-triage -> qa-lite OR qa-plan -> qa-execute -> qa-conclude` |
 | 证据原则 | 证据优先；无证据不得标记 PASS |
 | 读写边界 | 只读产品代码和测试；仅写入 QA 报告和批准的临时产物 |
 | 交付形式 | 一份可复核的 Markdown 权威报告 |
@@ -20,34 +20,53 @@ Phase 1 聚焦单次需求、缺陷修复或代码 Diff 的 QA 闭环，不涉�
 
 ## Phase 1 交付物
 
-Phase 1 核心 pack 文件共 10 项。
+Phase 1 当前 pack 交付物共 18 项，其中 14 项原有交付物和 4 项 Planner product files。
 
 | 类别 | 文件 | 职责 |
 |---|---|---|
 | Skill | `using-qa/SKILL.md` | 人工入口、角色边界、总流程和停止条件 |
+| Skill | `qa-triage/SKILL.md` | 先判定 `Profile Decision: LITE` 还是 `Profile Decision: FULL` |
+| Skill | `qa-lite/SKILL.md` | 单边界低风险 QA-Lite 路径、只读和 exact relay 交付 |
 | Skill | `qa-plan/SKILL.md` | Repository Preflight、Diff 检查、Change Intake、风险分析、Plan Gate |
 | Skill | `qa-execute/SKILL.md` | 按已批准计划只读执行，记录真实证据 |
 | Skill | `qa-conclude/SKILL.md` | 分类发现、核对追踪链、形成结论、Conclusion Gate |
 | Reference | `references/qa-principles.md` | QA 核心原则和状态定义 |
+| Reference | `references/qa-lite-triage.md` | QA-Lite 资格、Full 触发和 triage-first 规则 |
 | Reference | `references/risk-checklist.md` | 风险分类和五层验证选择 |
 | Reference | `references/evidence-guide.md` | 证据收集、脱敏和安全规则 |
 | Reference | `references/finding-classification.md` | 六类发现分类和状态优先级 |
 | Reference | `references/human-gates.md` | 人工门禁触发条件和处理规则 |
+| Template | `templates/qa-lite-report.md` | QA-Lite 报告结构、四状态和 exact relay |
 | Template | `templates/qa-report.md` | 统一 QA 报告结构 |
+| Reference | `references/applicability-rubric.md` | 11 类 applicability rubric、五种 assessment 和 planner 记法 |
+| Reference | `references/qa-profiles.md` | Lite/FULL/Audit 路由和 rigor contract |
+| Schema | `schemas/qa-plan.schema.json` | `qa-plan/v1` JSON schema |
+| Tool | `tools/validate-qa-plan.mjs` | 零依赖 planner validator CLI |
 
 ## 验证结果汇总
 
-| 验证类别 | 测试数 | 通过 | 命令 |
-|---|---|---|---|
-| P1 pack contracts | 8 | 8 | `node --test --test-name-pattern "^P1-" tests/qa-skill-pack.test.mjs` |
-| Functional contracts | 41 | 41 | `node --test tests/functional-validation/contracts.test.mjs` |
-| **Phase 1 合计** | **49** | **49** | |
+| 验证范围 | 总数 | 通过 | 跳过 | 失败 | 说明 |
+|---|---|---|---|---|---|
+| Phase 1 deterministic subset | 83 | 83 | 0 | 0 | 18 个 P1 pack contracts + 65 个 functional contracts，其中 44 个是原有 functional contracts，21 个是 runtime validator contracts |
+| Repository-owned explicit suite | 182 | 180 | 2 | 0 | 2 个 expected opt-in skips，独立于 Phase 1 deterministic subset |
+
+仓库当前 repository-owned explicit suite 的显式总量是 182，其中 180 pass、2 expected opt-in skips、0 fail。这个数字与上面的 Phase 1 deterministic subset 83/83 是两套不同口径，不能相加，也不能把 83 误读成整个仓库总数。
+
+## 3 项 Matrix/Lite 功能合同
+
+这 3 项合同把 triage-first 路由、Lite 报告保真和应用矩阵语义单独拆出来，和下方 41 项核心 functional contracts 分开统计。另有 21 项 runtime validator contracts 独立覆盖 `qa-plan/v1` sidecar、CLI 错误、4 MiB regular-file 输入边界、两阶段一致性、引用完整性、路由边界、Schema-Validator 漂移门禁、非命令 evidence、稳定诊断和输入只读性，所以 functional contracts 合计是 65 项。
+
+| Test ID | 测试目标 | 验证内容 | 建立的保证 | 结果 |
+|---|---|---|---|---|
+| FV-PROFILE-043 | triage-first Lite routing | `qa-triage` 先路由到 `qa-lite`，歧义时同 child 继续 Full | triage-first 路由和 same-child escalation 受控 | PASS |
+| FV-LITE-PROFILE-044 | compact Lite report | Lite 报告保留完整 matrix 和 status reconciliation | Lite exact relay 和 matrix 保真 | PASS |
+| FV-MATRIX-CONTRACT-045 | applicability matrix semantics | matrix 行保留完整语义，不能静默省略证据 | Applicability matrix 与报告证据一致 | PASS |
 
 ## P1 Pack 合同测试明细
 
 | Test ID | 测试目标 | 验证内容 | 建立的保证 | 结果 |
 |---|---|---|---|---|
-| P1-STRUCT-001 | pack 文件结构 | 10 项 Phase 1 核心文件全部存在，且当前 pack 中没有未声明文件 | Phase 1 核心清单完整，pack 文件边界受控 | PASS |
+| P1-STRUCT-001 | pack 文件结构 | 14 项 Phase 1 core 文件和 4 项 QA-Lite artifacts 全部存在，且当前 31-file pack 中没有未声明文件 | Phase 1 核心清单完整，pack 文件边界受控 | PASS |
 | P1-FRONTMATTER-002 | Skill 元数据 | Phase 1 核心 Skill 及当前声明 Skill 的 YAML frontmatter 中 `name` 匹配目录名，`description` 非空 | Phase 1 核心 Skill 具备可发现的最小元数据 | PASS |
 | P1-SEMANTICS-003 | 语义锚点 | 手动触发、单一 QA subagent、只读边界、Change Intake 四字段、Plan Gate、风险优先级、五层验证、六类发现、四种状态、无证据无 PASS、人审门禁 | 核心流程语义完整且无回归 | PASS |
 | P1-LINKS-004 | 内部链接 | Phase 1 核心文档及当前声明 pack 文件中的 Markdown 相对链接可解析，且不逃逸 `qa-skill` 目录 | Phase 1 文档引用完整，当前 pack 无越界链接 | PASS |
@@ -55,6 +74,16 @@ Phase 1 核心 pack 文件共 10 项。
 | P1-POLICY-006 | 策略一致性 | 六类规范发现分类、四种风险优先级、五层验证、状态优先级、证据安全规则、人审门禁规则在全部策略文件中一致 | 跨文件策略无冲突 | PASS |
 | P1-PREFLIGHT-007 | 仓库预检 | skill source path 与 product target path 分离、Repository Preflight 先于 Diff 检查、不依赖 `.git` 目录检测、路径歧义时 BLOCKED | 目标和边界在验证前已确认 | PASS |
 | P1-OUTPUT-008 | 报告输出 | 报告模板包含独立 `Overall Status: PASS/FAIL/BLOCKED/NEEDS_HUMAN_REVIEW` 占位行，结论阶段必须替换为单一规范状态 | 报告结论格式统一且可机器提取 | PASS |
+| P1-STRUCT-LITE-002 | QA-Lite 结构 | QA-Lite 增量文件与原始 pack 一起形成闭合清单，且没有未声明扩展 | QA-Lite artifacts 已并入同一 pack manifest | PASS |
+| P1-ROUTING-009 | triage-first 路由 | `using-qa -> qa-triage -> qa-lite OR qa-plan -> qa-execute -> qa-conclude` 的单 child 路由可重复 | triage-first 与 deterministic Full fallback 受控 | PASS |
+| P1-LITE-SEMANTICS-010 | Lite 语义 | Lite 资格、升级 Full、只读和 evidence integrity 约束都被保留 | Lite 运行边界和 exact relay 保真 | PASS |
+| P1-APPLICABILITY-011 | 适用性矩阵分类 | 11 个类别和 5 个 assessment 值都必须可见 | QA applicability taxonomy 完整 | PASS |
+| P1-APPLICABILITY-012 | 适用性与状态分离 | applicability assessment 不复用 execution status | assessments 和 statuses 不混用 | PASS |
+| P1-APPLICABILITY-013 | 报告矩阵完整性 | Full 和 Lite 报告都携带全部矩阵类别 | 没有静默省略的类别 | PASS |
+| P1-APPLICABILITY-014 | 执行前完整评估 | Full 和 Lite 只有在 11 类都完成 assessment 后才可继续 | matrix 先于 validation-layer selection | PASS |
+| P1-APPLICABILITY-015 | 结论门阻断 | 不完整或 unsupported 的 applicability 行会阻断 Conclusion Gate | incomplete rows cannot reach COMPLETE | PASS |
+| P1-APPLICABILITY-016 | 风险检查默认信号 | 每个 canonical category 都有默认 selection signals | matrix 与 risk checklist 对齐 | PASS |
+| P1-PLANNER-017 | qa-plan/v1 两阶段 sidecar | 同一 QA subagent 维护 plan stage 与 conclusion stage 的 JSON sidecar，plan stage 只记录 method/preconditions/expectedResult/requiredEvidence，不编造实际证据，conclusion stage 补 status/evidenceRefs/conclusion；validator CLI 走 resolved skill source path，plan stage 用 `--json`，conclusion stage 用 `--json --require-conclusion` | Planner sidecar 保持 planning-only，Markdown 仍是权威报告 | PASS |
 
 ## 证据分层
 
@@ -62,7 +91,8 @@ Phase 1 的验证证据来自三个独立、非叠加的层次。每一层回答
 
 | 证据层 | 范围 | 是否调用模型 | 当前结果 | 回答的问题 |
 |---|---|---|---|---|
-| 确定性合同验收 | 8 项 P1 pack + 41 项 functional = 49 项 | 否，纯 Node.js 断言 | 49/49 全部通过 | 合同定义是否正确、harness 逻辑是否自洽 |
+| 确定性合同验收 | 18 项 P1 pack + 65 项 functional = 83 项 | 否，纯 Node.js 断言 | 83/83 全部通过 | 合同定义是否正确、harness 逻辑是否自洽 |
+| repository-owned explicit suite | 182 total | 否，显式 suite 快照 | 180 pass, 2 expected opt-in skips, 0 fail | 这不是 Phase 1 deterministic subset 的总数 |
 | 当前真实 OpenCode 受控场景 | 3 个合成 fixture 场景，真实模型执行 | 是，`cpa/gpt-5.4-mini` | 3/3 scenario assertion 通过 | 在受控条件下，Skill 能否正确驱动模型完成 PASS/FAIL/BLOCKED 闭环 |
 | 历史公开 GitHub Issue 基准 | 2 个 Open WebUI issue，旧版 Skill | 是，历史运行 | Skill 与 Baseline 二元准确率持平 | 旧版 Skill 是否接触过真实开源缺陷叙述 |
 
@@ -100,9 +130,9 @@ Phase 1 的验证证据来自三个独立、非叠加的层次。每一层回答
 | 指标限制 | 二元准确率不衡量报告完整性、证据质量、只读边界、阻塞分类或 relay 保真度 |
 | 证据限制 | 当前仓库没有原始 benchmark 运行产物，无法重新审计逐 Issue 判决和报告质量 |
 
-## 41 项 Functional contracts 主要验证的能力
+## 41 项 Core Functional contracts 主要验证的能力
 
-41 项 functional 合同测试按验证的能力域分为五组，每组覆盖一组具体的失败模式和风险。所有 41 项均通过。
+41 项 core functional 合同测试按验证的能力域分为五组，每组覆盖一组具体的失败模式和风险。上面的 3 项 matrix/Lite 合同单独统计，不并入这 41 项。所有 41 项均通过。
 
 | 能力域 | 数量 | 覆盖的合同 ID | 验证的风险与失败模式 | 证明的具体能力 |
 |---|---|---|---|---|
@@ -149,4 +179,4 @@ Phase 1 的验证证据来自三个独立、非叠加的层次。每一层回答
 
 ## 结论
 
-Phase 1 以 49/49 确定性合同验收为底座，以 3/3 真实 OpenCode 受控场景为当前效果证据，以 2 个历史 Open WebUI issue 为领域暴露记录。三层证据各自独立：合同验收证明 harness 自洽，受控场景证明 Skill 在已知 fixture 上可正确驱动 PASS/FAIL/BLOCKED 闭环，历史基准证明旧版 Skill 曾接触真实缺陷叙述但未表现出准确率优势。41 项 functional 合同按能力域分为编排边界、证据权威、结论可追溯、运行安全和可复现性五组，每组验证一组具体的失败模式。当前证据不支持准确率提升、任意 issue 泛化或通用兼容性结论。
+Phase 1 以 18/18 确定性 pack 合同验收和 65/65 functional 合同验收为底座，以 3/3 真实 OpenCode 受控场景为当前可复核运行证据，以 2 个历史 Open WebUI issue 为领域暴露记录。仓库-owned explicit suite 另有 182 total, 180 pass, 2 expected opt-in skips, 0 fail 的独立快照口径。三层证据各自独立：合同验收证明 harness 自洽，受控场景证明 Skill 在已知 fixture 上可正确驱动 PASS/FAIL/BLOCKED 闭环，历史基准证明旧版 Skill 曾接触真实缺陷叙述但未表现出准确率优势。65 项 functional 合同由 41 项 core functional、3 项 matrix/Lite 和 21 项 runtime validator contracts 组成，分别覆盖编排与证据边界、triage-first 与矩阵保真，以及 qa-plan/v1 两阶段 sidecar、CLI 与引用一致性、4 MiB regular-file 输入边界、路由边界、Schema-Validator 漂移门禁、非命令 evidence、稳定诊断和输入只读性。Node 不可用的手工 fallback 则由 P1 pack 合同覆盖。当前证据仍不支持准确率提升、任意 issue 泛化或新的 approved effectiveness 结论。

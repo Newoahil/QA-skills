@@ -5,7 +5,7 @@
 
 ## 一、执行摘要
 
-Phase 2 将 Phase 1 的单次需求、修复、Diff QA 闭环扩展为全项目 QA 方法论与基线，同时保留证据优先、只读边界、四种状态和 authority 分工。M1 到 M7 七个里程碑都已实现并完成开发验证，确定性测试基线为 108 项，结果是 107 pass、1 skip。窄范围 Node 真实项目 opt-in 运行在隔离副本中通过全部六项 M7 测试，目标项目原始文件零变更。随后又补上了真实项目 benchmark harness 和 corpus，但 benchmark 结论仍停在“已实施、已尝试、未证实有效”。
+Phase 2 将 Phase 1 的单次需求、修复、Diff QA 闭环扩展为全项目 QA 方法论与基线，同时保留证据优先、只读边界、四种状态和 authority 分工。M1 到 M7 七个里程碑都已实现并完成开发验证；在 2026-08-04 冻结的 M1-M7 历史快照中，确定性测试为 108 项，结果是 107 pass、1 skip。窄范围 Node 真实项目 opt-in 运行在隔离副本中通过全部六项 M7 测试，目标项目原始文件零变更。随后又补上了真实项目 benchmark harness 和 corpus，但 benchmark 结论仍停在“已实施、已尝试、未证实有效”。
 
 当前结论：Phase 2 M1-M7 基线仍然成立，最终 post-change five-lane quality review 已全部 PASS。M7 真实执行只证明受控工作流、安全边界和 authority 完整性，不证明真实项目 QA 有效性，也不证明 Skill 相对 Baseline 的优势。真实项目 benchmark 已跑到外部证书不稳定这一上限，当前没有可据此下结论的 Skill 提升证据。下一发布门仍是冻结的真实公开 issue 修复前、修复后快照配对，在完全相同的 Baseline 与 Skill 条件下按既定八项指标评分。
 
@@ -47,18 +47,18 @@ Phase 1 解决的是"这次改动到底验证了什么、没验证什么、为�
 
 ## 四、当前证据
 
-### 确定性测试基线
+### 2026-08-04 M1-M7 历史确定性测试基线
 
 | 范围 | 总数 | Pass | Skip |
 |---|---|---|---|
-| 产品 pack 物理文件 | 23 | 23 | 0 |
+| 产品 pack 物理文件（M1-M7 历史基线） | 23 | 23 | 0 |
 | Pack 级校验（含 P1 + P2 M1-M6） | 24 | 24 | 0 |
 | M1-M6 确定性 suite | 102 | 102 | 0 |
 | M7 默认（含 REAL-006 skip） | 6 | 5 | 1 |
 | 显式 M1-M7（不含 Phase 1 模型集成） | 108 | 107 | 1 |
 | Glob 含 Phase 1 模型集成 | 109 | 107 | 2 |
 
-说明，以上是 M1-M7 历史基线口径，不是 benchmark suite 口径。当前 benchmark suite 单独统计为 39/39，见后文。
+说明，以上表格中的 23 个物理文件、24 项 Pack 级校验和 108/107/1 结果只代表 M1-M7 历史基线口径，不是当前全仓测试快照。后来 Phase 1 先增加 4 个 QA-Lite artifacts，再增加 4 个 Planner product files；Lite、applicability 和 Planner 合同也随之扩展，因此当前 full qa-skill physical pack 是 31 个文件，当前完整 pack suite 是 34 项。当前 Phase 1 deterministic subset 是 83/83，当前 repository-owned explicit suite 是 182 total、180 pass、2 expected opt-in skips、0 fail。benchmark suite 仍单独统计为 39/39，见后文。
 
 ### 真实项目证据
 
@@ -135,7 +135,7 @@ M7 新增或修改的文件：
 - `tests/functional-validation/README.md`：M7 harness 文档扩展
 - `docs/phase 2阶段开发汇报.md`：本报告
 
-M7 未新增任何 Skill、reference 或产品 pack 文件。产品 pack 物理文件数保持 23，pack 测试数保持 24，这些计数在 M6 已固定，M7 有意不改变。
+M7 未新增任何 Skill、reference 或产品 pack 文件。M6 的产品 pack 物理文件数 23 和 pack 测试数 24 是历史基线，M7 有意不改变；后来 Phase 1 的 QA-Lite、applicability 和 Planner 扩展使当前 full pack 达到 31 个文件、当前完整 pack suite 达到 34 项，其中 Planner 本身增加了 4 个 product files 和 `P1-PLANNER-017`。
 
 ## 八、Authority 制品
 
@@ -182,7 +182,7 @@ Authority 验证从磁盘重读所有文件，核对 manifest 引用的 SHA-256 
 
 | 命令 | 预期结果 | 实际结果 |
 |---|---|---|
-| `node --test tests/qa-skill-pack.test.mjs` | 24/24 pass | 24/24 pass |
+| `node --test tests/qa-skill-pack.test.mjs` | 当前 34/34 pass | 34/34 pass |
 | `node --test tests/functional-validation/contracts.test.mjs tests/functional-validation/project-planning-contracts.test.mjs tests/functional-validation/project-execution-contracts.test.mjs tests/functional-validation/project-repair-contracts.test.mjs tests/functional-validation/project-recovery-contracts.test.mjs tests/functional-validation/project-capability-contracts.test.mjs` | 102/102 pass | 102/102 pass |
 | `node --test tests/functional-validation/project-integration.test.mjs` | 6 total, 5 pass, 1 skip | 6 total, 5 pass, 1 skip |
 | `$env:QA_SKILL_REAL_PROJECT_RUNS='1'; ... node --test tests/functional-validation/project-integration.test.mjs` | 6/6 pass, 隔离副本内 102/102 pass | 6/6 pass, 隔离副本内 102/102 pass |
@@ -190,7 +190,7 @@ Authority 验证从磁盘重读所有文件，核对 manifest 引用的 SHA-256 
 
 ## 十二、管理结论与下一步
 
-Phase 2 M1-M7 基线仍然成立，benchmark harness 也已经实现并跑过，但真实项目 benchmark 的有效性还没有被外部证书稳定性支撑起来。确定性测试 108 项中 107 项通过，1 项 skip 是设计内的 opt-in 真实项目门。真实项目证据在隔离副本中通过全部验证，目标项目原始文件零变更，authority 制品完整可复核。最终 post-change five-lane quality review 已全部 PASS。
+Phase 2 M1-M7 基线仍然成立，benchmark harness 也已经实现并跑过，但真实项目 benchmark 的有效性还没有被外部证书稳定性支撑起来。2026-08-04 的 M1-M7 历史快照为 108 项中 107 项通过、1 项设计内 opt-in skip；它不替代当前 83/83 Phase 1 deterministic subset 或 182 total、180 pass、2 expected opt-in skips、0 fail 的全仓显式快照。真实项目证据在隔离副本中通过全部验证，目标项目原始文件零变更，authority 制品完整可复核。最终 post-change five-lane quality review 已全部 PASS。
 
 M7 证明的是受控工作流、安全边界和 authority 完整性，而非真实项目 QA 有效性，也未证明 Skill 相对 Baseline 的优势。benchmark 的三个 campaign 里，`-01` 是配置问题无效，`-02` 是被旧 harness 错算的无效有效性证据，`-03` 才是 fail-closed 的有效证据，但它同样只证明基础设施会在证书错误下正确停止。当前版本全项目 QA 有效性仍待证明。
 
@@ -204,8 +204,8 @@ M7 证明的是受控工作流、安全边界和 authority 完整性，而非真
 
 坤哥，下午好。
 
-Phase 2 M1-M7 基线已经完成，benchmark harness 也已经实现并跑过，但当前不能把它写成 Skill 有效。核心交付是把 Phase 1 的单次 Diff QA 方法扩展到了全项目 QA 方法论与基线，同时保留证据优先、只读边界、四种状态和 authority 分工这些硬约束。M1 到 M6 之前已经接受，M7 补齐了集成 fixture 验证和窄范围 Node 真实项目证据。确定性测试 108 项里 107 项通过，1 项 skip 是设计内的 opt-in 真实项目门。真实项目运行在隔离副本中通过全部六项 M7 测试，目标项目原始文件零变更，authority 制品全部可复核。benchmark 这次只证明了 harness 能分辨配置失败和证书失败，没有证明 Skill 比 Baseline 更好。
+Phase 2 M1-M7 基线已经完成，benchmark harness 也已经实现并跑过，但当前不能把它写成 Skill 有效。核心交付是把 Phase 1 的单次 Diff QA 方法扩展到了全项目 QA 方法论与基线，同时保留证据优先、只读边界、四种状态和 authority 分工这些硬约束。M1 到 M6 之前已经接受，M7 补齐了集成 fixture 验证和窄范围 Node 真实项目证据。2026-08-04 冻结的 M1-M7 历史快照是 108 项里 107 项通过、1 项设计内 opt-in skip；当前全仓快照已经更新为 83/83 Phase 1 deterministic subset 和 182 total、180 pass、2 expected opt-in skips、0 fail。真实项目运行在隔离副本中通过全部六项 M7 测试，目标项目原始文件零变更，authority 制品全部可复核。benchmark 这次只证明了 harness 能分辨配置失败和证书失败，没有证明 Skill 比 Baseline 更好。
 
 初始真实运行有一次 FAIL，根因是子进程环境隔离移除了 Windows 上 OpenCode 可执行文件的唯一发现路径，修复后重跑通过。后面的 benchmark 里又碰到了外部证书不稳定，`-01`、`-02`、`-03` 分别记录了配置拒绝、错误计分和 fail-closed 停止，说明 harness 在收口，但还不能把结果包装成效果证明。
 
-当前产品 pack 文件保持 23 个，pack 测试保持 24 项，M7 没有新增 Skill 或 reference 文件。benchmark suite 现在是 39/39，和 M1-M7 历史计数分开看。最终 post-change five-lane quality review 已全部 PASS。下一发布门是冻结的真实公开 issue 修复前、修复后快照配对，覆盖至少两个技术栈，在完全相同的 Baseline 与 Skill 条件下按八项指标评分。故障注入仍然只是后备手段，不能支撑真实 issue 有效性声明。真实项目修复保持禁用，直至外部证书问题被修复并完成新的独立 campaign。Phase 2 产品尚未完成，请按这版口径对外汇报。
+当前产品 pack 是 31 个文件，当前完整 pack suite 是 34 项；M7 自身没有新增 Skill 或 reference 文件，M1-M7 的 23-file/24-test 数字仅保留为历史基线。当前全仓显式 suite 是 182 total、180 pass、2 expected opt-in skips、0 fail；benchmark suite 现在是 39/39，和 M1-M7 历史计数分开看。最终 post-change five-lane quality review 已全部 PASS。下一发布门是冻结的真实公开 issue 修复前、修复后快照配对，覆盖至少两个技术栈，在完全相同的 Baseline 与 Skill 条件下按八项指标评分。故障注入仍然只是后备手段，不能支撑真实 issue 有效性声明。真实项目修复保持禁用，直至外部证书问题被修复并完成新的独立 campaign。Phase 2 产品尚未完成，请按这版口径对外汇报。
