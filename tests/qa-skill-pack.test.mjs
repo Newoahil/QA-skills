@@ -25,9 +25,13 @@ const phase1CoreFiles = Object.freeze([
   'qa-conclude/SKILL.md',
   'references/qa-principles.md',
   'references/risk-checklist.md',
+  'references/applicability-rubric.md',
+  'references/qa-profiles.md',
   'references/evidence-guide.md',
   'references/finding-classification.md',
   'references/human-gates.md',
+  'schemas/qa-plan.schema.json',
+  'tools/validate-qa-plan.mjs',
   'templates/qa-report.md',
 ]);
 
@@ -196,6 +200,57 @@ function containsAllLayerNames(markdown) {
     'Specialist non-functional',
     'Manual acceptance',
   ].every((value) => markdown.includes(value));
+}
+
+const canonicalQaApplicabilityCategories = Object.freeze([
+  'Static/build',
+  'Unit',
+  'Integration',
+  'Contract/API',
+  'E2E',
+  'Database/migration',
+  'Security',
+  'Performance',
+  'Compatibility',
+  'Accessibility/visual',
+  'Regression',
+]);
+
+const canonicalQaApplicabilityAssessments = Object.freeze([
+  'Required',
+  'Recommended',
+  'Not Applicable',
+  'Blocked',
+  'Deferred',
+]);
+
+const canonicalQaExecutionStatuses = Object.freeze([
+  'PASS',
+  'FAIL',
+  'BLOCKED',
+  'NEEDS_HUMAN_REVIEW',
+]);
+
+function missingLiteralValues(markdown, values) {
+  return values.filter((value) => !markdown.includes(value));
+}
+
+function recordMissingPattern(failures, markdown, relativePath, label, pattern) {
+  if (!pattern.test(markdown)) {
+    failures.push(`${relativePath} must define ${label}`);
+  }
+}
+
+function markdownTableRows(markdown) {
+  return markdown
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.startsWith('|') && line.endsWith('|'))
+    .filter((line) => !/^\|\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)+\|$/.test(line))
+    .map((line) => line
+      .slice(1, -1)
+      .split('|')
+      .map((cell) => cell.trim().replace(/^`|`$/g, '')));
 }
 
 function extractRelativeMarkdownLinks(markdown) {
@@ -455,7 +510,7 @@ test('P2-M6-STRUCT-001 exposes exactly the declared M6 capability and scheduling
   const reportTemplate = readRequiredMarkdown('templates/project-qa-report.md', testId);
   const combined = `${capabilityReference}\n${schedulingReference}\n${projectRunContract}\n${usingProjectQa}\n${projectPlan}\n${executeSkill}\n${reportTemplate}`;
 
-  assert.equal(requiredProductFiles.length, 23, `${testId}: physical product file count should be 23 through M6`);
+  assert.equal(requiredProductFiles.length, 27, `${testId}: physical product file count should be 27 through M6 plus the Phase 1 Planner contract`);
 
   const requiredPatterns = [
     [/bounded\s+static\s+capability\s+evidence/i, 'bounded static capability evidence'],
@@ -715,6 +770,231 @@ test('P1-LITE-SEMANTICS-010 enforces Lite eligibility, escalation, and evidence 
     if (!pattern.test(contractText)) {
       failures.push(`qa-lite contract missing ${label}`);
     }
+  }
+
+  assertNoSemanticFailures(testId, failures);
+});
+
+test('P1-APPLICABILITY-011 defines the mandatory QA applicability matrix taxonomy', () => {
+  const testId = 'P1-APPLICABILITY-011';
+  const usingQa = readRequiredMarkdown('using-qa/SKILL.md', testId);
+  const qaTriage = readRequiredMarkdown('qa-triage/SKILL.md', testId);
+  const qaLite = readRequiredMarkdown('qa-lite/SKILL.md', testId);
+  const qaPlan = readRequiredMarkdown('qa-plan/SKILL.md', testId);
+  const qaExecute = readRequiredMarkdown('qa-execute/SKILL.md', testId);
+  const qaConclude = readRequiredMarkdown('qa-conclude/SKILL.md', testId);
+  const qaPrinciples = readRequiredMarkdown('references/qa-principles.md', testId);
+  const riskChecklist = readRequiredMarkdown('references/risk-checklist.md', testId);
+  const qaLiteTriageReference = readRequiredMarkdown('references/qa-lite-triage.md', testId);
+  const qaReportTemplate = readRequiredMarkdown('templates/qa-report.md', testId);
+  const qaLiteReportTemplate = readRequiredMarkdown('templates/qa-lite-report.md', testId);
+  const governingContractText = `${usingQa}\n${qaTriage}\n${qaLite}\n${qaPlan}\n${qaExecute}\n${qaConclude}\n${qaPrinciples}\n${riskChecklist}\n${qaLiteTriageReference}\n${qaReportTemplate}\n${qaLiteReportTemplate}`;
+  const failures = [];
+
+  for (const category of missingLiteralValues(governingContractText, canonicalQaApplicabilityCategories)) {
+    failures.push(`Phase 1 governing workflow/reference/templates must expose QA applicability category: ${category}`);
+  }
+
+  for (const assessment of missingLiteralValues(governingContractText, canonicalQaApplicabilityAssessments)) {
+    failures.push(`Phase 1 governing workflow/reference/templates must expose QA applicability assessment: ${assessment}`);
+  }
+
+  assertNoSemanticFailures(testId, failures);
+});
+
+test('P1-APPLICABILITY-012 keeps applicability assessments distinct from execution statuses', () => {
+  const testId = 'P1-APPLICABILITY-012';
+  const overlappingLabels = canonicalQaApplicabilityAssessments.filter((assessment) => canonicalQaExecutionStatuses.includes(assessment));
+
+  assert.deepEqual(
+    overlappingLabels,
+    [],
+    `${testId}: applicability assessments must not reuse canonical execution statuses PASS, FAIL, BLOCKED, NEEDS_HUMAN_REVIEW`,
+  );
+});
+
+test('P1-APPLICABILITY-013 requires Full and Lite reports to carry every matrix category', () => {
+  const testId = 'P1-APPLICABILITY-013';
+  const qaReportTemplate = readRequiredMarkdown('templates/qa-report.md', testId);
+  const qaLiteReportTemplate = readRequiredMarkdown('templates/qa-lite-report.md', testId);
+  const failures = [];
+
+  for (const [relativePath, markdown] of [
+    ['templates/qa-report.md', qaReportTemplate],
+    ['templates/qa-lite-report.md', qaLiteReportTemplate],
+  ]) {
+    for (const category of missingLiteralValues(markdown, canonicalQaApplicabilityCategories)) {
+      failures.push(`${relativePath} must not silently omit QA applicability category: ${category}`);
+    }
+  }
+
+  assertNoSemanticFailures(testId, failures);
+});
+
+test('P1-APPLICABILITY-014 gates Full and Lite execution on complete category applicability assessment', () => {
+  const testId = 'P1-APPLICABILITY-014';
+  const qaTriage = readRequiredMarkdown('qa-triage/SKILL.md', testId);
+  const qaLite = readRequiredMarkdown('qa-lite/SKILL.md', testId);
+  const qaPlan = readRequiredMarkdown('qa-plan/SKILL.md', testId);
+  const qaLiteTriageReference = readRequiredMarkdown('references/qa-lite-triage.md', testId);
+  const qaReportTemplate = readRequiredMarkdown('templates/qa-report.md', testId);
+  const qaLiteReportTemplate = readRequiredMarkdown('templates/qa-lite-report.md', testId);
+  const fullPlanContract = `${qaPlan}\n${qaReportTemplate}`;
+  const liteContract = `${qaTriage}\n${qaLite}\n${qaLiteTriageReference}\n${qaLiteReportTemplate}`;
+  const failures = [];
+
+  recordMissingPattern(
+    failures,
+    fullPlanContract,
+    'qa-plan/SKILL.md|templates/qa-report.md',
+    'Full QA Plan Gate requires the QA applicability matrix to assess all 11 categories before opening',
+    /QA\s+Plan\s+Gate[\s\S]{0,360}(?:applicability\s+matrix|QA\s+applicability)[\s\S]{0,220}(?:all\s+11|11\s+categories|every\s+category)[\s\S]{0,160}(?:assessed|assessment|row)/i,
+  );
+  recordMissingPattern(
+    failures,
+    fullPlanContract,
+    'qa-plan/SKILL.md|templates/qa-report.md',
+    'Full route records one applicability row for every canonical category',
+    /(?:one\s+row|row\s+for\s+each|every\s+row)[\s\S]{0,220}(?:Static\/build|Contract\/API)[\s\S]{0,220}(?:Accessibility\/visual|Regression)/i,
+  );
+  recordMissingPattern(
+    failures,
+    liteContract,
+    'qa-triage/qa-lite/references/qa-lite-triage.md|templates/qa-lite-report.md',
+    'Lite assesses all 11 categories within its bounded profile or escalates to Full',
+    /Lite[\s\S]{0,260}(?:applicability\s+matrix|QA\s+applicability)[\s\S]{0,260}(?:all\s+11|11\s+categories|every\s+category)[\s\S]{0,260}(?:escalat|route|fallback)[\s\S]{0,160}Full/i,
+  );
+  recordMissingPattern(
+    failures,
+    liteContract,
+    'qa-triage/qa-lite/references/qa-lite-triage.md|templates/qa-lite-report.md',
+    'Lite escalation when bounded-profile evidence cannot justify category assessments',
+    /bounded\s+profile[\s\S]{0,260}(?:cannot|can\s+not|unable|insufficient)[\s\S]{0,220}(?:justify|support)[\s\S]{0,180}(?:applicability\s+assessment|category\s+assessment|matrix)[\s\S]{0,220}(?:escalat|route|fallback)[\s\S]{0,160}Full/i,
+  );
+
+  assertNoSemanticFailures(testId, failures);
+});
+
+test('P1-APPLICABILITY-015 blocks Conclusion Gate on incomplete or unsupported applicability rows', () => {
+  const testId = 'P1-APPLICABILITY-015';
+  const qaConclude = readRequiredMarkdown('qa-conclude/SKILL.md', testId);
+  const qaReportTemplate = readRequiredMarkdown('templates/qa-report.md', testId);
+  const qaLiteReportTemplate = readRequiredMarkdown('templates/qa-lite-report.md', testId);
+  const conclusionContract = `${qaConclude}\n${qaReportTemplate}\n${qaLiteReportTemplate}`;
+  const failures = [];
+
+  const conclusionGateRules = [
+    ['missing QA applicability matrix rows block the QA Conclusion Gate', /QA\s+Conclusion\s+Gate[\s\S]{0,360}(?:missing\s+rows?|omitted\s+rows?|missing\s+applicability)[\s\S]{0,180}BLOCKED/i],
+    ['unjustified Not Applicable rows block the QA Conclusion Gate', /Not\s+Applicable[\s\S]{0,220}(?:justification|reason|rationale)[\s\S]{0,220}(?:missing|absent|required)[\s\S]{0,220}BLOCKED/i],
+    ['Deferred rows require an owner and trigger before completion', /Deferred[\s\S]{0,220}(?:owner|responsible)[\s\S]{0,220}(?:trigger|resume|revisit|rerun)[\s\S]{0,220}(?:missing|absent|required|ownerless|triggerless)[\s\S]{0,220}BLOCKED/i],
+    ['unresolved Required work blocks completion', /Required[\s\S]{0,220}(?:unresolved|incomplete|open|not\s+done)[\s\S]{0,220}(?:QA\s+Conclusion\s+Gate|completion|COMPLETE)[\s\S]{0,160}BLOCKED/i],
+    ['Required work needs satisfactory evidence before PASS or completion', /Required[\s\S]{0,220}(?:satisfactory\s+)?evidence[\s\S]{0,220}(?:missing|absent|without|no\s+evidence)[\s\S]{0,220}(?:BLOCKED|cannot\s+complete|must\s+not\s+complete|not\s+PASS)/i],
+    ['Blocked applicability rows record missing prerequisites and rerun conditions', /Blocked[\s\S]{0,220}missing\s+prerequisites?[\s\S]{0,220}rerun\s+conditions?/i],
+  ];
+
+  for (const [label, pattern] of conclusionGateRules) {
+    recordMissingPattern(failures, conclusionContract, 'qa-conclude/SKILL.md|templates/qa-report.md|templates/qa-lite-report.md', label, pattern);
+  }
+
+  assertNoSemanticFailures(testId, failures);
+});
+
+test('P1-APPLICABILITY-016 risk checklist defines default selection signals for every canonical category', () => {
+  const testId = 'P1-APPLICABILITY-016';
+  const riskChecklist = readRequiredMarkdown('references/risk-checklist.md', testId);
+  const rows = markdownTableRows(riskChecklist);
+  const failures = [];
+  const requiredSignalPatterns = new Map([
+    ['Static/build', /source|config|schema|dependency|generated|build|type|lint/i],
+    ['Unit', /local\s+logic|branches|calculations|error\s+handling/i],
+    ['Integration', /component\s+collaboration|persistence|service|queue|cache|external\s+boundar/i],
+    ['Contract/API', /HTTP|RPC|event|CLI|schema|public\s+format/i],
+    ['E2E', /critical\s+(?:user|system)\s+flows?|supported\s+boundar/i],
+    ['Database/migration', /schema|query|persistence|data\s+conversion|migration|rollback|recovery/i],
+    ['Security', /auth|authz|input-output|secrets|privacy|sensitive\s+data|dependencies/i],
+    ['Performance', /query|algorithmic\s+cost|latency|throughput|retry|memory|limits/i],
+    ['Compatibility', /public\s+contracts|platform|version|browser|data\s+format|upgrade-downgrade/i],
+    ['Accessibility/visual', /UI|interaction|layout|text|design\s+system|visible\s+workflows/i],
+    ['Regression', /every\s+changed\s+behavior|configuration|affected|adjacent/i],
+  ]);
+
+  recordMissingPattern(
+    failures,
+    riskChecklist,
+    'references/risk-checklist.md',
+    'default signals are applicability defaults rather than automatic execution mandates',
+    /defaults?[\s\S]{0,220}(?:not\s+automatic|not\s+execution\s+mandates|execution\s+mandates?)[\s\S]{0,220}(?:Not\s+Applicable|factual\s+evidence)/i,
+  );
+
+  for (const category of canonicalQaApplicabilityCategories) {
+    const categoryRows = rows.filter((cells) => cells.includes(category));
+    if (categoryRows.length !== 1) {
+      failures.push(`references/risk-checklist.md must contain exactly one structured default signal row for ${category}`);
+      continue;
+    }
+
+    const rowText = categoryRows[0].join(' | ');
+    const signalPattern = requiredSignalPatterns.get(category);
+    assert.ok(signalPattern, `${testId}: missing test signal pattern for ${category}`);
+    if (!signalPattern.test(rowText)) {
+      failures.push(`references/risk-checklist.md default signal row for ${category} is missing required change/project signals`);
+    }
+  }
+
+  assertNoSemanticFailures(testId, failures);
+});
+
+test('P1-PLANNER-017 ships a read-only two-stage Planner artifact and deterministic validator contract', () => {
+  const testId = 'P1-PLANNER-017';
+  const usingQa = readRequiredMarkdown('using-qa/SKILL.md', testId);
+  const qaTriage = readRequiredMarkdown('qa-triage/SKILL.md', testId);
+  const qaLite = readRequiredMarkdown('qa-lite/SKILL.md', testId);
+  const qaPlan = readRequiredMarkdown('qa-plan/SKILL.md', testId);
+  const qaConclude = readRequiredMarkdown('qa-conclude/SKILL.md', testId);
+  const rubric = readRequiredMarkdown('references/applicability-rubric.md', testId);
+  const profiles = readRequiredMarkdown('references/qa-profiles.md', testId);
+  const fullReport = readRequiredMarkdown('templates/qa-report.md', testId);
+  const liteReport = readRequiredMarkdown('templates/qa-lite-report.md', testId);
+  const validator = readRequiredMarkdown('tools/validate-qa-plan.mjs', testId);
+  const schemaText = readRequiredMarkdown('schemas/qa-plan.schema.json', testId);
+  const schema = JSON.parse(schemaText);
+  const workflow = `${usingQa}\n${qaTriage}\n${qaLite}\n${qaPlan}\n${qaConclude}\n${rubric}\n${profiles}\n${fullReport}\n${liteReport}`;
+  const failures = [];
+
+  assert.equal(schema.$schema, 'https://json-schema.org/draft/2020-12/schema', `${testId}: schema must publish the Draft 2020-12 dialect`);
+  assert.equal(schema.$id, 'https://qa-skills.local/schemas/qa-plan.schema.json', `${testId}: schema must publish the stable QA plan ID`);
+  assert.equal(schema.additionalProperties, false, `${testId}: top-level QA plan object must be closed`);
+  assert.deepEqual(schema.properties.profile.enum, ['Lite', 'Full'], `${testId}: Audit must not become a third route profile`);
+  assert.deepEqual(schema.$defs.rigor.properties.level.enum, ['Standard', 'Audit'], `${testId}: Audit belongs to Full-route rigor metadata`);
+  assert.ok(schema.$defs.changeIntake.required.includes('observedFacts'), `${testId}: structured Change Intake must include Observed Facts`);
+  assert.ok(schema.$defs.changeIntake.required.includes('inferredIntent'), `${testId}: structured Change Intake must include Inferred Intent`);
+  assert.equal(schema.$defs.conclusion.properties.releaseDecision.const, 'none', `${testId}: structured conclusion must not grant release approval`);
+  assert.deepEqual(schema.$defs.evidence.allOf[0].then.required, ['command', 'exitCode'], `${testId}: command evidence alone must require command and exitCode`);
+
+  const requiredPatterns = [
+    [/qa-plan\/v1/i, 'versioned Planner artifact'],
+    [/Planner[\s\S]{0,220}(?:creates?|maintains?|updates?)[\s\S]{0,220}(?:JSON|artifact)/i, 'same QA subagent owns the Planner artifact'],
+    [/Markdown\s+report[\s\S]{0,220}authoritative/i, 'Markdown report remains authoritative'],
+    [/not\s+product\s+QA\s+evidence|never\s+product\s+evidence/i, 'Planner artifact is not product evidence'],
+    [/validate-qa-plan\.mjs[\s\S]{0,220}--json/i, 'plan-stage deterministic validator invocation'],
+    [/--require-conclusion/i, 'conclusion-stage deterministic validation'],
+    [/actual\s+(?:status|statuses)[\s\S]{0,180}evidence\s+refs?[\s\S]{0,180}(?:after\s+execution|conclusion)/i, 'execution results are added only after planning'],
+    [/Node\s+is\s+unavailable[\s\S]{0,220}(?:do\s+not\s+install|without\s+install|manual)/i, 'Node-unavailable manual fallback without install'],
+    [/Lite[\s\S]{0,220}(?:no|must\s+have\s+no|does\s+not\s+allow)[\s\S]{0,120}`?Blocked`?[\s\S]{0,80}`?Deferred`?/i, 'Lite forbids Blocked and Deferred matrix rows'],
+    [/Audit[\s\S]{0,180}Full[\s\S]{0,180}approvalRef/i, 'Audit remains approved Full-route rigor'],
+    [/validation\s+success[\s\S]{0,180}(?:planning\s+consistency|consistency\s+only)[\s\S]{0,180}(?:not\s+evidence|never\s+evidence)/i, 'validator success is consistency rather than evidence'],
+  ];
+  for (const [pattern, label] of requiredPatterns) {
+    recordMissingPattern(failures, workflow, 'Phase 1 Planner workflow/references/templates', label, pattern);
+  }
+
+  const forbiddenValidatorPatterns = [
+    [/node:child_process|\bspawn(?:Sync)?\s*\(|\bexec(?:File|FileSync|Sync)?\s*\(/i, 'command execution'],
+    [/\bwriteFile(?:Sync)?\s*\(|\bappendFile(?:Sync)?\s*\(/i, 'file writes'],
+    [/\bfetch\s*\(|node:https?|node:http/i, 'network access'],
+  ];
+  for (const [pattern, label] of forbiddenValidatorPatterns) {
+    if (pattern.test(validator)) failures.push(`tools/validate-qa-plan.mjs must not perform ${label}`);
   }
 
   assertNoSemanticFailures(testId, failures);
