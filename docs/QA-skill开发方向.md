@@ -10,6 +10,10 @@ QA Skill 不是测试框架、工具集合或自动发布系统，而是一套�
 
 QA-Lite 仍保留单 child、单 session、只读、证据优先、Human Gate 和外部修复后 fresh rerun evidence 的约束；它不引入自动修复，也不放松 PASS 只能由实际证据支持的规则。
 
+Phase 1 还交付 `qa-plan/v1` 两阶段 JSON sidecar 和零依赖 validator CLI。`plan` 阶段只记录 `method`、`preconditions`、`expectedResult` 和 `requiredEvidence`，不编造实际证据；`conclusion` 阶段再补 `status`、`evidenceRefs` 和 `conclusion`。`qa-skill/tools/validate-qa-plan.mjs` 只检查 Planner sidecar 的一致性，`--json` 用于 plan-stage，`--json --require-conclusion` 用于 conclusion-stage，退出码是 `0` 通过、`1` 合同不一致、`2` 用法或读取或加载错误。Node 不可用时不安装任何东西，手工执行同一套 schema、rubric 和 gate 规则。
+
+`qa-triage` 仍只返回 `LITE` 或 `FULL`。`rigor: Standard` 可以和 Full 一起使用，`rigor: Audit` 仍然是 Full route，并且需要 `approvalRef`。
+
 ## 两项核心能力
 
 ### 1. 可复用的标准质量验证流程
@@ -26,13 +30,14 @@ Phase 2 的项目路线基线与 Phase 1 的 triage-first 路线是分开的。`
 
 ## 一套共享 QA 工作流
 
-Phase 1 复用同一 child/session，在 `using-qa -> qa-triage` 之后分流到 QA-Lite 或 Full 路线；Full 路线保持 `qa-plan -> qa-execute -> qa-conclude` 不变。范围聚焦单个 Diff 或单次变更，不把项目级 baseline 语义并入 Phase 1：
+Phase 1 复用同一 child/session，在 `using-qa -> qa-triage` 之后分流到 QA-Lite 或 Full 路线；Full 路线保持 `qa-plan -> qa-execute -> qa-conclude` 不变，并且在风险层执行前先完成 11 类 applicability matrix assessment。范围聚焦单个 Diff 或单次变更，不把项目级 baseline 语义并入 Phase 1：
 
 ```text
 用户手动触发，主 Agent 交接 supplied skill source path、resolved skill source path、supplied product target path、resolved product target path、目标范围和非目标、用户上下文及已知约束
 → 同一 QA subagent 先执行 Repository Preflight，确认显式 product target、仓库边界、目标范围和可用 Diff；歧义、缺失或不可读时 BLOCKED
 → 独立读取或检查实际目标变更或可用 Diff，不依赖摘要
 → 记录 Change Intake，分离 `Observed Facts`、带置信度和依据的 `Inferred Intent`、带来源/负责人的 `Authoritative Acceptance Criteria`、`Unresolved Questions`
+→ 完成 11 类 applicability matrix assessment，所有类别都要显式评估，但不一定执行
 → 定义范围与非目标
 → 分析风险
 → 按风险设计和选择验证层
@@ -43,7 +48,7 @@ Phase 1 复用同一 child/session，在 `using-qa -> qa-triage` 之后分流到
 → 交给人做验收和发布决定
 ```
 
-验证层按风险选择，不是固定套餐：
+验证层按风险选择，不是固定套餐。先做 applicability assessment，再选 layer；每个 category 都要被评估，Not Applicable 只是表示不执行，不是表示可以静默消失：
 
 | 验证层 | 主要关注 |
 |---|---|
