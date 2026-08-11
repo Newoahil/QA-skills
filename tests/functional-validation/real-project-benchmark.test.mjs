@@ -239,6 +239,8 @@ test('RPB-OPENCODE-005 builds shell-free OpenCode run args with pure JSON output
 test('RPB-OPENCODE-005A builds isolated OpenCode env without host config, unrelated values, or plugin exposure', async () => withTempDirectory(async (root) => {
   const api = await benchmarkApi();
   const isolatedRoot = path.join(root, 'isolated-opencode');
+  const hostGhConfigDir = path.join(root, 'host-gh-config');
+  mkdirSync(hostGhConfigDir, { recursive: true });
   const env = api.buildBenchmarkOpenCodeEnv({
     isolatedRoot,
     baseEnv: {
@@ -247,6 +249,7 @@ test('RPB-OPENCODE-005A builds isolated OpenCode env without host config, unrela
       LANG: 'C',
       ANTHROPIC_API_KEY: 'required-provider-auth',
       OPENCODE_AUTH_CONTENT: '{"provider":"required"}',
+      GH_CONFIG_DIR: hostGhConfigDir,
       XDG_CONFIG_HOME: path.join(root, 'host-config'),
       APPDATA: path.join(root, 'host-appdata'),
       API_TOKEN: 'drop-token',
@@ -260,6 +263,7 @@ test('RPB-OPENCODE-005A builds isolated OpenCode env without host config, unrela
   assert.equal(env.LANG, 'C');
   assert.equal(env.ANTHROPIC_API_KEY, 'required-provider-auth');
   assert.equal(env.OPENCODE_AUTH_CONTENT, '{"provider":"required"}');
+  assert.equal(env.GH_CONFIG_DIR, hostGhConfigDir, 'GitHub CLI config dir may be inherited narrowly for explicit GitHub context reads');
   for (const key of ['API_TOKEN', 'PASSWORD', 'NORMAL_VALUE']) assert.equal(Object.hasOwn(env, key), false, `${key} must not be inherited`);
   for (const key of ['HOME', 'USERPROFILE', 'APPDATA', 'XDG_CONFIG_HOME', 'XDG_DATA_HOME', 'XDG_CACHE_HOME', 'TEMP', 'TMP']) {
     assert.equal(typeof env[key], 'string', `${key} must be remapped`);

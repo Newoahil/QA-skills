@@ -75,9 +75,15 @@ const phase2ExtensionFiles = Object.freeze([
   ...phase2M6ExtensionFiles,
 ]);
 
+const phase3MinimalExtensionFiles = Object.freeze([
+  'project-qa-context/SKILL.md',
+  'references/qa_planning_inputs.md',
+]);
+
 const requiredProductFiles = Object.freeze([
   ...phase1CoreFiles,
   ...phase2ExtensionFiles,
+  ...phase3MinimalExtensionFiles,
 ]);
 
 const qaLiteFiles = Object.freeze([
@@ -400,7 +406,7 @@ test('P2-M1-STRUCT-001 preserves the declared Phase 2 M1 extension files', () =>
 test('P2-M2-STRUCT-001 exposes exactly the declared Phase 2 extension files through M6', () => {
   const testId = 'P2-M2-STRUCT-001';
   const actualFiles = regularFilesUnder(packRoot);
-  const phase2Files = actualFiles.filter((relativePath) => !phase1CoreFiles.includes(relativePath) && !qaLiteFiles.includes(relativePath));
+  const phase2Files = actualFiles.filter((relativePath) => !phase1CoreFiles.includes(relativePath) && !qaLiteFiles.includes(relativePath) && !phase3MinimalExtensionFiles.includes(relativePath));
 
   assert.deepEqual(
     phase2Files,
@@ -510,7 +516,7 @@ test('P2-M6-STRUCT-001 exposes exactly the declared M6 capability and scheduling
   const reportTemplate = readRequiredMarkdown('templates/project-qa-report.md', testId);
   const combined = `${capabilityReference}\n${schedulingReference}\n${projectRunContract}\n${usingProjectQa}\n${projectPlan}\n${executeSkill}\n${reportTemplate}`;
 
-  assert.equal(requiredProductFiles.length, 27, `${testId}: physical product file count should be 27 through M6 plus the Phase 1 Planner contract`);
+  assert.equal(requiredProductFiles.length, 29, `${testId}: physical product file count should be 29 through M6 plus the Phase 1 Planner contract, the Phase 3 context skill and shared planning-inputs reference`);
 
   const requiredPatterns = [
     [/bounded\s+static\s+capability\s+evidence/i, 'bounded static capability evidence'],
@@ -531,6 +537,40 @@ test('P2-M6-STRUCT-001 exposes exactly the declared M6 capability and scheduling
     [/distinct\s+safe\s+result\s+paths[\s\S]{0,120}artifact\s+paths[\s\S]{0,180}Duplicate[\s\S]{0,120}unsafe\s+paths/i, 'separate safe result and artifact paths'],
     [/Scheduling\s+records\s+are\s+Planning\s+state[\s\S]{0,120}do\s+not\s+authorize\s+commands/i, 'schedule not authorization'],
     [/broad\s+or\s+unbounded\s+discovery[\s\S]{0,180}automatic\s+dependency\s+handling[\s\S]{0,220}network[\s\S]{0,160}production[\s\S]{0,160}destructive[\s\S]{0,160}M7\s+docs[\s\S]{0,160}deferred\s+or\s+forbidden/i, 'deferred forbidden scope'],
+  ];
+
+  for (const [pattern, label] of requiredPatterns) {
+    assert.match(combined, pattern, `${testId}: missing ${label}`);
+  }
+});
+
+test('P3-CONTEXT-001 exposes the shared planning-inputs reference and anchors bounded change-intent extraction', () => {
+  const testId = 'P3-CONTEXT-001';
+  const actualFiles = regularFilesUnder(packRoot);
+
+  for (const relativePath of phase3MinimalExtensionFiles) {
+    assert.ok(actualFiles.includes(relativePath), `${testId}: missing declared Phase 3 extension file ${relativePath}`);
+  }
+
+  const contextSkill = readRequiredMarkdown('project-qa-context/SKILL.md', testId);
+  const planningInputs = readRequiredMarkdown('references/qa_planning_inputs.md', testId);
+  const usingProjectQa = readRequiredMarkdown('using-project-qa/SKILL.md', testId);
+  const reportTemplate = readRequiredMarkdown('templates/project-qa-report.md', testId);
+  const combined = `${contextSkill}\n${planningInputs}\n${usingProjectQa}\n${reportTemplate}`;
+
+  const requiredPatterns = [
+    [/GitHub-only|GitHub\s+only/i, 'GitHub-only scope'],
+    [/explicit\s+refs?\s+only|explicit\s+references?\s+only/i, 'explicit refs only'],
+    [/no\s+search|do\s+not\s+search/i, 'no search'],
+    [/one-hop|one\s+hop/i, 'one-hop boundary'],
+    [/`?gh`?\s+preferred|`?gh`?\s+CLI/i, 'gh preferred'],
+    [/qa_planning_inputs/i, 'feeds qa_planning_inputs'],
+    [/planning_only|planning-only/i, 'planning-only use limit'],
+    [/never\s+PASS\s+evidence|not\s+PASS\s+evidence/i, 'never PASS evidence'],
+    [/provenance/i, 'requires provenance'],
+    [/no\s+provenance[\s\S]{0,120}discard|without\s+provenance[\s\S]{0,120}discard/i, 'no provenance discard'],
+    [/intent[\s\S]{0,120}acceptance_criteria[\s\S]{0,120}repro_steps[\s\S]{0,120}risk_hypothesis[\s\S]{0,120}contradiction[\s\S]{0,120}unusable_context/i, 'structured extraction categories'],
+    [/stated|intended/i, 'stated/intended phrasing'],
   ];
 
   for (const [pattern, label] of requiredPatterns) {

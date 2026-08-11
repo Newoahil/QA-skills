@@ -57,6 +57,7 @@ const maxTimeoutMs = 600000;
 const benchmarkOptInEnv = 'QA_SKILL_PHASE2_BENCHMARK_RUNS';
 const providerAuthEnvPattern = /^(?:CPA|ANTHROPIC|OPENAI|GEMINI|GOOGLE|OPENROUTER|AZURE_OPENAI|MISTRAL|COHERE)(?:_[A-Z0-9]+)*_(?:API_KEY|AUTH_TOKEN|TOKEN|KEY)$/;
 const redactionPattern = /(?:\b(?:TOKEN|PASSWORD|SECRET|API_KEY|AUTH)\b\s*[=:]\s*)[^\s"'`,;]+|Bearer\s+[A-Za-z0-9._~+\/-]+=*|(?:api[_-]?key|token|password|secret|auth)["']?\s*[:=]\s*["']?[^\s"'`,;}]+/gi;
+const githubCliConfigDirectoryName = 'GitHub CLI';
 
 function deepClone(value) {
   return JSON.parse(JSON.stringify(value));
@@ -289,6 +290,12 @@ export function buildBenchmarkOpenCodeEnv({ isolatedRoot, baseEnv = process.env,
   env.OPENCODE_DISABLE_EXTERNAL_SKILLS = '1';
   env.OPENCODE_DISABLE_CLAUDE_CODE_SKILLS = '1';
   env.OPENCODE_DISABLE_DEFAULT_PLUGINS = '1';
+  const hostGhConfigDir = typeof baseEnv.GH_CONFIG_DIR === 'string' && baseEnv.GH_CONFIG_DIR.length > 0
+    ? baseEnv.GH_CONFIG_DIR
+    : typeof baseEnv.APPDATA === 'string' && baseEnv.APPDATA.length > 0
+      ? path.join(baseEnv.APPDATA, githubCliConfigDirectoryName)
+      : null;
+  if (hostGhConfigDir && existsSync(hostGhConfigDir) && statSync(hostGhConfigDir).isDirectory()) env.GH_CONFIG_DIR = hostGhConfigDir;
   if (providerConfigPath) env.OPENCODE_CONFIG_CONTENT = selectedProviderConfigContent({ model, providerConfigPath });
   return env;
 }
@@ -436,7 +443,7 @@ export function buildArmPrompt({ manifest, pair, snapshot, armId, targetProjectP
     `Target project path: ${targetProjectPath}`,
   ].join('\n');
   const armInstruction = armId === 'skill'
-    ? 'Operational instruction: load and use using-project-qa with project-qa-plan, project-qa-execute, and project-qa-conclude for the Phase 2 project QA route available in this isolated project.'
+    ? 'Operational instruction: load and use using-project-qa with project-qa-context, project-qa-plan, project-qa-execute, and project-qa-conclude for the project QA route available in this isolated project. The prohibited-actions list still forbids broad network access, production services, dependency installation, credential requests, searches, and unrelated fetches; however, the skill arm has a narrow Phase 3 exception: project-qa-context may read the explicitly provided GitHub issue/PR/commit reference with the already-authenticated gh CLI, one hop only, to produce qa_planning_inputs for planning_only use. GitHub text is never Execution Evidence, Module Results, or PASS evidence.'
     : 'Operational instruction: do not load or use any project QA Skill; perform ordinary read-only project QA only.';
   const prompt = `${visibleScenarioText}\n\n${armInstruction}\nUse exactly one general QA subagent. Deliver exactly the child QA result with exactly one Overall Status line.`;
   return { prompt, request: pair.request, visibleScenarioText, skillLoaded: arm.skillLoaded };

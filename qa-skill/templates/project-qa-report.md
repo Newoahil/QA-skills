@@ -42,6 +42,18 @@
 | Authoritative Acceptance Criteria | Criterion:  Source or owner:  |
 | Unresolved Questions |  |
 
+## External Context (Not Evidence)
+
+`context_acquired: <yes/N/A>`. Present only when the current Diff, request, or report already names an explicit GitHub reference (Issue/PR/commit). No reference named means `N/A` and this section stays empty. This is bounded change-intent extraction: GitHub-only, explicit refs only, no search, one-hop, `gh` preferred. Each extracted item is a `qa_planning_inputs` record (planning-only contract).
+
+| Planning input ID | Reference | Claim type | Claim (stated/intended) | Provenance | Confidence | Use limit | Availability |
+|---|---|---|---|---|---|---|---|
+| <planning-input-id> | <reference id or URL> | intent / acceptance_criteria / repro_steps / risk_hypothesis / contradiction / unusable_context | <short stated/intended summary of what it says> | <exact reference identifier/URL> | high / medium / low | planning_only | Read / Unavailable: <reason> |
+
+Contradictions and no-useful-context references are recorded visibly here (claim type `contradiction` or `unusable_context`) so the human can see a reference was read but yielded no useful QA context or exposed a conflict. Every nontrivial claim requires provenance; a claim without provenance is discarded.
+
+This section is Planning state only. It never supports PASS, is never Module Results or Execution Evidence, and does not persist beyond this run.
+
 ## Scope and Non-goals
 
 | Field | Record |
