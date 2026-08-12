@@ -271,7 +271,11 @@ node "<skill>/tools/match-memory.mjs" --index "<.qa/memory/index.yaml>" --diff "
 node "<skill>/tools/match-memory.mjs" --index "<.qa/memory/index.yaml>" --base "<ref>" --head "<ref>" [--repo "<dir>"] --json
 ```
 
-`change-surface.json` is `{ "paths": [...], "symbols": [...], "keywords": [...] }`. In `--diff`/`--base`/`--head` modes the tool derives that surface from the unified diff: `paths` from file headers, `symbols`/`keywords` from added/removed identifiers and path segments. The git range mode only ever runs read-only `git diff` with validated refs (allowlisted characters, never starting with `-`), never a write or checkout. The tool is planning-only: it never runs product code, never marks anything `PASS`, exits `0` on a successful match pass (even with zero matches), `1` on an invalid index, and `2` on usage/IO/unsafe-ref errors. When Node or git is unavailable, perform the same derive/match/apply/generate steps manually; do not install anything.
+`change-surface.json` is `{ "paths": [...], "symbols": [...], "keywords": [...] }`. In `--diff`/`--base`/`--head` modes the tool derives that surface from the unified diff: `paths` from file headers, `symbols`/`keywords` from added/removed identifiers and path segments. The git range mode only ever runs read-only `git diff` with validated refs (allowlisted characters, never starting with `-`), never a write or checkout.
+
+The referenced `rules/`/`patterns/` cards are read by default from the memory root (the directory that contains `index.yaml`) using the same path-safety rules: only safe relative paths under the root, only `rules/*` for rules and `patterns/*` for patterns, `rejected/` never opened, and any `..`/absolute/drive/UNC path skipped. Missing or malformed card files never crash; they are surfaced as review items. So a real invocation like `--base main --head HEAD` needs no extra plumbing to produce matches.
+
+The tool is planning-only: it never runs product code, never marks anything `PASS`, exits `0` on a successful match pass (even with zero matches), `1` on an invalid index, and `2` on usage/IO/unsafe-ref errors. When Node or git is unavailable, perform the same derive/match/apply/generate steps manually; do not install anything.
 
 ### Match Safety
 

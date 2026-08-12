@@ -555,6 +555,42 @@ function defaultRunGit(args, repo) {
   return run.stdout ?? '';
 }
 
+// Default card loader: for each index item with a safe relative path, read and parse the
+// card file from the memory root (the directory that contains index.yaml). Unsafe paths,
+// missing files, and parse errors do not throw; they yield a card marked `__parseError`
+// (or are skipped), so matchMemory surfaces them as review items rather than crashing.
+export function defaultReadCardsForIndex(indexValue, indexPath, io = {}) {
+  const readFile = io.readTextFile ?? readTextFile;
+  const memoryRoot = dirname(resolve(indexPath));
+  const cards = new Map();
+  const items = Array.isArray(indexValue?.items) ? indexValue.items : [];
+  for (const item of items) {
+    if (!isRecord(item)) continue;
+    const { id, type, path: itemPath } = item;
+    if (!isNonEmptyString(id) || !isNonEmptyString(itemPath)) continue;
+    if (type === 'rejected') continue; // rejected items are never opened for planning
+    if (!isSafeRelativeMemoryPath(itemPath) || !pathAllowedForType(itemPath, type)) continue;
+    const absolutePath = resolve(memoryRoot, itemPath);
+    const relativeToRoot = absolutePath.slice(memoryRoot.length);
+    // Defense in depth: the resolved path must stay under the memory root.
+    if (!absolutePath.startsWith(memoryRoot) || relativeToRoot.includes('..')) continue;
+    let text;
+    try {
+      text = readFile(absolutePath);
+    } catch {
+      cards.set(id, { __parseError: true });
+      continue;
+    }
+    const parsed = parseMemoryYaml(text, []);
+    if (!parsed.ok || !isRecord(parsed.value)) {
+      cards.set(id, { __parseError: true });
+      continue;
+    }
+    cards.set(id, parsed.value);
+  }
+  return cards;
+}
+
 export function cli(argv, io = {}) {
   const readFile = io.readTextFile ?? readTextFile;
   const readCardsForIndex = io.readCardsForIndex;
@@ -655,13 +691,14 @@ export function cli(argv, io = {}) {
     return { status: 2, stdout: '', stderr: `Invalid change surface: ${surfaceDiagnostics.map((d) => `${d.location} ${d.code}: ${d.message}`).join('; ')}\n` };
   }
 
-  // Load referenced cards. In production the caller supplies a reader rooted at .qa/memory;
-  // tests inject readCardsForIndex. Without a reader, only index-level review items are produced.
+  // Load referenced cards. Tests may inject readCardsForIndex; otherwise the default loader
+  // reads and parses card files from the memory root (dirname of index.yaml) using the same
+  // path-safety rules. Unsafe/missing/malformed cards become review items, never crashes.
   const cardsById = new Map();
-  if (typeof readCardsForIndex === 'function') {
-    const loaded = readCardsForIndex(indexParse.value);
-    for (const [id, card] of loaded) cardsById.set(id, card);
-  }
+  const loaded = typeof readCardsForIndex === 'function'
+    ? readCardsForIndex(indexParse.value)
+    : defaultReadCardsForIndex(indexParse.value, parsed.values.index, io);
+  for (const [id, card] of loaded) cardsById.set(id, card);
 
   const result = matchMemory(indexParse.value, cardsById, normalized.surface);
   if (parsed.values.json) {

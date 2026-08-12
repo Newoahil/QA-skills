@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -10,7 +10,7 @@ const repositoryRoot = path.dirname(path.dirname(import.meta.dirname));
 const toolPath = path.join(repositoryRoot, 'qa-skill', 'tools', 'match-memory.mjs');
 const toolUrl = pathToFileURL(toolPath).href;
 
-const { parseMemoryYaml, normalizeChangeSurface, matchMemory, cli, parseGitDiffToChangeSurface } = await import(toolUrl);
+const { parseMemoryYaml, normalizeChangeSurface, matchMemory, cli, parseGitDiffToChangeSurface, defaultReadCardsForIndex } = await import(toolUrl);
 
 function tempDir(prefix) {
   return mkdtempSync(path.join(tmpdir(), prefix));
@@ -18,6 +18,7 @@ function tempDir(prefix) {
 
 function writeFile(root, name, content) {
   const filePath = path.join(root, name);
+  mkdirSync(path.dirname(filePath), { recursive: true });
   writeFileSync(filePath, content);
   return filePath;
 }
@@ -272,4 +273,87 @@ test('MM-VCS-015 rejects unsafe git refs and mutually exclusive change sources',
   const none = cli(['--index', 'index.yaml', '--json'], io);
   assert.equal(none.status, 2);
   assert.match(none.stderr, /exactly one change source/);
+});
+
+const orderCardYaml = `id: rule-order-cache-001
+type: rule
+match:
+  paths:
+    - "src/order/**"
+    - "src/cache/**"
+  symbols:
+    - order_status
+  keywords:
+    - cache
+applies_when:
+  - change may modify order status persistence
+do_not_apply_when:
+  - change is docs-only
+checks:
+  must:
+    - re-read order status after update returns the new value
+  should:
+    - concurrent update does not leave a stale cached status
+confidence: high
+`;
+
+test('MM-LOAD-016 defaultReadCardsForIndex reads and parses safe card files from the memory root', () => {
+  const root = tempDir('mm-load-');
+  try {
+    const indexPath = writeFile(root, 'index.yaml', indexYaml);
+    writeFile(path.join(root, 'rules'), 'order.yaml', orderCardYaml);
+    // rule-stale-001 references rules/stale.yaml which does not exist -> parse-error card.
+    const index = parseMemoryYaml(indexYaml).value;
+    const cards = defaultReadCardsForIndex(index, indexPath);
+    assert.ok(cards.has('rule-order-cache-001'));
+    assert.equal(cards.get('rule-order-cache-001').id, 'rule-order-cache-001');
+    assert.deepEqual(cards.get('rule-order-cache-001').checks.must, ['re-read order status after update returns the new value']);
+    assert.ok(cards.has('rule-stale-001'));
+    assert.equal(cards.get('rule-stale-001').__parseError, true);
+    // rejected items are never opened for planning
+    assert.ok(!cards.has('rejected-001'));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('MM-LOAD-017 default loader skips unsafe/mismatched index paths without reading them', () => {
+  const root = tempDir('mm-load-unsafe-');
+  try {
+    const unsafeIndex = `items:
+  - id: trav
+    type: rule
+    review_status: current
+    path: ../escape.yaml
+  - id: wrongdir
+    type: rule
+    review_status: current
+    path: patterns/x.yaml
+`;
+    const indexPath = writeFile(root, 'index.yaml', unsafeIndex);
+    const index = parseMemoryYaml(unsafeIndex).value;
+    const cards = defaultReadCardsForIndex(index, indexPath);
+    // traversal path is rejected outright (never loaded); wrong-dir path is not allowed for type rule.
+    assert.ok(!cards.has('trav'));
+    assert.ok(!cards.has('wrongdir'));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('MM-LOAD-018 real spawn end-to-end: derives surface from diff and matches a disk card without injection', () => {
+  const root = tempDir('mm-e2e-');
+  try {
+    const indexPath = writeFile(root, 'index.yaml', `items:\n  - id: rule-order-cache-001\n    type: rule\n    review_status: current\n    path: rules/order.yaml\n`);
+    writeFile(path.join(root, 'rules'), 'order.yaml', orderCardYaml);
+    const diffPath = writeFile(root, 'change.diff', sampleDiff);
+    const run = spawnSync(process.execPath, [toolPath, '--index', indexPath, '--diff', diffPath, '--json'], { encoding: 'utf8' });
+    assert.equal(run.status, 0, run.stderr);
+    const payload = JSON.parse(run.stdout);
+    assert.equal(payload.valid, true);
+    assert.ok(payload.qa_planning_inputs.some((i) => i.claim_type === 'memory_regression_check'), `expected a memory_regression_check, got ${run.stdout}`);
+    assert.ok(payload.qa_planning_inputs.every((i) => i.use_limit === 'planning_only'));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });

@@ -796,6 +796,9 @@ test('P4-MEMORY-004 ships the executable memory matcher wired into the closed lo
     [/--diff|--base|--head/i, 'supports diff/base/head change-surface modes'],
     [/looksLikeGitRef|Unsafe\s+git\s+ref/i, 'validates git refs before running git'],
     [/git\s+diff|['"]diff['"]/i, 'derives surface from git diff read-only'],
+    [/export function defaultReadCardsForIndex/i, 'default disk card loader'],
+    [/memoryRoot\s*=\s*dirname\(resolve\(indexPath\)\)/i, 'card loader roots at dirname(index)'],
+    [/__parseError/i, 'malformed cards become review items not crashes'],
   ];
   for (const [pattern, label] of toolPatterns) {
     assert.match(tool, pattern, `${testId}: match-memory.mjs missing ${label}`);
