@@ -29,9 +29,14 @@
 
 | Field | Record |
 |---|---|
-| Project-local storage eligibility | `.qa/runs/<run_id>/` allowed only when ignored/local-excluded without tracked-file changes. |
-| Selected storage | Project-local ignored storage / host-owned external storage. |
-| Fallback reason | If project-local storage is not proven safe, host-external storage is mandatory. |
+| Project-local `.qa/` eligibility | `.qa/` used only when it already exists, is already ignored/local-excluded, or the user explicitly authorizes creating it, gitignoring/local-excluding it, and persisting memory. No silent repository pollution. |
+| `.qa/` authorization | External default / already exists / already ignored-local-excluded / user authorized. |
+| Workspace mode | External storage default / project-local `.qa/` / shared curated memory (explicit team choice). |
+| Gitignore / local-exclude state | `.qa/` ignored or local-excluded without tracked-file changes: yes/no/reason. |
+| Selected storage | Project-local ignored `.qa/` storage / host-owned external storage. |
+| Fallback reason | If project-local `.qa/` is not proven safe or authorized, host-external storage is mandatory. |
+
+`.qa/` content is planning/history only, never PASS evidence. `.qa/runs/<run_id>/` is allowed only when the path is already ignored or local-excluded and can be used without tracked-file changes. See [`../references/project-qa-workspace.md`](../references/project-qa-workspace.md).
 
 ## Project Intake
 
@@ -53,6 +58,16 @@
 Contradictions and no-useful-context references are recorded visibly here (claim type `contradiction` or `unusable_context`) so the human can see a reference was read but yielded no useful QA context or exposed a conflict. Every nontrivial claim requires provenance; a claim without provenance is discarded.
 
 This section is Planning state only. It never supports PASS, is never Module Results or Execution Evidence, and does not persist beyond this run.
+
+## Reusable Learning / Memory
+
+Memory is a planning hint only, emitted as `qa_planning_inputs` records. It never supports PASS, is never Module Results or Execution Evidence, and is never written from GitHub/external context alone. It stores human-validated project QA rules and reusable failure patterns, not chat/user-said memory. Only current execution evidence plus explicit human approval can support a memory write, generic memory is rejected, retrieval is capped at 0–3 indexed items, and `feedback/` is raw provenance that must not directly drive planning. Persistent memory targets `.qa/memory` only when the `.qa/` workspace is authorized; otherwise it is report-only/external.
+
+The `.qa/memory/` store uses `index.yaml` as the only retrieval source of truth (do not recursively scan), with `rules/` (approved Quality Rules that can generate Must/Should checks), `patterns/` (reusable failure patterns, mainly risk/Should checks), `feedback/` (raw human provenance, not directly driving planning), and `rejected/` (rejected/stale/inapplicable candidates, never applied). Retrieval opens at most 0–3 relevant `current` indexed items per run, matched by scope/trigger. Memory can create QA plan checks but can never support `PASS`; current evidence decides `PASS`/`FAIL`. This table is a summary of each item; the persisted item file is the durable record.
+
+| Memory ID | Type | Durable learning | Provenance (evidence basis + feedback ref) | Confidence | Use limit | Confirmation | Review status | Persistence target |
+|---|---|---|---|---|---|---|---|---|
+| <memory-id> | rule / pattern / rejected | <reusable project QA rule or failure pattern; never generic> | <current execution evidence IDs + feedback/QA-<n>.md ref; never GitHub/external context alone> | high / medium / low | planning_only | <user confirmed / pending / declined> | current / stale / under_review | `.qa/memory` / report-only / external |
 
 ## Scope and Non-goals
 

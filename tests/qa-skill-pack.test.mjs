@@ -10,6 +10,10 @@ const testFile = fileURLToPath(import.meta.url);
 const repositoryRoot = path.dirname(path.dirname(testFile));
 const packRoot = path.join(repositoryRoot, 'qa-skill');
 
+const rootRouterFiles = Object.freeze([
+  'SKILL.md',
+]);
+
 const phase1SkillNames = ['using-qa', 'qa-plan', 'qa-execute', 'qa-conclude'];
 const phase2M1SkillNames = ['using-project-qa'];
 const phase2M2SkillNames = ['project-qa-plan'];
@@ -80,10 +84,17 @@ const phase3MinimalExtensionFiles = Object.freeze([
   'references/qa_planning_inputs.md',
 ]);
 
+const phase4MinimalExtensionFiles = Object.freeze([
+  'project-qa-memory/SKILL.md',
+  'references/project-qa-workspace.md',
+  'tools/match-memory.mjs',
+]);
+
 const requiredProductFiles = Object.freeze([
   ...phase1CoreFiles,
   ...phase2ExtensionFiles,
   ...phase3MinimalExtensionFiles,
+  ...phase4MinimalExtensionFiles,
 ]);
 
 const qaLiteFiles = Object.freeze([
@@ -93,9 +104,16 @@ const qaLiteFiles = Object.freeze([
   'templates/qa-lite-report.md',
 ]);
 
+const beginnerSignoffFiles = Object.freeze([
+  'references/qa-starter-flow.md',
+  'templates/qa-signoff.md',
+]);
+
 const requiredAllProductFiles = Object.freeze([
+  ...rootRouterFiles,
   ...requiredProductFiles,
   ...qaLiteFiles,
+  ...beginnerSignoffFiles,
 ]);
 
 const requiredSkillFiles = requiredSkillNames.map((skillName) => `${skillName}/SKILL.md`);
@@ -378,8 +396,77 @@ test('P1-STRUCT-001 exposes exactly the required QA skill pack files', () => {
   assert.deepEqual(
     actualFiles,
     [...requiredAllProductFiles].sort((left, right) => left.localeCompare(right)),
-    `${testId}: qa-skill must contain exactly the Phase 1 core, Phase 2 M1-M6 files, and the additive QA-Lite files, with no extras`,
+    `${testId}: qa-skill must contain exactly the root router, Phase 1 core, Phase 2 M1-M6 files, Phase 3/4 extension files, and the additive QA-Lite files, with no extras`,
   );
+});
+
+test('P0-ROUTER-001 exposes a root QA skill router that selects Diff QA vs Project QA', () => {
+  const testId = 'P0-ROUTER-001';
+  const rootRouter = readRequiredMarkdown('SKILL.md', testId);
+
+  const requiredPatterns = [
+    [/name:\s*qa-skill/i, 'root skill frontmatter name'],
+    [/entry\s+router\s+only|root\s+skill\s+router/i, 'router only boundary'],
+    [/whole-project\s+QA[\s\S]{0,180}using-project-qa/i, 'whole-project QA routes to using-project-qa'],
+    [/(?:Single\s+)?Diff[\s\S]{0,120}requirement[\s\S]{0,120}fix[\s\S]{0,180}using-qa/i, 'bounded Diff/requirement/fix routes to using-qa'],
+    [/Ambiguous\s+scope[\s\S]{0,160}clarification/i, 'ambiguous scope asks clarification'],
+    [/qa-lite[\s\S]{0,120}not\s+a\s+top-level\s+route/i, 'qa-lite is not top-level'],
+    [/Never\s+call[\s\S]{0,80}qa-lite[\s\S]{0,80}directly/i, 'do not call qa-lite directly'],
+    [/selected\s+only\s+by[\s\S]{0,80}qa-triage/i, 'qa-lite selected by qa-triage only'],
+    [/Project\s+QA[\s\S]{0,120}never\s+uses\s+`?qa-lite`?/i, 'Project QA never uses Lite'],
+    [/using-project-qa[\s\S]{0,80}project-qa-plan[\s\S]{0,80}project-qa-execute[\s\S]{0,80}project-qa-conclude/i, 'Project QA core path'],
+    [/project-qa-context[\s\S]{0,120}GitHub[\s\S]{0,120}qa_planning_inputs[\s\S]{0,80}No/i, 'context optional planning-only module'],
+    [/project-qa-memory[\s\S]{0,120}\.qa\/memory\/index\.yaml[\s\S]{0,120}qa_planning_inputs[\s\S]{0,80}No/i, 'memory optional planning-only module'],
+    [/Planning\s+inputs[\s\S]{0,160}never\s+PASS\s+evidence/i, 'planning inputs never PASS evidence'],
+    [/PASS[\s\S]{0,80}FAIL[\s\S]{0,80}BLOCKED[\s\S]{0,80}NEEDS_HUMAN_REVIEW/i, 'canonical statuses'],
+  ];
+
+  for (const [pattern, label] of requiredPatterns) {
+    assert.match(rootRouter, pattern, `${testId}: missing ${label}`);
+  }
+});
+
+test('P0-STARTER-002 exposes a beginner starter flow and one-page sign-off wired from the router and Diff entry', () => {
+  const testId = 'P0-STARTER-002';
+  const actualFiles = regularFilesUnder(packRoot);
+
+  for (const relativePath of beginnerSignoffFiles) {
+    assert.ok(actualFiles.includes(relativePath), `${testId}: missing beginner/sign-off file ${relativePath}`);
+  }
+
+  const starterFlow = readRequiredMarkdown('references/qa-starter-flow.md', testId);
+  const signoff = readRequiredMarkdown('templates/qa-signoff.md', testId);
+  const rootRouter = readRequiredMarkdown('SKILL.md', testId);
+  const usingQa = readRequiredMarkdown('using-qa/SKILL.md', testId);
+
+  const starterPatterns = [
+    [/\*\*Scope\*\*[\s\S]{0,400}\*\*Risk\*\*[\s\S]{0,400}\*\*Checks\*\*[\s\S]{0,400}\*\*Evidence\*\*[\s\S]{0,400}\*\*Verdict\*\*/i, '5-step starter flow'],
+    [/No\s+evidence,?\s+no\s+PASS/i, 'no evidence no PASS'],
+    [/read-only/i, 'read-only rule'],
+    [/BLOCKED\s+is\s+not\s+FAIL/i, 'blocked is not fail'],
+    [/PASS[\s\S]{0,60}FAIL[\s\S]{0,60}BLOCKED[\s\S]{0,60}NEEDS_HUMAN_REVIEW/i, 'four statuses'],
+    [/escalate\s+to\s+Full|graduate\s+to\s+Full|Full\s+QA/i, 'escalate to Full'],
+  ];
+  for (const [pattern, label] of starterPatterns) {
+    assert.match(starterFlow, pattern, `${testId}: starter flow missing ${label}`);
+  }
+
+  const signoffPatterns = [
+    [/one[\s-]page/i, 'one-page framing'],
+    [/Tested\s+vs\s+Not\s+Tested|Tested\?/i, 'tested vs not tested section'],
+    [/Residual\s+Risk/i, 'residual risk section'],
+    [/Recommendation[\s\S]{0,80}Not\s+A\s+Decision|recommendation\s+only/i, 'recommendation not a release decision'],
+    [/never\s+invents?\s+a\s+verdict|mirrors\s+the\s+authoritative\s+report/i, 'mirrors authoritative report, no invented verdict'],
+    [/PASS[\s\S]{0,60}FAIL[\s\S]{0,60}BLOCKED[\s\S]{0,60}NEEDS_HUMAN_REVIEW/i, 'four statuses'],
+  ];
+  for (const [pattern, label] of signoffPatterns) {
+    assert.match(signoff, pattern, `${testId}: sign-off missing ${label}`);
+  }
+
+  assert.match(rootRouter, /qa-starter-flow\.md/i, `${testId}: router must link the starter flow`);
+  assert.match(rootRouter, /qa-signoff\.md/i, `${testId}: router must link the sign-off template`);
+  assert.match(usingQa, /qa-starter-flow\.md/i, `${testId}: using-qa must link the starter flow`);
+  assert.match(usingQa, /qa-signoff\.md/i, `${testId}: using-qa must link the sign-off template`);
 });
 
 test('P1-STRUCT-LITE-002 adds required QA-Lite artifacts to the same closed pack manifest', () => {
@@ -406,7 +493,7 @@ test('P2-M1-STRUCT-001 preserves the declared Phase 2 M1 extension files', () =>
 test('P2-M2-STRUCT-001 exposes exactly the declared Phase 2 extension files through M6', () => {
   const testId = 'P2-M2-STRUCT-001';
   const actualFiles = regularFilesUnder(packRoot);
-  const phase2Files = actualFiles.filter((relativePath) => !phase1CoreFiles.includes(relativePath) && !qaLiteFiles.includes(relativePath) && !phase3MinimalExtensionFiles.includes(relativePath));
+  const phase2Files = actualFiles.filter((relativePath) => !rootRouterFiles.includes(relativePath) && !phase1CoreFiles.includes(relativePath) && !qaLiteFiles.includes(relativePath) && !beginnerSignoffFiles.includes(relativePath) && !phase3MinimalExtensionFiles.includes(relativePath) && !phase4MinimalExtensionFiles.includes(relativePath));
 
   assert.deepEqual(
     phase2Files,
@@ -516,7 +603,7 @@ test('P2-M6-STRUCT-001 exposes exactly the declared M6 capability and scheduling
   const reportTemplate = readRequiredMarkdown('templates/project-qa-report.md', testId);
   const combined = `${capabilityReference}\n${schedulingReference}\n${projectRunContract}\n${usingProjectQa}\n${projectPlan}\n${executeSkill}\n${reportTemplate}`;
 
-  assert.equal(requiredProductFiles.length, 29, `${testId}: physical product file count should be 29 through M6 plus the Phase 1 Planner contract, the Phase 3 context skill and shared planning-inputs reference`);
+  assert.equal(requiredProductFiles.length, 32, `${testId}: physical product file count should be 32 through M6 plus the Phase 1 Planner contract, the Phase 3 context skill and shared planning-inputs reference, and the Phase 4 memory skill, workspace reference, and executable memory matcher tool`);
 
   const requiredPatterns = [
     [/bounded\s+static\s+capability\s+evidence/i, 'bounded static capability evidence'],
@@ -576,6 +663,150 @@ test('P3-CONTEXT-001 exposes the shared planning-inputs reference and anchors bo
   for (const [pattern, label] of requiredPatterns) {
     assert.match(combined, pattern, `${testId}: missing ${label}`);
   }
+});
+
+test('P4-MEMORY-001 exposes the minimal Phase 4 memory skill and anchors planning-hint-only semantics', () => {
+  const testId = 'P4-MEMORY-001';
+  const actualFiles = regularFilesUnder(packRoot);
+
+  for (const relativePath of phase4MinimalExtensionFiles) {
+    assert.ok(actualFiles.includes(relativePath), `${testId}: missing declared Phase 4 memory extension file ${relativePath}`);
+  }
+
+  const memorySkill = readRequiredMarkdown('project-qa-memory/SKILL.md', testId);
+  const usingProjectQa = readRequiredMarkdown('using-project-qa/SKILL.md', testId);
+  const reportTemplate = readRequiredMarkdown('templates/project-qa-report.md', testId);
+  const planningInputs = readRequiredMarkdown('references/qa_planning_inputs.md', testId);
+  const workspaceReference = readRequiredMarkdown('references/project-qa-workspace.md', testId);
+  const combined = `${memorySkill}\n${usingProjectQa}\n${reportTemplate}\n${planningInputs}\n${workspaceReference}`;
+
+  const requiredPatterns = [
+    [/planning\s+hint\s+only/i, 'memory is a planning hint only'],
+    [/never\s+PASS\s+evidence|not\s+PASS\s+evidence/i, 'memory is never PASS evidence'],
+    [/only\s+current\s+execution\s+evidence[\s\S]{0,220}(?:support|write)[\s\S]{0,160}memory/i, 'only execution evidence supports memory writes'],
+    [/GitHub\s+external\s+context\s+alone[\s\S]{0,220}(?:never|not)[\s\S]{0,160}memory\s+evidence/i, 'GitHub external context alone is never memory evidence'],
+    [/explicit\s+human\s+approval|explicit\s+user\s+confirmation/i, 'default memory write requires human approval'],
+    [/Reusable\s+Learning\s*\/\s*Memory/i, 'report exposes a Reusable Learning / Memory section'],
+    [/Approved\s+Memory\s+Structure/i, 'approved memory structure section'],
+    [/Admission\s*\/\s*Write\s+Gate|admission\s+checklist|Admission\s+Checklist/i, 'memory admission/write gate'],
+    [/retrieval\s+rules|Retrieval\s+Rules/i, 'memory retrieval rules'],
+    [/staleness|stale|under_review/i, 'staleness and review policy'],
+    [/reject\s+generic\s+memory|generic\s+memory/i, 'reject generic memory'],
+    [/scope\/trigger|scope[\s\S]{0,80}trigger/i, 'scope/trigger based retrieval'],
+    [/evidence-backed[\s\S]{0,160}(?:human-approved|human\s+approval|user-confirmed)|(?:human-approved|human\s+approval|user-confirmed)[\s\S]{0,160}evidence-backed/i, 'evidence-backed human-approved writes'],
+    [/qa_planning_inputs/i, 'memory feeds qa_planning_inputs'],
+    [/planning_only|planning-only/i, 'planning-only use limit'],
+    [/\.qa\/\s*opt-in|opt-in|local-first/i, '.qa opt-in local-first policy'],
+    [/decision\s+order|priority\s+order/i, 'workspace decision order'],
+    [/gitignored|local-excluded|local-exclude/i, 'gitignore/local-exclude policy'],
+    [/no\s+silent|silent\s+(?:repository\s+)?pollution|do\s+not\s+silently/i, 'no silent creation'],
+    [/host\s+(?:-|–)?owned\s+external\s+storage[\s\S]{0,120}default|external\s+storage\s+default/i, 'host external fallback default'],
+    [/planning\/history\s+only|planning\/history|planning\s+or\s+history\s+only/i, 'planning/history only'],
+    [/memory\/index\.yaml[\s\S]{0,160}memory\/rules\/[\s\S]{0,160}memory\/patterns\/[\s\S]{0,160}memory\/feedback\/[\s\S]{0,160}memory\/rejected\//i, 'workspace memory layout paths'],
+    [/user\s+(?:explicitly\s+)?authoriz|explicit\s+user\s+authorization/i, 'user authorization for creation/gitignore/persistent memory'],
+    [/\.qa\/memory/i, 'preferred durable memory location .qa/memory'],
+  ];
+
+  for (const [pattern, label] of requiredPatterns) {
+    assert.match(combined, pattern, `${testId}: missing ${label}`);
+  }
+});
+
+test('P4-MEMORY-002 anchors the lightweight memory folders, templates, index source of truth, and 0-3 retrieval cap', () => {
+  const testId = 'P4-MEMORY-002';
+  const memorySkill = readRequiredMarkdown('project-qa-memory/SKILL.md', testId);
+  const workspaceReference = readRequiredMarkdown('references/project-qa-workspace.md', testId);
+  const reportTemplate = readRequiredMarkdown('templates/project-qa-report.md', testId);
+  const combined = `${memorySkill}\n${workspaceReference}\n${reportTemplate}`;
+
+  const requiredPatterns = [
+    [/\.qa\/memory\/[\s\S]{0,160}index\.yaml[\s\S]{0,160}rules\/[\s\S]{0,160}patterns\/[\s\S]{0,160}feedback\/[\s\S]{0,160}rejected\//i, 'approved folder architecture'],
+    [/rules\/<module>\.yaml|rules\/order\.yaml/i, 'rule card template path'],
+    [/patterns\/<pattern>\.yaml|patterns\/cache-inconsistency\.yaml/i, 'pattern card template path'],
+    [/feedback\/QA-001\.md/i, 'raw human feedback template path'],
+    [/rejected\/rejected-rules\.yaml/i, 'rejected candidate template path'],
+    [/id[\s\S]{0,80}type[\s\S]{0,80}scope[\s\S]{0,80}trigger[\s\S]{0,80}rule[\s\S]{0,80}checks[\s\S]{0,80}source[\s\S]{0,80}confidence[\s\S]{0,80}last_verified_at[\s\S]{0,80}times_applied[\s\S]{0,80}times_confirmed/i, 'lightweight rule card fields'],
+    [/feedback\/[\s\S]{0,120}raw\s+provenance[\s\S]{0,160}(?:must\s+not|not)\s+directly\s+drive\s+(?:QA\s+)?planning/i, 'feedback is raw provenance not planning input'],
+    [/QA\s*->[\s\S]{0,80}find\s+issue[\s\S]{0,80}human\s+feedback[\s\S]{0,80}feedback\/QA-001\.md[\s\S]{0,120}human\s+approval[\s\S]{0,80}rules\/order\.yaml[\s\S]{0,80}index\.yaml[\s\S]{0,80}next\s+QA\s+retrieval/i, 'approved feedback-to-rule workflow'],
+    [/index\.yaml[\s\S]{0,220}source\s+of\s+truth/i, 'index.yaml is source of truth'],
+    [/opened\s+only\s+when[\s\S]{0,120}referenced\s+by\s+`?index\.yaml`?/i, 'items opened only when referenced by index.yaml'],
+    [/at\s+most\s+3|max(?:imum)?\s+0[\s-]?3|0[\s-]?3\s+entries|cap(?:ped)?\s+at\s+0[\s-]?3/i, '0-3 retrieval cap'],
+    [/scope\/trigger|scope[\s\S]{0,80}trigger/i, 'scope/trigger matching'],
+    [/stale[\s\S]{0,120}under_review[\s\S]{0,120}surface[\s\S]{0,120}review/i, 'stale/under_review skipped for planning and surfaced for review'],
+    [/more\s+than\s+3|top\s+3|remaining[\s\S]{0,120}surface[\s\S]{0,120}review/i, '>3 relevant entries select top 3 and surface rest'],
+    [/dangling[\s\S]{0,120}mismatch[\s\S]{0,120}unsafe[\s\S]{0,120}(?:review\s+items?[\s\S]{0,120}not\s+crashes?|surfaced\s+for\s+review[\s\S]{0,120}does\s+not\s+stop\s+planning)/i, 'dangling/mismatch/unsafe IDs are review items not crashes'],
+    [/no\s+benchmark\s+seed|benchmark\s+seed|no\s+auto[\s-]?memory|auto[\s-]?written/i, 'no benchmark seed auto-memory'],
+  ];
+
+  for (const [pattern, label] of requiredPatterns) {
+    assert.match(combined, pattern, `${testId}: missing ${label}`);
+  }
+});
+
+test('P4-MEMORY-003 anchors the feedback->rule->match->regression-check closed loop', () => {
+  const testId = 'P4-MEMORY-003';
+  const memorySkill = readRequiredMarkdown('project-qa-memory/SKILL.md', testId);
+  const planningInputs = readRequiredMarkdown('references/qa_planning_inputs.md', testId);
+  const projectPlan = readRequiredMarkdown('project-qa-plan/SKILL.md', testId);
+
+  const memoryPatterns = [
+    [/Match\s+And\s+Regression-Check\s+Generation/i, 'closed-loop section'],
+    [/match:[\s\S]{0,200}paths:[\s\S]{0,200}symbols:[\s\S]{0,200}keywords:/i, 'rule match block with paths/symbols/keywords'],
+    [/applies_when[\s\S]{0,200}do_not_apply_when/i, 'applicability gate fields'],
+    [/checks:[\s\S]{0,120}must:[\s\S]{0,200}should:/i, 'typed must/should checks'],
+    [/changed\s+files\/paths[\s\S]{0,160}changed\s+symbols[\s\S]{0,160}touched\s+key\s+flows|change\s+surface/i, 'collects current change surface'],
+    [/memory_regression_check/i, 'emits memory_regression_check planning inputs'],
+    [/never\s+auto-?PASS|never\s+support[\s\S]{0,80}PASS\s+by\s+(?:itself|themselves)/i, 'generated checks never auto-PASS'],
+    [/Match\s+Safety[\s\S]{0,260}(?:\.\.|traversal)[\s\S]{0,200}(?:reject|surface)/i, 'match path safety rejects traversal/absolute'],
+    [/Counter\s+Update[\s\S]{0,260}times_applied[\s\S]{0,200}times_confirmed/i, 'counter update rules'],
+    [/Counter\s+Update[\s\S]{0,600}(?:human\s+approval|Admission\s*\/\s*Write\s+Gate)/i, 'counter updates require human approval'],
+  ];
+  for (const [pattern, label] of memoryPatterns) {
+    assert.match(memorySkill, pattern, `${testId}: memory skill missing ${label}`);
+  }
+
+  assert.match(planningInputs, /memory_regression_check/i, `${testId}: planning-inputs contract must define memory_regression_check`);
+  assert.match(planningInputs, /Memory\s+Rule\/Pattern\s+Mapping/i, `${testId}: planning-inputs contract must map memory rules to planning inputs`);
+  assert.match(planningInputs, /source_type[\s\S]{0,40}`?memory`?/i, `${testId}: memory mapping sets source_type memory`);
+
+  assert.match(projectPlan, /qa_planning_inputs/i, `${testId}: project-qa-plan must consume qa_planning_inputs`);
+  assert.match(projectPlan, /memory_regression_check[\s\S]{0,220}(?:adopt|Must\s+Verify|Should\s+Verify)/i, `${testId}: project-qa-plan must decide adoption of memory regression checks`);
+  assert.match(projectPlan, /never\s+satisfies\s+a\s+`?Must\s+Verify`?\s+item\s+by\s+itself|never\s+substitutes\s+for\s+current\s+execution\s+evidence/i, `${testId}: adopted memory check never substitutes for current evidence`);
+});
+
+test('P4-MEMORY-004 ships the executable memory matcher wired into the closed loop', () => {
+  const testId = 'P4-MEMORY-004';
+  const actualFiles = regularFilesUnder(packRoot);
+  assert.ok(actualFiles.includes('tools/match-memory.mjs'), `${testId}: missing tools/match-memory.mjs`);
+
+  const tool = readRequiredMarkdown('tools/match-memory.mjs', testId);
+  const memorySkill = readRequiredMarkdown('project-qa-memory/SKILL.md', testId);
+
+  const toolPatterns = [
+    [/index\.yaml/i, 'reads index.yaml'],
+    [/qa_planning_inputs/i, 'emits qa_planning_inputs'],
+    [/memory_regression_check/i, 'emits memory_regression_check'],
+    [/planning_only/i, 'planning_only use limit'],
+    [/isSafeRelativeMemoryPath|\.\.|traversal/i, 'path safety handling'],
+    [/RETRIEVAL_CAP\s*=\s*3|slice\(0,\s*RETRIEVAL_CAP\)/i, '0-3 retrieval cap'],
+    [/applies_when|do_not_apply_when/i, 'applicability gate fields'],
+    [/export function matchMemory/i, 'exports matchMemory for testing'],
+    [/export function cli/i, 'exports cli for testing'],
+  ];
+  for (const [pattern, label] of toolPatterns) {
+    assert.match(tool, pattern, `${testId}: match-memory.mjs missing ${label}`);
+  }
+
+  const forbidden = [
+    [/\bwriteFile(?:Sync)?\s*\(|\bappendFile(?:Sync)?\s*\(/i, 'file writes'],
+    [/\bfetch\s*\(|node:https?\b/i, 'network access'],
+  ];
+  for (const [pattern, label] of forbidden) {
+    assert.ok(!pattern.test(tool), `${testId}: match-memory.mjs must not perform ${label}`);
+  }
+
+  assert.match(memorySkill, /match-memory\.mjs/i, `${testId}: memory skill must reference the executable matcher`);
+  assert.match(memorySkill, /Executable\s+Matcher/i, `${testId}: memory skill must document the executable matcher`);
 });
 
 test('P1-FRONTMATTER-002 gives every skill matching minimal YAML metadata', () => {

@@ -18,16 +18,40 @@ QA-Lite 只适用于一个明确边界内的低风险需求、修复或 Diff，�
 
 这是流程方法和报告规范，不是测试框架、测试平台或自动发布系统。它不替代人工 QA，也不做最终验收或发布决定。
 
-## 六个 Skill / Profile Components
+## Skill 组成
+
+Skill Pack 目前有 14 个 `SKILL.md`：一个根路由 + Diff QA（Phase 1）+ Project QA（Phase 2）+ Project QA 的条件模块（Phase 3 context / Phase 4 memory）。
+
+### 根路由与 Diff QA（Phase 1）
 
 | Skill | 职责 |
 |---|---|
-| [`using-qa`](qa-skill/using-qa/SKILL.md) | 手动入口、角色边界、总流程、状态优先级和停止条件。 |
+| [`qa-skill`](qa-skill/SKILL.md) | 根路由：先判定整项目 QA 还是单 Diff QA，只路由不执行 QA。 |
+| [`using-qa`](qa-skill/using-qa/SKILL.md) | Diff QA 手动入口、角色边界、总流程、状态优先级和停止条件。 |
 | [`qa-triage`](qa-skill/qa-triage/SKILL.md) | 先判定 `Profile Decision: LITE` 还是 `Profile Decision: FULL`。 |
 | [`qa-lite`](qa-skill/qa-lite/SKILL.md) | 单边界低风险 QA-Lite 路径，保留只读、四状态和 exact relay 交付。 |
 | [`qa-plan`](qa-skill/qa-plan/SKILL.md) | Full 路线的计划、风险和 `QA Plan Gate`。 |
 | [`qa-execute`](qa-skill/qa-execute/SKILL.md) | 只执行已批准的计划，记录真实结果和证据，维护同一份报告。 |
 | [`qa-conclude`](qa-skill/qa-conclude/SKILL.md) | 对发现、未验证项、阻塞项和人工判断项分类，检查 Conclusion Gate，形成有边界的结论。 |
+
+### Project QA（Phase 2）与条件模块（Phase 3/4）
+
+| Skill | 职责 |
+|---|---|
+| [`using-project-qa`](qa-skill/using-project-qa/SKILL.md) | 显式整项目 QA 入口，串联 plan → execute → conclude 核心路线。 |
+| [`project-qa-plan`](qa-skill/project-qa-plan/SKILL.md) | 模块盘点、风险分类、关键流程与 Project QA Plan Gate。 |
+| [`project-qa-execute`](qa-skill/project-qa-execute/SKILL.md) | 只读模块执行、证据收集与项目调和。 |
+| [`project-qa-conclude`](qa-skill/project-qa-conclude/SKILL.md) | 项目级四状态调和、authority 与交付。 |
+| [`project-qa-repair`](qa-skill/project-qa-repair/SKILL.md) | 条件模块：显式授权下的隔离修复与生成验证子流程。 |
+| [`project-qa-context`](qa-skill/project-qa-context/SKILL.md) | 条件模块（Phase 3）：仅当显式 GitHub Issue/PR/commit 引用存在时的 planning-only 变更意图提取。 |
+| [`project-qa-memory`](qa-skill/project-qa-memory/SKILL.md) | 条件模块（Phase 4）：人工确认的项目质量记忆，planning-only，永不 PASS 证据。 |
+
+### 新手入口与一页交付
+
+| 文件 | 职责 |
+|---|---|
+| [`references/qa-starter-flow.md`](qa-skill/references/qa-starter-flow.md) | 无 QA 经验者的 5 步 on-ramp：Scope → Risk → Checks → Evidence → Verdict，保留只读/证据先行/四状态/人工门，风险升级即转 Full。 |
+| [`templates/qa-signoff.md`](qa-skill/templates/qa-signoff.md) | 一页式 QA sign-off，镜像权威报告、不自造结论、只是建议而非发布决定。 |
 
 ## 结构化 Planner 与 Validator
 
@@ -489,19 +513,20 @@ node "$skillSource\tools\validate-qa-plan.mjs" "$planPath" --json --require-conc
 
 Phase 2 project QA baseline 已存在，但它只是可复查的基线，不等于已批准的效果结论。
 
-Phase 3 和 Phase 4 仍是未来路线。
+Phase 3（`project-qa-context`）与 Phase 4（`project-qa-memory`）已作为 Project QA 的**条件模块**落地，但都是 planning-only、永不 PASS 证据：Phase 3 仅在显式 GitHub 引用存在时提取变更意图；Phase 4 是人工确认的项目质量记忆，并配套零依赖工具 [`tools/match-memory.mjs`](qa-skill/tools/match-memory.mjs)（读 `.qa/memory/index.yaml`，匹配变更面，输出 `qa_planning_inputs`）。它们的合同已有行为级测试覆盖，但同样没有已批准的真实模型 effectiveness 结论。
 
 Phase 1 的 Repository Preflight 保持为紧凑的行为级契约。literal pathspec、fsmonitor、OID、worktree topology 等详细 Git 命令配方是后续增强，不是当前最小契约的隐含要求。
 
 ## 路线边界
 
-以下阶段是路线图，Phase 3 和 Phase 4 仍未实现：
+各阶段的当前状态：
 
 - **Phase 2，项目、子系统或发布级 QA**：已具备 baseline 和 real-project benchmark 合同，但 approved effectiveness evidence 仍待补齐。QA-Lite 不会改写这条语义，它只是 Phase 1 的 triage-first 路由。
-- **Phase 3，主动获取项目上下文**：未来路线，从相关 Issue、PR、需求、事故或讨论中补足背景。
-- **Phase 4，人工治理的项目知识复用**：未来路线，经人批准后保存、复用、修正或撤销项目规则。
+- **Phase 3，主动获取项目上下文**：已作为条件模块 `project-qa-context` 落地，仅限显式 GitHub 引用、无搜索、one-hop、`gh` 优先，planning-only。
+- **Phase 4，人工治理的项目知识复用**：已作为条件模块 `project-qa-memory` 落地，经人批准后保存/复用/撤销项目规则，配套 `match-memory.mjs` 生成回归检查点；反馈与批准仍由人负责，工具永不 PASS。
+- 两者的合同均有行为级测试，但都尚无已批准的真实模型 effectiveness 结论。
 
-当前没有 CI/CD 集成、自动调度、持久化 QA Agent、多 Subagent QA 流水线、Dashboard、自动发布门禁、自动产品修复、自动测试生成、测试维护模式或自动 Issue/PR/Jira/项目记录检索。后续路线不改变当前的人工决策和证据边界。
+当前没有 CI/CD 集成、自动调度、持久化 QA Agent、多 Subagent QA 流水线、Dashboard、自动发布门禁、自动产品修复、自动测试生成、测试维护模式或自动 Issue/PR/Jira/项目记录检索。`match-memory.mjs` 目前需要调用方提供变更面（paths/symbols/keywords），尚未从 VCS diff 自动生成。后续路线不改变当前的人工决策和证据边界：没有证据就没有 PASS，外部上下文与记忆只影响计划，验收与发布决定始终由人负责。
 
 ## 设计参考
 

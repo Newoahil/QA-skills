@@ -7,6 +7,8 @@ description: Manual QA, acceptance, regression, requirement, fix, or Diff reques
 
 Use this skill only after a person manually asks the host agent to QA one requirement, fix, or Diff. The host agent loads this skill before taking QA action. It is a cross-harness workflow: use the host's available mechanism for continuation and subagent sessions without assuming a particular command, API, or task syntax. For shared matrix and profile rules, see [applicability rubric](../references/applicability-rubric.md) and [QA profiles](../references/qa-profiles.md).
 
+For a user new to QA on a small, clearly bounded change, [`../references/qa-starter-flow.md`](../references/qa-starter-flow.md) is a 5-step on-ramp (Scope -> Risk -> Checks -> Evidence -> Verdict) into this same workflow; it keeps read-only, evidence-first, four-status, and human-gate rules and escalates to Full when a high-risk category appears. A concise human digest of any completed run can be produced with [`../templates/qa-signoff.md`](../templates/qa-signoff.md); it mirrors the authoritative report and is a recommendation only, never a release decision.
+
 ## Roles
 
 - The main agent owns user communication, scope, targeted clarification, human escalation, report delivery, and the final handoff. It must not transfer those responsibilities to the QA subagent.
