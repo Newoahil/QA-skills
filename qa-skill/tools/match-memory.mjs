@@ -3,6 +3,7 @@
 // matches approved rule/pattern cards against the current change surface, applies the
 // applies_when / do_not_apply_when gate, and emits qa_planning_inputs records
 // (memory_regression_check / memory_historical_pattern). Planning-only: never PASS evidence.
+import { spawnSync } from 'node:child_process';
 import { lstatSync, readFileSync, statSync } from 'node:fs';
 import { dirname, isAbsolute, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -243,6 +244,92 @@ export function normalizeChangeSurface(raw, diagnostics = []) {
   return { surface, ok: true };
 }
 
+// --- VCS change surface derivation ------------------------------------------
+// Parse a unified `git diff` (or `git diff --name-only` list) into a change surface.
+// paths come from the changed file headers; symbols/keywords are derived heuristically
+// from added/removed lines and path segments so a rule's match block has something to hit.
+// This is read-only text parsing; it never executes anything by itself.
+
+const COMMON_STOP_WORDS = new Set([
+  'const', 'let', 'var', 'function', 'return', 'import', 'export', 'from', 'class',
+  'this', 'true', 'false', 'null', 'void', 'async', 'await', 'if', 'else', 'for',
+  'while', 'new', 'type', 'interface', 'public', 'private', 'static', 'def', 'self',
+]);
+
+function addSurfaceKeyword(set, token) {
+  if (typeof token !== 'string') return;
+  const trimmed = token.trim();
+  if (trimmed.length < 3 || trimmed.length > 60) return;
+  const lower = trimmed.toLowerCase();
+  if (COMMON_STOP_WORDS.has(lower)) return;
+  set.add(trimmed);
+}
+
+export function parseGitDiffToChangeSurface(diffText) {
+  const paths = new Set();
+  const symbols = new Set();
+  const keywords = new Set();
+  const lines = typeof diffText === 'string' ? diffText.split(/\r?\n/) : [];
+
+  const identifierPattern = /[A-Za-z_$][A-Za-z0-9_$]{2,}/g;
+
+  for (const rawLine of lines) {
+    const line = rawLine;
+    // `git diff` file headers: "diff --git a/x b/y", "+++ b/path", "--- a/path", or plain name-only lines.
+    let headerMatch = /^diff --git a\/(.+?) b\/(.+)$/.exec(line);
+    if (headerMatch) {
+      paths.add(headerMatch[1].replaceAll('\\', '/'));
+      paths.add(headerMatch[2].replaceAll('\\', '/'));
+      continue;
+    }
+    headerMatch = /^\+\+\+ (?:b\/)?(.+)$/.exec(line);
+    if (headerMatch && headerMatch[1] !== '/dev/null') {
+      paths.add(headerMatch[1].replaceAll('\\', '/'));
+      continue;
+    }
+    headerMatch = /^--- (?:a\/)?(.+)$/.exec(line);
+    if (headerMatch && headerMatch[1] !== '/dev/null') {
+      paths.add(headerMatch[1].replaceAll('\\', '/'));
+      continue;
+    }
+    if (line.startsWith('@@') || line.startsWith('index ') || line.startsWith('similarity ')
+      || line.startsWith('rename ') || line.startsWith('new file') || line.startsWith('deleted file')
+      || line.startsWith('old mode') || line.startsWith('new mode') || line.startsWith('Binary ')) {
+      continue;
+    }
+    // Content lines: added/removed. Ignore context to keep the surface focused on the change.
+    if ((line.startsWith('+') || line.startsWith('-')) && !line.startsWith('+++') && !line.startsWith('---')) {
+      const content = line.slice(1);
+      const matches = content.match(identifierPattern);
+      if (matches) {
+        for (const token of matches) {
+          symbols.add(token);
+          addSurfaceKeyword(keywords, token);
+        }
+      }
+      continue;
+    }
+    // A bare path list (`git diff --name-only`).
+    if (/^[^\s@+-].*\.[A-Za-z0-9]+$/.test(line) && !line.includes(' ')) {
+      paths.add(line.replaceAll('\\', '/'));
+    }
+  }
+
+  // Derive keywords from path segments too (module/dir names are strong signals).
+  for (const filePath of paths) {
+    for (const segment of filePath.split('/')) {
+      const base = segment.replace(/\.[A-Za-z0-9]+$/, '');
+      addSurfaceKeyword(keywords, base);
+    }
+  }
+
+  return {
+    paths: [...paths].sort(),
+    symbols: [...symbols].sort(),
+    keywords: [...keywords].sort(),
+  };
+}
+
 // --- Matching ----------------------------------------------------------------
 
 function textIncludesKeyword(surface, keyword) {
@@ -445,7 +532,7 @@ export function matchMemory(index, cardsById, changeSurface, options = {}) {
 // --- CLI ---------------------------------------------------------------------
 
 function usage() {
-  return 'Usage: node qa-skill/tools/match-memory.mjs --index <index.yaml> --change <change-surface.json> [--json]';
+  return 'Usage: node qa-skill/tools/match-memory.mjs --index <index.yaml> (--change <surface.json> | --diff <diff-file> | --base <ref> --head <ref>) [--repo <dir>] [--json]';
 }
 
 function readTextFile(inputPath) {
@@ -456,9 +543,22 @@ function readTextFile(inputPath) {
   return readFileSync(inputPath, 'utf8');
 }
 
+function looksLikeGitRef(value) {
+  // Conservative allowlist: refs, SHAs, and range/parent forms. Rejects options and shell metacharacters.
+  return typeof value === 'string' && value.length > 0 && value.length <= 200 && /^[A-Za-z0-9._\/~^@{}+-]+$/.test(value) && !value.startsWith('-');
+}
+
+function defaultRunGit(args, repo) {
+  const run = spawnSync('git', args, { cwd: repo || process.cwd(), encoding: 'utf8', shell: false, maxBuffer: MAX_INPUT_BYTES });
+  if (run.error) throw new Error(`git not available: ${run.error.message}`);
+  if (run.status !== 0) throw new Error(`git exited ${run.status}: ${(run.stderr || '').trim()}`);
+  return run.stdout ?? '';
+}
+
 export function cli(argv, io = {}) {
   const readFile = io.readTextFile ?? readTextFile;
   const readCardsForIndex = io.readCardsForIndex;
+  const runGit = io.runGit ?? defaultRunGit;
   let parsed;
   try {
     parsed = parseArgs({
@@ -468,21 +568,34 @@ export function cli(argv, io = {}) {
       options: {
         index: { type: 'string' },
         change: { type: 'string' },
+        diff: { type: 'string' },
+        base: { type: 'string' },
+        head: { type: 'string' },
+        repo: { type: 'string' },
         json: { type: 'boolean', default: false },
       },
     });
   } catch (error) {
     return { status: 2, stdout: '', stderr: `${usage()}\nUnknown flag or option: ${error.message}\n` };
   }
-  if (!isNonEmptyString(parsed.values.index) || !isNonEmptyString(parsed.values.change)) {
-    return { status: 2, stdout: '', stderr: `${usage()}\nBoth --index and --change are required.\n` };
+  if (!isNonEmptyString(parsed.values.index)) {
+    return { status: 2, stdout: '', stderr: `${usage()}\n--index is required.\n` };
+  }
+
+  const hasChange = isNonEmptyString(parsed.values.change);
+  const hasDiff = isNonEmptyString(parsed.values.diff);
+  const hasRange = isNonEmptyString(parsed.values.base) || isNonEmptyString(parsed.values.head);
+  const modeCount = [hasChange, hasDiff, hasRange].filter(Boolean).length;
+  if (modeCount === 0) {
+    return { status: 2, stdout: '', stderr: `${usage()}\nProvide exactly one change source: --change, --diff, or --base/--head.\n` };
+  }
+  if (modeCount > 1) {
+    return { status: 2, stdout: '', stderr: `${usage()}\n--change, --diff, and --base/--head are mutually exclusive.\n` };
   }
 
   let indexText;
-  let changeText;
   try {
     indexText = readFile(parsed.values.index);
-    changeText = readFile(parsed.values.change);
   } catch (error) {
     return { status: 2, stdout: '', stderr: `Input missing or unreadable: ${error.message}\n` };
   }
@@ -493,14 +606,51 @@ export function cli(argv, io = {}) {
     return { status: 2, stdout: '', stderr: `Invalid index.yaml: ${parseDiagnostics.map((d) => `${d.location} ${d.code}: ${d.message}`).join('; ') || 'not a mapping'}\n` };
   }
 
-  let change;
-  try {
-    change = JSON.parse(changeText);
-  } catch (error) {
-    return { status: 2, stdout: '', stderr: `Invalid change surface JSON: ${error.message}\n` };
-  }
   const surfaceDiagnostics = [];
-  const normalized = normalizeChangeSurface(change, surfaceDiagnostics);
+  let normalized;
+  if (hasChange) {
+    let changeText;
+    try {
+      changeText = readFile(parsed.values.change);
+    } catch (error) {
+      return { status: 2, stdout: '', stderr: `Input missing or unreadable: ${error.message}\n` };
+    }
+    let change;
+    try {
+      change = JSON.parse(changeText);
+    } catch (error) {
+      return { status: 2, stdout: '', stderr: `Invalid change surface JSON: ${error.message}\n` };
+    }
+    normalized = normalizeChangeSurface(change, surfaceDiagnostics);
+  } else {
+    let diffText;
+    if (hasDiff) {
+      try {
+        diffText = readFile(parsed.values.diff);
+      } catch (error) {
+        return { status: 2, stdout: '', stderr: `Diff file missing or unreadable: ${error.message}\n` };
+      }
+    } else {
+      const base = parsed.values.base;
+      const head = parsed.values.head;
+      if (!isNonEmptyString(base) || !isNonEmptyString(head)) {
+        return { status: 2, stdout: '', stderr: `${usage()}\nBoth --base and --head are required for range mode.\n` };
+      }
+      if (!looksLikeGitRef(base) || !looksLikeGitRef(head)) {
+        return { status: 2, stdout: '', stderr: `Unsafe git ref: refs must match [A-Za-z0-9._/~^@{}+-] and not start with '-'.\n` };
+      }
+      if (isNonEmptyString(parsed.values.repo) && (parsed.values.repo.includes('\0') || parsed.values.repo.startsWith('-'))) {
+        return { status: 2, stdout: '', stderr: `Unsafe --repo value.\n` };
+      }
+      try {
+        diffText = runGit(['diff', '--unified=0', '--no-color', `${base}...${head}`], parsed.values.repo);
+      } catch (error) {
+        return { status: 2, stdout: '', stderr: `git diff failed: ${error.message}\n` };
+      }
+    }
+    const derived = parseGitDiffToChangeSurface(diffText);
+    normalized = normalizeChangeSurface(derived, surfaceDiagnostics);
+  }
   if (!normalized.ok) {
     return { status: 2, stdout: '', stderr: `Invalid change surface: ${surfaceDiagnostics.map((d) => `${d.location} ${d.code}: ${d.message}`).join('; ')}\n` };
   }

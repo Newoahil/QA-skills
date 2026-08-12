@@ -258,11 +258,20 @@ This is the feedback -> rule -> match -> regression-check loop that makes memory
 
 A deterministic, read-only helper implements this loop so it is not agent-improvised: [`../tools/match-memory.mjs`](../tools/match-memory.mjs). It reads `.qa/memory/index.yaml` (source of truth), opens only the indexed `rules/`/`patterns/` cards, matches them against a supplied change surface, applies the applicability gate, and emits `qa_planning_inputs` as JSON.
 
+The change surface can be supplied three ways (exactly one, mutually exclusive):
+
 ```
-node "<resolved skill source path>/tools/match-memory.mjs" --index "<.qa/memory/index.yaml>" --change "<change-surface.json>" --json
+# 1. explicit surface JSON
+node "<skill>/tools/match-memory.mjs" --index "<.qa/memory/index.yaml>" --change "<change-surface.json>" --json
+
+# 2. a saved unified diff file
+node "<skill>/tools/match-memory.mjs" --index "<.qa/memory/index.yaml>" --diff "<change.diff>" --json
+
+# 3. a git range (tool derives the surface from `git diff --unified=0 base...head`)
+node "<skill>/tools/match-memory.mjs" --index "<.qa/memory/index.yaml>" --base "<ref>" --head "<ref>" [--repo "<dir>"] --json
 ```
 
-`change-surface.json` is `{ "paths": [...], "symbols": [...], "keywords": [...] }` for the current change. The tool is planning-only: it never runs product code, never marks anything `PASS`, exits `0` on a successful match pass (even with zero matches), `1` on an invalid index, and `2` on usage/IO errors. When Node is unavailable, perform the same match/apply/generate steps manually; do not install anything.
+`change-surface.json` is `{ "paths": [...], "symbols": [...], "keywords": [...] }`. In `--diff`/`--base`/`--head` modes the tool derives that surface from the unified diff: `paths` from file headers, `symbols`/`keywords` from added/removed identifiers and path segments. The git range mode only ever runs read-only `git diff` with validated refs (allowlisted characters, never starting with `-`), never a write or checkout. The tool is planning-only: it never runs product code, never marks anything `PASS`, exits `0` on a successful match pass (even with zero matches), `1` on an invalid index, and `2` on usage/IO/unsafe-ref errors. When Node or git is unavailable, perform the same derive/match/apply/generate steps manually; do not install anything.
 
 ### Match Safety
 

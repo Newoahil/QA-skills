@@ -792,6 +792,10 @@ test('P4-MEMORY-004 ships the executable memory matcher wired into the closed lo
     [/applies_when|do_not_apply_when/i, 'applicability gate fields'],
     [/export function matchMemory/i, 'exports matchMemory for testing'],
     [/export function cli/i, 'exports cli for testing'],
+    [/export function parseGitDiffToChangeSurface/i, 'exports git diff change-surface derivation'],
+    [/--diff|--base|--head/i, 'supports diff/base/head change-surface modes'],
+    [/looksLikeGitRef|Unsafe\s+git\s+ref/i, 'validates git refs before running git'],
+    [/git\s+diff|['"]diff['"]/i, 'derives surface from git diff read-only'],
   ];
   for (const [pattern, label] of toolPatterns) {
     assert.match(tool, pattern, `${testId}: match-memory.mjs missing ${label}`);

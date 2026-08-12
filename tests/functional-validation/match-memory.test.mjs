@@ -10,7 +10,7 @@ const repositoryRoot = path.dirname(path.dirname(import.meta.dirname));
 const toolPath = path.join(repositoryRoot, 'qa-skill', 'tools', 'match-memory.mjs');
 const toolUrl = pathToFileURL(toolPath).href;
 
-const { parseMemoryYaml, normalizeChangeSurface, matchMemory, cli } = await import(toolUrl);
+const { parseMemoryYaml, normalizeChangeSurface, matchMemory, cli, parseGitDiffToChangeSurface } = await import(toolUrl);
 
 function tempDir(prefix) {
   return mkdtempSync(path.join(tmpdir(), prefix));
@@ -187,4 +187,89 @@ test('MM-CLI-011 real process spawn produces deterministic JSON and exit 0', () 
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+const sampleDiff = `diff --git a/src/order/status.js b/src/order/status.js
+index 1111111..2222222 100644
+--- a/src/order/status.js
++++ b/src/order/status.js
+@@ -1,3 +1,4 @@
+-function order_status(id) { return db.read(id); }
++function order_status(id) { const value = db.read(id); cache.invalidate(id); return value; }
+diff --git a/src/cache/store.js b/src/cache/store.js
+index 3333333..4444444 100644
+--- a/src/cache/store.js
++++ b/src/cache/store.js
+@@ -5,0 +6,2 @@
++export function invalidate(key) { store.delete(key); }
+`;
+
+test('MM-VCS-012 derives a change surface from a unified git diff', () => {
+  const surface = parseGitDiffToChangeSurface(sampleDiff);
+  assert.ok(surface.paths.includes('src/order/status.js'));
+  assert.ok(surface.paths.includes('src/cache/store.js'));
+  assert.ok(surface.symbols.includes('order_status'));
+  assert.ok(surface.symbols.includes('invalidate'));
+  // path-segment keywords are derived too
+  assert.ok(surface.keywords.some((k) => k === 'order' || k === 'cache' || k === 'status' || k === 'store'));
+});
+
+test('MM-VCS-013 --diff mode matches a rule via injected diff file', () => {
+  const orderCard = {
+    id: 'rule-order-cache-001',
+    type: 'rule',
+    match: { paths: ['src/order/**', 'src/cache/**'], symbols: ['order_status'], keywords: ['cache'] },
+    checks: { must: ['re-read order status after update returns the new value'] },
+    confidence: 'high',
+  };
+  const io = {
+    readTextFile(inputPath) {
+      if (inputPath === 'index.yaml') return indexYaml;
+      if (inputPath === 'change.diff') return sampleDiff;
+      throw new Error(`unexpected ${inputPath}`);
+    },
+    readCardsForIndex: () => new Map([['rule-order-cache-001', orderCard]]),
+  };
+  const result = cli(['--index', 'index.yaml', '--diff', 'change.diff', '--json'], io);
+  assert.equal(result.status, 0, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.valid, true);
+  assert.ok(payload.qa_planning_inputs.some((i) => i.claim_type === 'memory_regression_check'));
+});
+
+test('MM-VCS-014 --base/--head mode runs git via injected runner (read-only)', () => {
+  let calledArgs = null;
+  const orderCard = {
+    id: 'rule-order-cache-001',
+    type: 'rule',
+    match: { paths: ['src/order/**'] },
+    checks: { must: ['re-read order status after update returns the new value'] },
+  };
+  const io = {
+    readTextFile: () => indexYaml,
+    readCardsForIndex: () => new Map([['rule-order-cache-001', orderCard]]),
+    runGit(args) {
+      calledArgs = args;
+      return sampleDiff;
+    },
+  };
+  const result = cli(['--index', 'index.yaml', '--base', 'main', '--head', 'HEAD', '--json'], io);
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(calledArgs, ['diff', '--unified=0', '--no-color', 'main...HEAD']);
+  const payload = JSON.parse(result.stdout);
+  assert.ok(payload.qa_planning_inputs.length >= 1);
+});
+
+test('MM-VCS-015 rejects unsafe git refs and mutually exclusive change sources', () => {
+  const io = { readTextFile: () => indexYaml, runGit: () => { throw new Error('should not run'); } };
+  const unsafe = cli(['--index', 'index.yaml', '--base', '--evil', '--head', 'HEAD', '--json'], io);
+  assert.equal(unsafe.status, 2);
+
+  const conflict = cli(['--index', 'index.yaml', '--diff', 'd.diff', '--base', 'main', '--head', 'HEAD'], io);
+  assert.equal(conflict.status, 2);
+  assert.match(conflict.stderr, /mutually exclusive/);
+
+  const none = cli(['--index', 'index.yaml', '--json'], io);
+  assert.equal(none.status, 2);
+  assert.match(none.stderr, /exactly one change source/);
 });
