@@ -34,6 +34,7 @@ const phase1CoreFiles = Object.freeze([
   'references/evidence-guide.md',
   'references/finding-classification.md',
   'references/human-gates.md',
+  'references/qa-report-quality-rubric.md',
   'schemas/qa-plan.schema.json',
   'tools/validate-qa-plan.mjs',
   'templates/qa-report.md',
@@ -603,7 +604,7 @@ test('P2-M6-STRUCT-001 exposes exactly the declared M6 capability and scheduling
   const reportTemplate = readRequiredMarkdown('templates/project-qa-report.md', testId);
   const combined = `${capabilityReference}\n${schedulingReference}\n${projectRunContract}\n${usingProjectQa}\n${projectPlan}\n${executeSkill}\n${reportTemplate}`;
 
-  assert.equal(requiredProductFiles.length, 32, `${testId}: physical product file count should be 32 through M6 plus the Phase 1 Planner contract, the Phase 3 context skill and shared planning-inputs reference, and the Phase 4 memory skill, workspace reference, and executable memory matcher tool`);
+  assert.equal(requiredProductFiles.length, 33, `${testId}: physical product file count should be 33 through M6 plus the Phase 1 Planner contract and report quality rubric, the Phase 3 context skill and shared planning-inputs reference, and the Phase 4 memory skill, workspace reference, and executable memory matcher tool`);
 
   const requiredPatterns = [
     [/bounded\s+static\s+capability\s+evidence/i, 'bounded static capability evidence'],
@@ -840,6 +841,7 @@ test('P1-SEMANTICS-003 preserves required Phase 1 semantic anchors', () => {
   const qaConclude = readRequiredMarkdown('qa-conclude/SKILL.md', testId);
   const qaPrinciples = readRequiredMarkdown('references/qa-principles.md', testId);
   const qaReportTemplate = readRequiredMarkdown('templates/qa-report.md', testId);
+  const qaReportQualityRubric = readRequiredMarkdown('references/qa-report-quality-rubric.md', testId);
   const contractText = `${usingQa}\n${qaPlan}\n${qaExecute}\n${qaConclude}\n${qaPrinciples}\n${evidenceGuide}\n${qaReportTemplate}`;
 
   const semanticAnchorGroups = [
@@ -868,6 +870,16 @@ test('P1-SEMANTICS-003 preserves required Phase 1 semantic anchors', () => {
     ['no final release decision', [/no\s+final\s+release\s+decision|must\s+not\s+make\s+(?:the\s+)?final\s+release\s+decision/i]],
     ['residual risk', [/residual\s+risk/i]],
   ];
+
+  const qualityRubricPatterns = [
+    ['rubric names the core chain', [/Risk\s*->\s*Must\s+Verify\s*->\s*Verification\s*->\s*Evidence\s*->\s*Status/i]],
+    ['rubric defines report budget/concision rules', [/Report\s+Budget|Concision\s+Rules/i]],
+    ['rubric lists anti-patterns', [/Anti-Patterns?/i]],
+    ['rubric addresses memory/context integrity', [/Memory\s+and\s+[Cc]ontext\s+[Ii]ntegrity|planning\s+input,?\s+never\s+as\s+evidence/i]],
+  ];
+  for (const [label, patterns] of qualityRubricPatterns) {
+    assertAnchorGroup(qaReportQualityRubric, testId, label, patterns);
+  }
 
   for (const [label, patterns] of semanticAnchorGroups) {
     assertAnchorGroup(corpus, testId, label, patterns);
@@ -936,6 +948,22 @@ test('P1-SEMANTICS-003 preserves required Phase 1 semantic anchors', () => {
     fileSpecificFailures.push('templates/qa-report.md must expose exact validation layers: Static/unit, API/integration, E2E/system, Specialist non-functional, Manual acceptance');
   }
 
+  if (!/qa-report-quality-rubric\.md/i.test(qaReportTemplate)) {
+    fileSpecificFailures.push('templates/qa-report.md must reference the QA Report Quality Rubric');
+  }
+
+  if (!/Report\s+Quality\s+Self-Check/i.test(qaReportTemplate)) {
+    fileSpecificFailures.push('templates/qa-report.md must include a Report Quality Self-Check section');
+  }
+
+  if (!/qa-report-quality-rubric\.md/i.test(qaConclude)) {
+    fileSpecificFailures.push('qa-conclude/SKILL.md must reference the QA Report Quality Rubric');
+  }
+
+  if (!/Report\s+Quality\s+Self-Check/i.test(qaConclude)) {
+    fileSpecificFailures.push('qa-conclude/SKILL.md must reconcile the Report Quality Self-Check');
+  }
+
   if (!/(?:must\s+not|do\s+not|never|cannot)\s+(?:edit|change|modify|touch|write)\s+[^.\n]{0,260}(?:product\s+source|product\s+tests?|product\s+test\s+files?|project\s+files?|fixtures?|snapshots?|configuration|documentation)/i.test(contractText)) {
     fileSpecificFailures.push('workflow must define read-only restrictions for product source, product tests, fixtures, snapshots, configuration, and documentation');
   }
@@ -1001,6 +1029,25 @@ test('P1-ROUTING-009 requires one-child triage-first routing with deterministic 
 
   for (const [pattern, label] of requiredPatterns) {
     assert.match(contractText, pattern, `${testId}: missing ${label}`);
+  }
+});
+
+test('P1-ROUTING-010 requires the QA subagent to load the authoritative skill chain and forbids bypassing relays', () => {
+  const testId = 'P1-ROUTING-010';
+  const usingQa = readRequiredMarkdown('using-qa/SKILL.md', testId);
+
+  const requiredPatterns = [
+    [/load(?:ing)?\s+and\s+apply(?:ing)?\s+the\s+authoritative\s+skill\s+files?[\s\S]{0,220}resolved\s+skill\s+source\s+path/i, 'QA subagent must load the authoritative skill files from the resolved skill source path'],
+    [/using-qa[\s\S]{0,80}qa-triage[\s\S]{0,80}(?:qa-lite|qa-plan)[\s\S]{0,80}qa-execute[\s\S]{0,80}qa-conclude/i, 'full authoritative skill chain listed'],
+    [/hand(?:s|ed)\s+off[\s\S]{0,240}resolved\s+skill\s+source\s+path[\s\S]{0,160}load\s+requirement/i, 'main agent hands off skill path and a load requirement'],
+    [/(?:condensed|paraphrased)[\s\S]{0,160}(?:QA\s+)?request[\s\S]{0,220}(?:omits?|without)\s+(?:the\s+)?skill\s+path[\s\S]{0,160}(?:does\s+not|not)\s+satisfy/i, 'condensed or paraphrased request without skill path does not satisfy the contract'],
+    [/main\s+agent\s+must\s+then\s+load[\s\S]{0,220}(?:Conclusion\s+Gate|Overall\s+Status|Report\s+Quality\s+Self-Check)/i, 'main agent loads directly so qa-conclude markers are always applied'],
+    [/bypasses?\s+[\s\S]{0,160}(?:Conclusion\s+Gate|Overall\s+Status|Report\s+Quality\s+Self-Check)/i, 'delegation must not bypass qa-conclude output contract'],
+    [/No\s+delegation\s+or\s+task\s+relay\s+that\s+replaces\s+loading\s+and\s+following\s+the\s+authoritative\s+skill\s+files/i, 'non-goal forbids delegation or task relay replacing skill loading'],
+  ];
+
+  for (const [pattern, label] of requiredPatterns) {
+    assert.match(usingQa, pattern, `${testId}: using-qa/SKILL.md is missing ${label}`);
   }
 });
 
@@ -1562,6 +1609,25 @@ test('P2-M1-ENTRY-002 gives using-project-qa ownership of explicit whole-project
       /`?qa-lite`?\s*(?:is|serves|acts|belongs|remains|works|is\s+not)?[\s\S]{0,220}(?:not|never|must\s+not)\s+(?:a|an|the)?[\s\S]{0,140}(?:project|project-?wide)[\s\S]{0,120}(?:mode|direct\s+route)/i,
       `${testId}: using-project-qa/SKILL.md is missing QA-Lite is explicitly not a project mode/direct route`,
     );
+  }
+});
+
+test('P2-M1-ENTRY-003 requires the project route to load the authoritative skill chain and forbids bypassing relays', () => {
+  const testId = 'P2-M1-ENTRY-003';
+  const usingProjectQa = readRequiredMarkdown('using-project-qa/SKILL.md', testId);
+
+  const requiredPatterns = [
+    [/load(?:ing)?\s+and\s+apply(?:ing)?\s+the\s+authoritative\s+(?:project\s+)?skill\s+files?[\s\S]{0,220}resolved\s+skill\s+source\s+path/i, 'Coordinator must load the authoritative project skill files from the resolved skill source path'],
+    [/using-project-qa[\s\S]{0,100}project-qa-plan[\s\S]{0,100}project-qa-execute[\s\S]{0,100}project-qa-conclude/i, 'authoritative project skill chain listed'],
+    [/hand(?:s|ed)\s+off[\s\S]{0,240}resolved\s+skill\s+source\s+path[\s\S]{0,160}load\s+requirement/i, 'main agent hands off skill path and a load requirement'],
+    [/(?:condensed|paraphrased)[\s\S]{0,160}(?:project\s+)?QA\s+request[\s\S]{0,220}(?:omits?|without)\s+(?:the\s+)?skill\s+path[\s\S]{0,160}(?:does\s+not|not)\s+satisfy/i, 'condensed or paraphrased request without skill path does not satisfy the contract'],
+    [/main\s+agent\s+must\s+then\s+load[\s\S]{0,220}(?:Project\s+QA\s+Conclusion\s+Gate|Overall\s+Status)/i, 'main agent loads directly so project-qa-conclude markers are always applied'],
+    [/bypasses?\s+[\s\S]{0,160}(?:Project\s+QA\s+Conclusion\s+Gate|Overall\s+Status)/i, 'delegation must not bypass project-qa-conclude output contract'],
+    [/No\s+delegation\s+or\s+task\s+relay\s+that\s+replaces\s+loading\s+and\s+following\s+the\s+authoritative\s+project\s+skill\s+files/i, 'non-goal forbids delegation or task relay replacing project skill loading'],
+  ];
+
+  for (const [pattern, label] of requiredPatterns) {
+    assert.match(usingProjectQa, pattern, `${testId}: using-project-qa/SKILL.md is missing ${label}`);
   }
 });
 

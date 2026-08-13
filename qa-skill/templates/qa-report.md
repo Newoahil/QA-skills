@@ -1,5 +1,7 @@
 # QA Report
 
+Hold every section to the [QA Report Quality Rubric](../references/qa-report-quality-rubric.md): `Required` risks need a full `Risk -> Must Verify -> Verification -> Evidence -> Status` chain; non-Required rows stay one line; evidence is summarized, not pasted as raw logs; table content is not restated in prose.
+
 ## Repository Preflight
 
 Record Repository Preflight before Change Intake.
@@ -63,6 +65,8 @@ Use one fixed row for each category. Keep the basis, readiness, omissions, rerun
 
 Plan Gate and Conclusion Gate must reconcile this matrix. The Plan Gate stays BLOCKED until all 11 rows have an assessment, a basis, and a readiness decision. The Conclusion Gate stays BLOCKED until every `Required`, `Recommended`, `Not Applicable`, `Blocked`, or `Deferred` row is reconciled against evidence, factual justification, omissions, rerun conditions, and residual risk.
 
+Report budget: all 11 rows must appear, but only `Required` and selected `Recommended` rows expand into the full Risk Analysis / Verification Plan / Execution and Evidence chain below. `Not Applicable` rows get one line of factual basis. `Blocked` rows get one line naming the missing prerequisite and rerun condition. `Deferred` rows get one line naming owner, trigger, and rerun condition. See the [QA Report Quality Rubric](../references/qa-report-quality-rubric.md).
+
 ## Objective and Scope
 
 | Field | Record |
@@ -80,11 +84,15 @@ Plan Gate and Conclusion Gate must reconcile this matrix. The Plan Gate stays BL
 
 ## Risk Analysis
 
+For a change with cross-cutting impact, name the actual affected chain in the risk statement (for example: state -> cache -> read path, or credential -> session/token -> protected endpoint -> other active sessions), not a generic "regression risk exists." Default `Must Verify` budget: Lite targets 1-3 top-level risks; Full targets 3-7. Group related checks under one parent risk instead of listing unrelated singletons; going over budget is allowed when the risk genuinely requires it, but state why.
+
 | Risk ID | Priority | Risk statement | Validation layer | Must verify | Reason if omitted |
 |---|---|---|---|---|---|
 | R- | Must Verify / Should Verify / Optional / Explicitly Not Verified |  | Static/unit / API/integration / E2E/system / Specialist non-functional / Manual acceptance | Yes/No |  |
 
 ## Verification Plan
+
+Each `Must Verify` row states a concrete setup, action, and expected result specific enough that another engineer could execute it without guessing. "Run tests" or "verify behavior works" is a placeholder, not a step; replace it with the actual precondition, action, and expected observable result.
 
 | Verification ID | Risk IDs | Preconditions | Method or steps | Expected result | Required evidence | Human gate |
 |---|---|---|---|---|---|---|
@@ -148,6 +156,21 @@ An unavailable required runner, for example `missing-qa-runner`, or an unavailab
 | Risk ID | Residual risk after execution | Evidence and affected verification | Likelihood or impact | Mitigation, monitoring, or follow-up |
 |---|---|---|---|---|
 | R- |  | E-/V- |  |  |
+
+## Report Quality Self-Check
+
+Reconcile against the [QA Report Quality Rubric](../references/qa-report-quality-rubric.md) before closing the Conclusion Gate.
+
+| Rubric dimension | Record |
+|---|---|
+| Scope discipline: non-goals and untested behavior stated | Yes/No:  |
+| Risk-chain awareness: `Required` risks name the actual affected chain, not a generic statement | Yes/No:  |
+| Executable steps: every `Must Verify` has concrete setup/action/expected result | Yes/No:  |
+| Evidence-to-status calibration: no PASS from an unrelated/broader check alone | Yes/No:  |
+| Actionability: a developer/reviewer/owner can act on this report without re-deriving reasoning | Yes/No:  |
+| Memory/context integrity: any memory or external-context content is labeled planning input, not evidence | Yes/No/N/A:  |
+
+Any `No` above blocks `QA Conclusion Gate: COMPLETE` until resolved or explicitly justified as an accepted limitation with residual risk recorded.
 
 ## Overall Status and Conclusion
 
