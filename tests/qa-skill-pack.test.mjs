@@ -1094,6 +1094,99 @@ test('P2-ROUTING-021 requires Full route completion before final delivery', () =
   }
 });
 
+test('P3-ROUTING-022 forbids delegating Full-route stages to a different subagent', () => {
+  const testId = 'P3-ROUTING-022';
+  const usingQa = readRequiredMarkdown('using-qa/SKILL.md', testId);
+  const qaConclude = readRequiredMarkdown('qa-conclude/SKILL.md', testId);
+
+  const usingQaPatterns = [
+    [/same\s+QA\s+subagent[\s\S]{0,220}must\s+not\s+use\s+a\s+task[\s\S]{0,80}subagent[\s\S]{0,220}(?:hand\s+off|handoff)[\s\S]{0,160}qa-plan[\s\S]{0,120}qa-execute[\s\S]{0,120}qa-conclude[\s\S]{0,220}different\s+subagent/i, 'roles bullet forbids handoff of qa-plan/qa-execute/qa-conclude to a different subagent'],
+    [/No\s+delegation\s+substitute/i, 'named No delegation substitute rule'],
+    [/handoff\s+to\s+another\s+subagent_type[\s\S]{0,260}(?:even\s+when|even\s+though)[\s\S]{0,220}(?:repeats|includes)[\s\S]{0,160}skill\s+path[\s\S]{0,160}(?:load\s+requirement|exact\s+required\s+markers)[\s\S]{0,220}(?:still\s+a\s+bypass|bypass)/i, 'marker-complete delegation to another subagent_type is still a bypass'],
+    [/receiving\s+agent\s+was\s+not\s+designed\s+to\s+run\s+this\s+QA\s+chain/i, 'receiving agent not designed for this QA chain'],
+    [/No\s+multi-subagent\s+pipeline[\s\S]{0,220}must\s+not\s+hand\s+off[\s\S]{0,160}qa-plan[\s\S]{0,120}qa-execute[\s\S]{0,120}qa-conclude[\s\S]{0,220}different\s+subagent/i, 'non-goals bullet forbids Full-stage handoff to a different subagent'],
+    [/No\s+substituting\s+a\s+delegated\s+agent'?s?\s+output\s+for\s+same-session\s+skill-loading\s+evidence/i, 'non-goals bullet forbids substituting delegated output for same-session evidence'],
+  ];
+
+  for (const [pattern, label] of usingQaPatterns) {
+    assert.match(usingQa, pattern, `${testId}: using-qa/SKILL.md missing ${label}`);
+  }
+
+  const qaConcludePatterns = [
+    [/Same-Session\s+Execution\s+Check/i, 'named Same-Session Execution Check section'],
+    [/same\s+QA\s+subagent\s+session[\s\S]{0,220}loaded\s+and\s+applied\s+`?qa-plan`?[\s\S]{0,120}`?qa-execute`?[\s\S]{0,160}(?:this\s+)?`?qa-conclude`?[\s\S]{0,220}(?:itself|directly)[\s\S]{0,160}not\s+through\s+a\s+task[\s\S]{0,80}subagent/i, 'requires same-session direct load of qa-plan/qa-execute/qa-conclude, not delegated'],
+    [/handed\s+off[\s\S]{0,220}different\s+subagent[\s\S]{0,220}(?:even\s+one\s+given|even\s+when\s+given)[\s\S]{0,220}skill\s+path[\s\S]{0,180}(?:load\s+requirement|exact\s+required\s+markers)[\s\S]{0,220}has\s+not\s+satisfied\s+this\s+check/i, 'marker-complete delegated handoff still fails this check'],
+    [/QA\s+Conclusion\s+Gate\s+stays\s+`?BLOCKED`?[\s\S]{0,160}(?:missing|delegated|replaced\s+by\s+a\s+different\s+subagent)/i, 'Conclusion Gate blocked when same-session evidence missing or delegated'],
+  ];
+
+  for (const [pattern, label] of qaConcludePatterns) {
+    assert.match(qaConclude, pattern, `${testId}: qa-conclude/SKILL.md missing ${label}`);
+  }
+});
+
+test('P4-DEPTH-023 requires exploration-before-structure and allows execution-time risk discovery', () => {
+  const testId = 'P4-DEPTH-023';
+  const qaPlan = readRequiredMarkdown('qa-plan/SKILL.md', testId);
+  const qaExecute = readRequiredMarkdown('qa-execute/SKILL.md', testId);
+  const qaConclude = readRequiredMarkdown('qa-conclude/SKILL.md', testId);
+  const qaReport = readRequiredMarkdown('templates/qa-report.md', testId);
+  const rubric = readRequiredMarkdown('references/qa-report-quality-rubric.md', testId);
+
+  const qaPlanPatterns = [
+    [/Risk\s+Surface\s+Exploration[\s\S]{0,220}before\s+compressing[\s\S]{0,160}Risk\s+Analysis/i, 'named Risk Surface Exploration stage before Risk Analysis'],
+    [/do\s+not\s+prioritize,\s+deduplicate,\s+or\s+drop\s+items\s+yet/i, 'exploration stays wide/unstructured before compression'],
+    [/mandatory\s+Full\s+trigger[\s\S]{0,220}domain\s+shape[\s\S]{0,220}(?:transaction\/rollback|state\s+transitions)/i, 'exploration must reach trigger domain shape, not just confirm the trigger'],
+    [/`?Risk\s+Analysis`?:\s*compress\s+the\s+`?Risk\s+Surface\s+Exploration`?\s+scratch\s+list/i, 'Risk Analysis is compressed from the exploration list'],
+    [/dropped\s+here\s+needs\s+a\s+stated\s+reason,\s+not\s+silent\s+omission/i, 'dropped exploration items need a stated reason'],
+  ];
+
+  for (const [pattern, label] of qaPlanPatterns) {
+    assert.match(qaPlan, pattern, `${testId}: qa-plan/SKILL.md missing ${label}`);
+  }
+
+  const qaExecutePatterns = [
+    [/Risk\s+Discovery\s+During\s+Execution/i, 'named Risk Discovery During Execution section'],
+    [/Off-target\s+scope\s+expansion[\s\S]{0,220}remains\s+forbidden/i, 'off-target scope expansion still forbidden'],
+    [/Risk\s+discovered\s+within\s+the\s+same\s+approved\s+target[\s\S]{0,400}not\s+off-target\s+scope\s+expansion/i, 'within-target discovery distinguished from scope expansion'],
+    [/add\s+it\s+to\s+the\s+risk\s+register[\s\S]{0,160}`?Discovered\s+during\s+execution:\s*yes`?/i, 'discovered risks added to register with marker'],
+    [/Suppressing\s+a\s+within-target\s+discovery[\s\S]{0,220}is\s+itself\s+a\s+QA\s+defect/i, 'suppressing within-target discovery is a defect'],
+  ];
+
+  for (const [pattern, label] of qaExecutePatterns) {
+    assert.match(qaExecute, pattern, `${testId}: qa-execute/SKILL.md missing ${label}`);
+  }
+
+  const qaConcludePatterns = [
+    [/risk-surface\s+completeness[\s\S]{0,220}`?Risk\s+Surface\s+Exploration`?[\s\S]{0,160}before[\s\S]{0,120}`?Risk\s+Analysis`?/i, 'conclude reconciles risk-surface completeness against exploration-before-analysis'],
+    [/`?Discovered\s+during\s+execution:\s*yes`?[\s\S]{0,220}not\s+silently\s+dropped\s+as\s+"?scope\s+expansion"?/i, 'conclude requires discovered risks not dropped as scope expansion'],
+    [/risk\s+register\s+that\s+exactly\s+matches\s+the\s+initial\s+plan[\s\S]{0,220}rubric\s+anti-pattern/i, 'unchanged risk register despite execution is an anti-pattern'],
+  ];
+
+  for (const [pattern, label] of qaConcludePatterns) {
+    assert.match(qaConclude, pattern, `${testId}: qa-conclude/SKILL.md missing ${label}`);
+  }
+
+  const qaReportPatterns = [
+    [/##\s+Risk\s+Surface\s+Exploration/i, 'Risk Surface Exploration section in template'],
+    [/Discovered\s+during\s+execution/i, 'Discovered during execution column in Risk Analysis table'],
+    [/Risk-surface\s+completeness[\s\S]{0,220}`?Risk\s+Surface\s+Exploration`?/i, 'self-check row for risk-surface completeness'],
+    [/3-7\s+as\s+a\s+floor,\s+not\s+a\s+ceiling/i, 'Full risk budget reframed as a floor'],
+  ];
+
+  for (const [pattern, label] of qaReportPatterns) {
+    assert.match(qaReport, pattern, `${testId}: templates/qa-report.md missing ${label}`);
+  }
+
+  const rubricPatterns = [
+    [/derived\s+from\s+a\s+prior\s+`?Risk\s+Surface\s+Exploration`?\s+scratch\s+pass/i, 'rubric requires Risk Analysis derived from exploration pass'],
+    [/`?Discovered\s+during\s+execution:\s*yes`?[\s\S]{0,220}not\s+silently\s+dropped\s+as\s+"?scope\s+expansion"?/i, 'rubric requires discovered risks not dropped as scope expansion'],
+  ];
+
+  for (const [pattern, label] of rubricPatterns) {
+    assert.match(rubric, pattern, `${testId}: references/qa-report-quality-rubric.md missing ${label}`);
+  }
+});
+
 test('P1-LITE-SEMANTICS-010 enforces Lite eligibility, escalation, and evidence integrity', () => {
   const testId = 'P1-LITE-SEMANTICS-010';
   const usingQa = readRequiredMarkdown('using-qa/SKILL.md', testId);

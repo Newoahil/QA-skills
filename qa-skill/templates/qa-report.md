@@ -82,13 +82,21 @@ Report budget: all 11 rows must appear, but only `Required` and selected `Recomm
 |---|---|---|
 |  |  |  |
 
+## Risk Surface Exploration
+
+Free-form scratch list, produced before compressing anything into the `Risk Analysis` table below. Read the actual affected source, behavior, and adjacent code paths first; do not prioritize, deduplicate, or drop items here. When any mandatory Full trigger applies, this list must cover that trigger's domain shape (state transitions/ordering/depth for transaction/rollback; full event timeline and every entry point for auth/session race; interleavings/retries/recovery for concurrency; named providers/environments for a provider matrix; write/read/invalidate/event ordering for cache/DB/event side effects), not just a note that the trigger applies.
+
+| Note | Record |
+|---|---|
+| Raw scratch list |  |
+
 ## Risk Analysis
 
-For a change with cross-cutting impact, name the actual affected chain in the risk statement (for example: state -> cache -> read path, or credential -> session/token -> protected endpoint -> other active sessions), not a generic "regression risk exists." Default `Must Verify` budget: Lite targets 1-3 top-level risks; Full targets 3-7. Group related checks under one parent risk instead of listing unrelated singletons; going over budget is allowed when the risk genuinely requires it, but state why.
+For a change with cross-cutting impact, name the actual affected chain in the risk statement (for example: state -> cache -> read path, or credential -> session/token -> protected endpoint -> other active sessions), not a generic "regression risk exists." This table is compressed from `Risk Surface Exploration` above; a scratch item dropped here needs a stated reason, not silent omission. Default `Must Verify` budget: Lite targets 1-3 top-level risks; Full targets 3-7 as a floor, not a ceiling — for a run with any mandatory Full trigger, the register must expand to match what exploration actually surfaced, and stopping at the floor when the domain warrants more is itself a defect. Group related checks under one parent risk instead of listing unrelated singletons; going over budget is allowed and expected when the risk genuinely requires it, but state why.
 
-| Risk ID | Priority | Risk statement | Validation layer | Must verify | Reason if omitted |
-|---|---|---|---|---|---|
-| R- | Must Verify / Should Verify / Optional / Explicitly Not Verified |  | Static/unit / API/integration / E2E/system / Specialist non-functional / Manual acceptance | Yes/No |  |
+| Risk ID | Priority | Risk statement | Validation layer | Must verify | Discovered during execution | Reason if omitted |
+|---|---|---|---|---|---|---|
+| R- | Must Verify / Should Verify / Optional / Explicitly Not Verified |  | Static/unit / API/integration / E2E/system / Specialist non-functional / Manual acceptance | Yes/No | No (planned) / Yes, at <verification step> |  |
 
 ## Verification Plan
 
@@ -169,6 +177,7 @@ Reconcile against the [QA Report Quality Rubric](../references/qa-report-quality
 | Evidence-to-status calibration: no PASS from an unrelated/broader check alone | Yes/No:  |
 | Actionability: a developer/reviewer/owner can act on this report without re-deriving reasoning | Yes/No:  |
 | Memory/context integrity: any memory or external-context content is labeled planning input, not evidence | Yes/No/N/A:  |
+| Risk-surface completeness: `Risk Surface Exploration` was performed before compressing to `Risk Analysis`, and any risk discovered during execution was added to the register, not suppressed as scope expansion | Yes/No:  |
 
 Any `No` above blocks `QA Conclusion Gate: COMPLETE` until resolved or explicitly justified as an accepted limitation with residual risk recorded.
 

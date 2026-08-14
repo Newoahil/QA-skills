@@ -31,8 +31,10 @@ Anti-pattern: a report with no non-goals and no explicit untested-behavior state
 - Considers all 11 applicability categories (see [risk checklist](./risk-checklist.md)), but only expands `Required` and selected `Recommended` rows into the full chain. `Not Applicable` rows get a one-line factual basis, not a paragraph.
 - For changes with cross-cutting impact, names the actual affected chain: for example state -> cache -> read path, or credential -> session/token -> protected endpoint -> other active sessions. A generic "regression risk exists" without naming the chain is not sufficient for a `Required` regression row.
 - Every `Must Verify` item states why it is required, not just what it is.
+- The `Risk Analysis` table is derived from a prior `Risk Surface Exploration` scratch pass, not authored directly from the Diff/Change Intake summary alone. For any mandatory Full trigger, that exploration must reach the trigger's domain shape (state/ordering/depth for transaction/rollback; full event timeline and entry points for auth/session race; interleavings/retries/recovery for concurrency; named providers/environments for a provider matrix), not stop once the trigger is merely confirmed to apply.
+- A risk, variant, or edge case discovered while executing an approved verification — one still inside the same bounded target and behavior, not a different feature — is added to the risk register with `Discovered during execution: yes`, not silently dropped as "scope expansion." Suppressing a within-target discovery to keep the original plan closed is an anti-pattern, not a compliance win.
 
-Anti-pattern: an 11-row matrix where every non-Required row is a full paragraph, or a `Required` row that never names the concrete affected path.
+Anti-pattern: an 11-row matrix where every non-Required row is a full paragraph, or a `Required` row that never names the concrete affected path, or a report whose risk register exactly matches the initial plan even though execution clearly touched code paths the plan did not anticipate.
 
 ### 3. Executable verification steps
 
