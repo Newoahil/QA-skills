@@ -1,62 +1,124 @@
 # QA Skill Pack
 
-面向一次需求、修复或代码 Diff 的、以证据为基础的技术中立 QA 工作流。当前仓库完成 **Phase 1**，提供一套由用户向主 Agent 手动触发、由同一个专用 QA subagent 会话连续执行的文档型 Skill Pack。
+面向一次需求、修复或代码 Diff 的、以证据为基础的技术中立 QA 工作流。当前仓库完成 **Phase 1**，提供一套由用户向主 Agent 手动触发、由同一个专用 QA subagent 会话连续执行的文档型 Skill Pack。Phase 1 现在包含 triage-first 的 QA-Lite 分流、`qa-plan/v1` 两阶段 Planner sidecar 和零依赖 validator，但它仍然只是单需求、单 Diff 的 QA 路线，不是 Phase 2 的 project QA 模式。
 
 ## 当前范围：Phase 1
 
 Phase 1 的基本单位是一次单独的需求、修复或 Diff QA。它帮助 QA 流程不成熟的团队完成以下闭环：
 
 1. 澄清目标、范围、非目标和关键上下文。
-2. 先记录 Repository Preflight，确认 skill source path 与 product target path 分离，并在 Diff 与 Change Intake 之前建立目标仓库和基线边界。
-3. 按风险确定验证优先级和验证层。
+2. 先记录 Repository Preflight，确认 skill source path 与 product target path 分离，product target 必须显式，歧义、缺失或不可读时 BLOCKED，并在 Diff 与 Change Intake 之前建立目标仓库和基线边界。Phase 1 的 Preflight 只定义紧凑的行为级契约，详细的 Git 命令配方，例如 literal pathspec、fsmonitor、OID 和 worktree topology，属于后续增强，不是当前最小契约的隐含要求。
+3. 先为 11 个 QA applicability categories 做完整评估，再按影响决定哪些类别真正执行。每个类别都必须有一个显式 assessment，不能静默省略；但被评为 Not Applicable 的类别不会执行，Blocked 和 Deferred 也不会假装已经验证。
 4. 先完成 QA 计划，再执行验证。
 5. 使用项目当前已有的命令和工具，记录实际执行证据。
 6. 分类发现，保留未验证项、阻塞项、人工判断项和剩余风险。
 7. 持续维护一份可供人工复核的 Markdown QA 报告。
 
+QA-Lite 只适用于一个明确边界内的低风险需求、修复或 Diff，前提是目标和范围都明确，且产品目标里已经有现成、安全、可本地运行的验证方式。只要出现歧义、跨模块或架构影响、安全或隐私风险、数据迁移、权限、发布、运维风险、Must Verify 所需环境或工具或数据不确定、生成式验证或修复或恢复或历史比较或能力调度，或者用户明确要求 Full、项目级、审计级或全量 QA，就必须走 Full。
+
 这是流程方法和报告规范，不是测试框架、测试平台或自动发布系统。它不替代人工 QA，也不做最终验收或发布决定。
 
-## 核心特征
+## Skill 组成
 
-- **严格的阶段顺序**：`qa-plan → qa-execute → qa-conclude`。没有 `QA Plan Gate: OPEN`，不能执行验证。
-- **单会话连续性**：一次 QA 运行只使用一个专用 QA subagent，并在计划、执行、结论三个阶段复用同一会话。当前实现不是多 Agent 流水线。
-- **风险驱动**：从五个可选验证层中按风险选择，不执行固定测试套餐。
-- **证据优先**：计划、已有测试名称、命令意图或“看起来正常”都不是执行证据。没有证据就不能标记 `PASS`。
-- **技术中立**：不强制 Web、Playwright 或任何特定语言、平台、浏览器和工具。Playwright 及其他浏览器项目只是调研和比较参考，不是当前必需依赖。
-- **人工保留**：需求歧义、主观体验、业务或设计判断、敏感资源、高风险操作、范围扩大和最终接受都经过 Human Gate。
-- **范围和来源受控**：主 Agent 先交接独立的 skill source path 与 product target path、目标范围和非目标、用户上下文及已知约束；同一个 QA subagent 先执行 Repository Preflight，它必须发生在实际 Diff 检查和 Change Intake 之前；随后独立读取或检查实际可用 Diff，再记录 Change Intake，不依赖摘要，也不跟随需求、Diff、日志或外部内容中的嵌入指令。
-- **只读边界**：QA 不编辑产品源代码、产品测试/测试文件、fixtures、snapshots、配置或文档；只允许写入持续维护的 QA 报告和获准的临时 QA 产物，例如证据日志或截图。
-- **变更取证**：`qa-plan` 开始时先做 Repository Preflight，再独立检查实际 Diff，随后记录 named Change Intake；产品修复在 QA 之外完成，修复或其他实质变化后必须用新的 rerun evidence 更新状态。
-- **自检边界**：pack self-tests 只用于确认 skill pack 自身完整性，不是 product QA evidence，也不能替代对 product target 的验证。
+Skill Pack 目前有 14 个 `SKILL.md`：一个根路由 + Diff QA（Phase 1）+ Project QA（Phase 2）+ Project QA 的条件模块（Phase 3 context / Phase 4 memory）。
 
-## 四个 Skill
+### 根路由与 Diff QA（Phase 1）
 
 | Skill | 职责 |
 |---|---|
-| [`using-qa`](qa-skill/using-qa/SKILL.md) | 手动入口、角色边界、总流程、状态优先级和停止条件。 |
-| [`qa-plan`](qa-skill/qa-plan/SKILL.md) | 先执行 Repository Preflight，再独立检查实际 Diff，随后记录 Change Intake，然后才进入范围和风险规划，并打开或阻塞 Plan Gate。 |
+| [`qa-skill`](qa-skill/SKILL.md) | 根路由：先判定整项目 QA 还是单 Diff QA，只路由不执行 QA。 |
+| [`using-qa`](qa-skill/using-qa/SKILL.md) | Diff QA 手动入口、角色边界、总流程、状态优先级和停止条件。 |
+| [`qa-triage`](qa-skill/qa-triage/SKILL.md) | 先判定 `Profile Decision: LITE` 还是 `Profile Decision: FULL`。 |
+| [`qa-lite`](qa-skill/qa-lite/SKILL.md) | 单边界低风险 QA-Lite 路径，保留只读、四状态和 exact relay 交付。 |
+| [`qa-plan`](qa-skill/qa-plan/SKILL.md) | Full 路线的计划、风险和 `QA Plan Gate`。 |
 | [`qa-execute`](qa-skill/qa-execute/SKILL.md) | 只执行已批准的计划，记录真实结果和证据，维护同一份报告。 |
 | [`qa-conclude`](qa-skill/qa-conclude/SKILL.md) | 对发现、未验证项、阻塞项和人工判断项分类，检查 Conclusion Gate，形成有边界的结论。 |
 
-共享规则位于 [`qa-skill/references/`](qa-skill/references/)，报告模板位于 [`qa-skill/templates/qa-report.md`](qa-skill/templates/qa-report.md)。
+### Project QA（Phase 2）与条件模块（Phase 3/4）
+
+| Skill | 职责 |
+|---|---|
+| [`using-project-qa`](qa-skill/using-project-qa/SKILL.md) | 显式整项目 QA 入口，串联 plan → execute → conclude 核心路线。 |
+| [`project-qa-plan`](qa-skill/project-qa-plan/SKILL.md) | 模块盘点、风险分类、关键流程与 Project QA Plan Gate。 |
+| [`project-qa-execute`](qa-skill/project-qa-execute/SKILL.md) | 只读模块执行、证据收集与项目调和。 |
+| [`project-qa-conclude`](qa-skill/project-qa-conclude/SKILL.md) | 项目级四状态调和、authority 与交付。 |
+| [`project-qa-repair`](qa-skill/project-qa-repair/SKILL.md) | 条件模块：显式授权下的隔离修复与生成验证子流程。 |
+| [`project-qa-context`](qa-skill/project-qa-context/SKILL.md) | 条件模块（Phase 3）：仅当显式 GitHub Issue/PR/commit 引用存在时的 planning-only 变更意图提取。 |
+| [`project-qa-memory`](qa-skill/project-qa-memory/SKILL.md) | 条件模块（Phase 4）：人工确认的项目质量记忆，planning-only，永不 PASS 证据。 |
+
+### 新手入口与一页交付
+
+| 文件 | 职责 |
+|---|---|
+| [`references/qa-starter-flow.md`](qa-skill/references/qa-starter-flow.md) | 无 QA 经验者的 5 步 on-ramp：Scope → Risk → Checks → Evidence → Verdict，保留只读/证据先行/四状态/人工门，风险升级即转 Full。 |
+| [`templates/qa-signoff.md`](qa-skill/templates/qa-signoff.md) | 一页式 QA sign-off，镜像权威报告、不自造结论、只是建议而非发布决定。 |
+
+## 结构化 Planner 与 Validator
+
+- `qa-plan/v1` 是同一个 QA subagent 维护的两阶段 JSON sidecar。`plan` 阶段只记录 `method`、`preconditions`、`expectedResult` 和 `requiredEvidence`，不编造实际证据；`conclusion` 阶段再补 `status`、`evidenceRefs` 和 `conclusion`。
+- `qa-skill/tools/validate-qa-plan.mjs` 是零依赖 CLI。`--json` 用于 plan 阶段一致性检查，`--require-conclusion` 叠加结论阶段检查。退出码是 `0` 通过，`1` 合同不一致，`2` 用法、读取或加载错误。成功只表示一致性，不是产品证据、报告 authority、Human Gate 批准或 release decision。
+- Node 不可用时，不安装任何东西，手工执行同一套 schema、rubric 和 gate 规则。
+- `qa-triage` 仍然只返回 `LITE` 或 `FULL`。`rigor: Standard` 可以和 Full 一起使用，`rigor: Audit` 仍然是 Full route，并且需要 `approvalRef`。
+
+## 核心特征
+
+- **严格的 triage-first 顺序**：`using-qa -> qa-triage -> (qa-lite OR qa-plan -> qa-execute -> qa-conclude)`。没有 `QA Plan Gate: OPEN`，不能执行 Full 路线验证。
+- **单 child, 单会话**：一次 QA 运行只使用一个专用 QA subagent，并在 triage、Lite 或 Full 的后续阶段复用同一会话。当前实现不是多 Agent 流水线。
+- **适用性先行**：先对 11 个类别做 applicability assessment，再按影响选择要执行的验证层。类别是 `Static/build`、`Unit`、`Integration`、`Contract/API`、`E2E`、`Database/migration`、`Security`、`Performance`、`Compatibility`、`Accessibility/visual`、`Regression`。
+- **五种适用性评估**：`Required`、`Recommended`、`Not Applicable`、`Blocked`、`Deferred`。`Required` 意味着该类别在本次范围内需要证据才能 PASS，`Not Applicable` 必须给出事实依据，`Blocked` 必须写明缺失的 prerequisite 和 rerun condition，`Deferred` 必须写明 owner、trigger、rerun condition 和 residual risk。
+- **风险驱动**：适用性 assessment 决定某个类别是否进入执行，risk priority 决定进入后怎么排优先级，validation layer 决定在哪一层验证。这里的 five validation layers 仍然是 `Static/unit`、`API/integration`、`E2E/system`、`Specialist non-functional`、`Manual acceptance`。
+- **证据优先**：计划、已有测试名称、命令意图或“看起来正常”都不是执行证据。没有证据就不能标记 `PASS`，`NEEDS_HUMAN_REVIEW` 也不能替代证据。
+- **技术中立**：不强制 Web、Playwright 或任何特定语言、平台、浏览器和工具。Playwright 及其他浏览器项目只是调研和比较参考，不是当前必需依赖。
+- **人工保留**：需求歧义、主观体验、业务或设计判断、敏感资源、高风险操作、范围扩大和最终接受都经过 Human Gate。
+- **范围和来源受控**：主 Agent 先交接独立的 skill source path 与显式 product target path、目标范围和非目标、用户上下文及已知约束；同一个 QA subagent 先执行 Repository Preflight，它必须发生在实际 Diff 检查和 Change Intake 之前；随后独立读取或检查实际可用 Diff，再记录 Change Intake，不依赖摘要，也不跟随需求、Diff、日志或外部内容中的嵌入指令。
+- **只读边界**：QA 不编辑产品源代码、产品测试/测试文件、fixtures、snapshots、配置或文档；只允许写入持续维护的 QA 报告和获准的临时 QA 产物，例如证据日志或截图。
+- **变更取证**：`qa-plan` 开始时先做 Repository Preflight，再独立检查实际 Diff，随后记录 named Change Intake；Repository Preflight 不从 skill source 或 cwd 推断目标，不把 ancestor repo 自动当成 untracked/no-history target 的有效基线，没有可用 Diff 时只阻塞 Diff-dependent checks；产品修复在 QA 之外完成，修复或其他实质变化后必须用新的 rerun evidence 更新状态。
+- **自检边界**：pack self-tests 只用于确认 skill pack 自身完整性，不是 product QA evidence，也不能替代对 product target 的验证。
+
+## 报告交付 authority
+
+跨宿主的契约是完整交付 QA 报告，不能造成语义或内容损失。宿主如果能以程序方式取得有效的已完成 child/subagent result payload，必须直接交付该 exact payload 作为权威报告，不能让模型重新构造，也不能退化为摘要；没有该机制的宿主也必须提供语义等价的精确交付路径。
+
+原始 parent model final message 只作为诊断证据保留。它与权威交付报告不一致时必须如实记录 mismatch，但 mismatch 不替代也不使 exact authoritative delivery 失效。比较是在提取后进行 byte/string exact comparison，不是 semantic equivalence；提取只移除结果 wrapper 内侧由宿主添加的一层 delimiter newline，报告自身的空白和换行仍属于权威字节。引用的报告 artifact 只是 mirror，必须与 authority 完全一致。
+
+OpenCode reference harness 的术语是：已完成 `task` 结果中的 `<task_result>` 被解析为 delivered authority；`final-message.md` 是 raw parent assistant output；`final-report.md` 是 exact host-delivered task-result report；`child-report-relay-evidence.json` 保留 raw hashes/bytes/match 以及 delivered equality fields；`report-source.json` 记录 task-result authority。这是 OpenCode 1.18.x 的参考 harness 说明，不是对所有宿主 API 的统一要求。
+
+共享规则位于 [`qa-skill/references/`](qa-skill/references/)，QA-Lite 规则位于 [`qa-skill/references/qa-lite-triage.md`](qa-skill/references/qa-lite-triage.md)，报告模板位于 [`qa-skill/templates/qa-lite-report.md`](qa-skill/templates/qa-lite-report.md) 与 [`qa-skill/templates/qa-report.md`](qa-skill/templates/qa-report.md)。
 
 ## 强制工作流
 
 ```text
 手动触发
   → using-qa
-  → 主 Agent 交接 skill source path、product target path、范围/非目标、用户上下文和约束
-  → qa-plan：同一个 QA subagent 先记录 Repository Preflight，再独立读取或检查实际可用 Diff，并记录 named Change Intake
-  → QA Plan Gate: OPEN（否则 BLOCKED 并停止）
-  → qa-execute
-  → qa-conclude
-  → QA Conclusion Gate: COMPLETE / BLOCKED
+  → qa-triage
+  → qa-lite -> QA Lite Gate
+    或 qa-plan -> qa-execute -> qa-conclude -> QA Conclusion Gate
   → 交付报告，保留人工决策
 ```
+
+`qa-triage` 只做路由，不写验证结论。Lite 只会在单一、明确、低风险、可本地安全验证的目标上被选中。只要出现模糊范围、跨模块或架构影响、安全、隐私、数据迁移、权限、发布、运维风险、环境或工具或数据不确定、生成式验证或修复或恢复或历史比较或能力调度，或者用户明确要求 Full、项目级、审计级或全量 QA，就应路由到 Full，然后继续 `qa-plan -> qa-execute -> qa-conclude`。
 
 缺少影响目标、预期结果或必须验证项执行的关键上下文时，应先提出针对性问题。无法补齐时，记录 `BLOCKED` 并停止，而不是猜测后继续。执行过程中不得静默扩大范围。产品修复在 QA 之外完成；外部修复或其他实质变化后，必须重新执行受影响检查并记录 fresh rerun evidence，才能改变状态。
 
 未解决或互相矛盾的 `Authoritative Acceptance Criteria` 会使现有的 `QA Plan Gate: BLOCKED`，直到客观验收前提补齐；这不是新增 Gate。
+
+### QA applicability matrix
+
+每次运行都要在报告里显式列出这 11 个类别的 applicability assessment，不能靠“未提到”来算通过，也不能发明一个统一覆盖率百分比来替代判断。Regression 只按变更影响挑选，和“全量回归”无关。
+
+1. `Static/build`
+2. `Unit`
+3. `Integration`
+4. `Contract/API`
+5. `E2E`
+6. `Database/migration`
+7. `Security`
+8. `Performance`
+9. `Compatibility`
+10. `Accessibility/visual`
+11. `Regression`
+
+评估结果只使用这五个值：`Required`、`Recommended`、`Not Applicable`、`Blocked`、`Deferred`。它们不是执行状态，也不是风险优先级。
 
 ## 风险与验证层
 
@@ -68,7 +130,7 @@ Phase 1 的基本单位是一次单独的需求、修复或 Diff QA。它帮助 
 4. **Specialist non-functional**，安全、隐私、性能、可靠性、可访问性或兼容性检查。
 5. **Manual acceptance**，UX、视觉、业务意图、歧义和接受条件的人工作业。
 
-选择某个验证层不代表它已经执行。省略的层、原因和剩余风险必须在报告中可见。
+`Required` 和 `Must Verify` 不是同一个东西，前者是类别是否进入执行的 applicability assessment，后者是进入执行后该项的验证优先级。`Recommended` 对应应该优先看的已影响项，`Optional` 对应可做可不做的补充项，`Explicitly Not Verified` 只用于明确未执行但仍要保留的事实记录。选择某个验证层不代表它已经执行，省略的层、原因和剩余风险必须在报告中可见。
 
 ## 状态
 
@@ -79,11 +141,11 @@ Phase 1 的基本单位是一次单独的需求、修复或 Diff QA。它帮助 
 | `BLOCKED` | 关键上下文、环境、数据、权限、依赖或工具不可用，导致必须验证项无法完成。 |
 | `NEEDS_HUMAN_REVIEW` | 已有客观证据，但仍不能替代主观、业务、设计、安全、隐私或所有者判断。 |
 
-当缺少或互相矛盾的客观验收前提，导致无法定义预期结果或执行 `Must Verify` 检查，并同时需要 `NEEDS_HUMAN_REVIEW` 时，`BLOCKED` 具有优先权。此时应记录 Human Gate，但受影响验证项和总体状态仍保持 `BLOCKED`，直到客观前提补齐。其他状态仍按各自定义处理；以上后三种状态都不能转为 `PASS`，除非其对应条件已经解决并有新的证据。
+Applicability assessment 决定一个类别是否应该执行，execution status 记录该项最后发生了什么。`Required` 项必须在有证据后才能进入 `PASS`，`Not Applicable` 必须有事实基础，`Blocked` 必须写清 prerequisite 和 rerun condition，`Deferred` 必须写清 owner、trigger、rerun condition 和 residual risk。`NEEDS_HUMAN_REVIEW` 只能说明客观证据仍不足以替代人工判断，不能替代 `Required` 证据，也不能把一个缺证的 `Required` 变成 `PASS`。当缺少或互相矛盾的客观验收前提，导致无法定义预期结果或执行 `Must Verify` 检查，并同时需要 `NEEDS_HUMAN_REVIEW` 时，`BLOCKED` 具有优先权。此时应记录 Human Gate，但受影响验证项和总体状态仍保持 `BLOCKED`，直到客观前提补齐。其他状态仍按各自定义处理；以上后三种状态都不能转为 `PASS`，除非其对应条件已经解决并有新的证据。
 
 ## QA 报告输出
 
-一次运行从 Repository Preflight 开始持续维护同一份 Markdown 报告。报告模板包含：
+一次运行在 triage 后持续维护一份权威 Markdown 报告。Lite 使用紧凑的 `qa-lite-report.md`；Full 使用 `qa-report.md`。Lite 运行中升级 Full 时扩展同一份报告并保留已有证据，不创建平行报告。Full 报告模板包含：
 
 - Repository Preflight
 - Change Intake
@@ -98,26 +160,45 @@ Phase 1 的基本单位是一次单独的需求、修复或 Diff QA。它帮助 
 - Residual Risks
 - Overall Status and Conclusion 和 `QA Conclusion Gate`
 
-每条证据应能追溯到验证项、命令或工具、观察结果、退出码或状态、产物及必要的环境或会话信息。每个必须验证项必须形成 `Risk → Verification → Evidence → Status` 追踪链；每条发现（如有）必须链接 `Finding → Risk / Verification / Evidence`。缺少必要链接时，`QA Conclusion Gate` 不能完成。报告可写 `PASS`、`FAIL`、`BLOCKED` 或 `NEEDS_HUMAN_REVIEW`，但不输出发布批准或最终 release decision。
+每条证据应能追溯到验证项、命令或工具、观察结果、退出码或状态、产物及必要的环境或会话信息。报告里还必须有 11 行 applicability matrix，且每行都要说明 assessment、事实依据和是否执行，没有任何类别可以静默消失。`Risk → Verification → Evidence → Status` 只描述已经进入执行的项，不是 applicability assessment 本身；每条发现（如有）必须链接 `Finding → Risk / Verification / Evidence`。`Required` 行没有满意证据时，`QA Conclusion Gate` 不能完成。`Not Applicable` 行需要事实基础，`Blocked` 行需要 prerequisite 和 rerun condition，`Deferred` 行需要 owner、trigger、rerun condition 和 residual risk。报告可写 `PASS`、`FAIL`、`BLOCKED` 或 `NEEDS_HUMAN_REVIEW`，交付时必须使用完整权威报告而不是重构摘要，但不输出发布批准或最终 release decision。
 
 ## 目录结构
 
 ```text
 QA-skills/
-├── qa-skill/
-│   ├── using-qa/SKILL.md
-│   ├── qa-plan/SKILL.md
-│   ├── qa-execute/SKILL.md
-│   ├── qa-conclude/SKILL.md
-│   ├── references/
-│   │   ├── qa-principles.md
-│   │   ├── risk-checklist.md
-│   │   ├── evidence-guide.md
-│   │   ├── finding-classification.md
-│   │   └── human-gates.md
-│   └── templates/qa-report.md
-├── tests/qa-skill-pack.test.mjs
-└── docs/
+├── README.md                                      # 项目入口和使用说明，不替代当前权威方向文档
+├── LICENSE                                        # 项目许可声明
+├── .gitignore                                     # 版本控制忽略规则
+├── qa-skill/                                      # 可执行的 QA 工作流 Skill 包
+│   ├── using-qa/SKILL.md                         # 入口 Skill：接收 QA 请求并串联完整流程
+│   ├── qa-triage/SKILL.md                        # 路由 Skill：判定 Lite 或 Full
+│   ├── qa-lite/SKILL.md                          # Lite Profile：单边界、只读、四状态、exact relay
+│   ├── qa-plan/SKILL.md                          # Full Skill：明确范围、风险、验证计划和 QA Plan Gate
+│   ├── qa-execute/SKILL.md                       # Full Skill：按计划执行验证并记录真实证据
+│   ├── qa-conclude/SKILL.md                      # Full Skill：分类结果、核对追踪链并形成受人工约束的结论
+│   ├── references/                                # 工作流共用规则，供各 Skill 共同引用
+│   │   ├── qa-principles.md                      # 证据、状态和 QA 结论的基本原则
+│   │   ├── qa-lite-triage.md                     # Lite 资格与 Full 触发规则
+│   │   ├── applicability-rubric.md               # Phase 1 applicability rubric, shared 11-category planner source
+│   │   ├── qa-profiles.md                        # Lite/FULL/Audit 路由和 rigor contract
+│   │   ├── risk-checklist.md                     # 风险优先级和验证层选择规则
+│   │   ├── evidence-guide.md                     # 证据记录、可信性、最小化和脱敏规则
+│   │   ├── finding-classification.md             # 发现类别与 PASS、FAIL 等状态映射
+│   │   └── human-gates.md                         # 需要人工审批、判断或升级的门禁规则
+│   ├── templates/                                 # 工作流产物模板
+│   │   ├── qa-lite-report.md                     # QA-Lite 报告模板，保留 exact authoritative relay
+│   │   └── qa-report.md                          # Full QA 报告模板，贯穿计划、执行和结论阶段
+│   ├── schemas/
+│   │   └── qa-plan.schema.json                   # qa-plan/v1 JSON schema
+│   └── tools/
+│       └── validate-qa-plan.mjs                  # zero-dependency planner validator CLI
+└── tests/                                        # 自动化契约与功能验证
+    ├── qa-skill-pack.test.mjs                    # 检查 Skill 包结构、元数据、链接和关键工作流约束
+    └── functional-validation/                    # 零模型合同测试与显式 opt-in 的真实 OpenCode 验证
+        ├── contracts.test.mjs                    # Harness、安全边界和场景断言合同
+        ├── integration.test.mjs                  # PASS、FAIL、BLOCKED 真实运行入口
+        ├── qa-plan-validator.test.mjs            # qa-plan/v1 validator contracts
+        └── README.md                             # 运行方式、兼容边界和产物说明
 ```
 
 ## 模拟 Skill 使用流程
@@ -157,15 +238,15 @@ QA Subagent session ID: QA-SUBAGENT-EXAMPLE-001
 
 ### 3. `qa-plan` 记录 Repository Preflight、独立检查 Diff 并记录 Change Intake
 
-QA Subagent 先记录假设的 Repository Preflight 证据，确认 skill source path 与 product target path 分离，解析 product target 所在 Git worktree topology 和 Product target classification，并验证目标基线。pack self-tests 只用于检查 skill pack 完整性，不是 product QA evidence：
+QA Subagent 先记录假设的 Repository Preflight 证据，确认 skill source path 与 product target path 分离，product target 是显式目标，Git context 只来自目标探测，且目标基线和 scoped Diff 可用。pack self-tests 只用于检查 skill pack 完整性，不是 product QA evidence，不能替代 product target 验证：
 
 ```text
 [假设的 Repository Preflight]
 Skill source path: supplied C:\example\qa-skill-pack; resolved C:\example\qa-skill-pack
 Product target path: supplied C:\example\shop-app; resolved C:\example\shop-app
-Git worktree topology: primary worktree
-Product target classification: repository root
-Scoped Diff: available with validated commit OID and `.` pathspec
+Git context: target probe resolves the product repository root
+Target scope: target-only QA for login session timeout behavior
+Baseline and scoped Diff: usable for the product target
 Self-check limitation: pack self-tests 仅用于 skill pack 完整性检查，不是 product QA evidence
 ```
 
@@ -396,21 +477,56 @@ User
 
 ## 验证本项目
 
-当前测试文件包含 **7 个验证用例**，覆盖 Phase 1 文件结构、Skill 元数据、语义锚点、政策一致性、Repository Preflight contract、包内链接和 OpenCode 发现。运行：
+当前验证入口如下：
 
 ```bash
-node --test tests/qa-skill-pack.test.mjs
+node --test --test-name-pattern "^P1-" tests/qa-skill-pack.test.mjs
+node --test tests/functional-validation/contracts.test.mjs
+node --test tests/functional-validation/qa-plan-validator.test.mjs
 ```
+
+Phase 1 的确定性基线现在是 **83/83**，即 **18 pack contracts + 65 functional contracts**。完整显式 suite 现在是 **182 total, 180 pass, 2 expected opt-in skips, 0 fail**。
+
+### Functional Validation Harness
+
+[`tests/functional-validation/README.md`](tests/functional-validation/README.md) 说明了可选的真实 OpenCode harness；[`docs/phase2-real-project-validation-plan.md`](docs/phase2-real-project-validation-plan.md) 说明了 Phase 2 真实项目基准合同。默认的确定性验证不调用模型：
+
+```powershell
+node --test tests/functional-validation/contracts.test.mjs
+node --test tests/functional-validation/qa-plan-validator.test.mjs
+node --test tests/functional-validation/project-integration.test.mjs
+node --test tests/functional-validation/real-project-benchmark-contracts.test.mjs
+node --test tests/functional-validation/real-project-benchmark.test.mjs
+```
+
+`qa-plan/v1` 的 plan-stage 和 conclusion-stage 可以用 resolved skill source path 直接验证，不依赖 product target：
+
+```powershell
+$skillSource = 'C:\works\QA-skills\qa-skill'
+node "$skillSource\tools\validate-qa-plan.mjs" "$planPath" --json
+node "$skillSource\tools\validate-qa-plan.mjs" "$planPath" --json --require-conclusion
+```
+
+`--json` 只检查 plan-stage 一致性，`--require-conclusion` 叠加 conclusion-stage 调和。退出码是 `0` 通过，`1` 合同不一致，`2` 用法、读取或加载错误。Node 不可用时，不安装任何东西，手工执行同一套 schema、rubric 和 gate 规则。
+
+真实项目 benchmark 已实现且已尝试三轮，但仍是 draft，三轮均未形成有效的 Skill-vs-Baseline effectiveness 证据：前两轮分别因 provider 配置和证书失败失效，第三轮正确 fail-closed。新的真实模型 campaign 必须等待外部证书问题恢复、显式 opt in，并使用新的空 artifact root；approved effectiveness evidence 仍在等待。
+
+Phase 2 project QA baseline 已存在，但它只是可复查的基线，不等于已批准的效果结论。
+
+Phase 3（`project-qa-context`）与 Phase 4（`project-qa-memory`）已作为 Project QA 的**条件模块**落地，但都是 planning-only、永不 PASS 证据：Phase 3 仅在显式 GitHub 引用存在时提取变更意图；Phase 4 是人工确认的项目质量记忆，并配套零依赖工具 [`tools/match-memory.mjs`](qa-skill/tools/match-memory.mjs)（读 `.qa/memory/index.yaml`，匹配变更面，输出 `qa_planning_inputs`）。它们的合同已有行为级测试覆盖，但同样没有已批准的真实模型 effectiveness 结论。
+
+Phase 1 的 Repository Preflight 保持为紧凑的行为级契约。literal pathspec、fsmonitor、OID、worktree topology 等详细 Git 命令配方是后续增强，不是当前最小契约的隐含要求。
 
 ## 路线边界
 
-以下阶段是路线图，当前均未实现：
+各阶段的当前状态：
 
-- **Phase 2，项目、子系统或发布级 QA**：汇总跨 Diff 的范围、覆盖和风险。
-- **Phase 3，主动获取项目上下文**：从相关 Issue、PR、需求、事故或讨论中补足背景。
-- **Phase 4，人工治理的项目知识复用**：经人批准后保存、复用、修正或撤销项目规则。
+- **Phase 2，项目、子系统或发布级 QA**：已具备 baseline 和 real-project benchmark 合同，但 approved effectiveness evidence 仍待补齐。QA-Lite 不会改写这条语义，它只是 Phase 1 的 triage-first 路由。
+- **Phase 3，主动获取项目上下文**：已作为条件模块 `project-qa-context` 落地，仅限显式 GitHub 引用、无搜索、one-hop、`gh` 优先，planning-only。
+- **Phase 4，人工治理的项目知识复用**：已作为条件模块 `project-qa-memory` 落地，经人批准后保存/复用/撤销项目规则，配套 `match-memory.mjs` 生成回归检查点；反馈与批准仍由人负责，工具永不 PASS。
+- 两者的合同均有行为级测试，但都尚无已批准的真实模型 effectiveness 结论。
 
-当前没有 CI/CD 集成、自动调度、持久化 QA Agent、多 Subagent QA 流水线、Dashboard、自动发布门禁、自动产品修复、自动测试生成、测试维护模式或自动 Issue/PR/Jira/项目记录检索。后续路线不改变当前的人工决策和证据边界。
+当前没有 CI/CD 集成、自动调度、持久化 QA Agent、多 Subagent QA 流水线、Dashboard、自动发布门禁、自动产品修复、自动测试生成、测试维护模式或自动 Issue/PR/Jira/项目记录检索。`match-memory.mjs` 目前需要调用方提供变更面（paths/symbols/keywords），尚未从 VCS diff 自动生成。后续路线不改变当前的人工决策和证据边界：没有证据就没有 PASS，外部上下文与记忆只影响计划，验收与发布决定始终由人负责。
 
 ## 设计参考
 

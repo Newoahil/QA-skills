@@ -1,0 +1,290 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://qa-skills.local/schemas/qa-plan.schema.json",
+  "title": "Runtime QA Plan v1",
+  "description": "Public runtime contract for qa-plan/v1 Lite and Full QA plans.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "version",
+    "kind",
+    "profile",
+    "runId",
+    "title",
+    "generatedAt",
+    "canonicalValues",
+    "repositoryPreflight",
+    "changeIntake",
+    "applicabilityMatrix",
+    "risks",
+    "verifications",
+    "evidence",
+    "humanGates"
+  ],
+  "properties": {
+    "schema": { "const": "qa-plan/v1" },
+    "version": { "const": "qa-plan/v1" },
+    "kind": { "const": "qa-plan" },
+    "profile": { "enum": ["Lite", "Full"] },
+    "runId": { "$ref": "#/$defs/nonEmptyString" },
+    "title": { "$ref": "#/$defs/nonEmptyString" },
+    "generatedAt": { "$ref": "#/$defs/nonEmptyString" },
+    "canonicalValues": { "$ref": "#/$defs/canonicalValues" },
+    "repositoryPreflight": { "$ref": "#/$defs/repositoryPreflight" },
+    "changeIntake": { "$ref": "#/$defs/changeIntake" },
+    "applicabilityMatrix": {
+      "type": "array",
+      "minItems": 11,
+      "maxItems": 11,
+      "items": { "$ref": "#/$defs/matrixEntry" }
+    },
+    "risks": { "type": "array", "items": { "$ref": "#/$defs/risk" } },
+    "verifications": { "type": "array", "items": { "$ref": "#/$defs/verification" } },
+    "evidence": { "type": "array", "items": { "$ref": "#/$defs/evidence" } },
+    "humanGates": { "type": "array", "items": { "$ref": "#/$defs/humanGate" } },
+    "liteEligibility": { "$ref": "#/$defs/liteEligibility" },
+    "qaLiteGate": { "$ref": "#/$defs/qaLiteGate" },
+    "fullTriggerBasis": { "$ref": "#/$defs/nonEmptyStringArray" },
+    "escalationBasis": { "$ref": "#/$defs/nonEmptyStringArray" },
+    "qaPlanGate": { "$ref": "#/$defs/qaPlanGate" },
+    "conclusion": { "$ref": "#/$defs/conclusion" },
+    "rigor": { "$ref": "#/$defs/rigor" }
+  },
+  "$defs": {
+    "nonEmptyString": { "type": "string", "minLength": 1 },
+    "stringArray": { "type": "array", "items": { "$ref": "#/$defs/nonEmptyString" } },
+    "nonEmptyStringArray": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/nonEmptyString" } },
+    "canonicalValues": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["matrixCategories", "applicabilityAssessments", "executionStatuses"],
+      "properties": {
+        "matrixCategories": {
+          "type": "array",
+          "prefixItems": [
+            { "const": "Static/build" },
+            { "const": "Unit" },
+            { "const": "Integration" },
+            { "const": "Contract/API" },
+            { "const": "E2E" },
+            { "const": "Database/migration" },
+            { "const": "Security" },
+            { "const": "Performance" },
+            { "const": "Compatibility" },
+            { "const": "Accessibility/visual" },
+            { "const": "Regression" }
+          ],
+          "items": false,
+          "minItems": 11,
+          "maxItems": 11
+        },
+        "applicabilityAssessments": {
+          "type": "array",
+          "prefixItems": [
+            { "const": "Required" },
+            { "const": "Recommended" },
+            { "const": "Not Applicable" },
+            { "const": "Blocked" },
+            { "const": "Deferred" }
+          ],
+          "items": false,
+          "minItems": 5,
+          "maxItems": 5
+        },
+        "executionStatuses": {
+          "type": "array",
+          "prefixItems": [
+            { "const": "PASS" },
+            { "const": "FAIL" },
+            { "const": "BLOCKED" },
+            { "const": "NEEDS_HUMAN_REVIEW" }
+          ],
+          "items": false,
+          "minItems": 4,
+          "maxItems": 4
+        }
+      }
+    },
+    "repositoryPreflight": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["skillSourcePath", "productTargetPath", "productTargetExplicit", "skillAndProductSeparated", "baselineAvailable"],
+      "properties": {
+        "skillSourcePath": { "$ref": "#/$defs/nonEmptyString" },
+        "productTargetPath": { "$ref": "#/$defs/nonEmptyString" },
+        "productTargetExplicit": { "type": "boolean" },
+        "skillAndProductSeparated": { "type": "boolean" },
+        "baselineAvailable": { "type": "boolean" }
+      }
+    },
+    "changeIntake": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["targetScope", "observedFacts", "inferredIntent", "nonGoals", "authoritativeAcceptanceCriteria", "unresolvedQuestions"],
+      "properties": {
+        "targetScope": { "$ref": "#/$defs/nonEmptyString" },
+        "observedFacts": { "$ref": "#/$defs/nonEmptyStringArray" },
+        "inferredIntent": { "type": "array", "items": { "$ref": "#/$defs/inferredIntent" } },
+        "nonGoals": { "$ref": "#/$defs/stringArray" },
+        "authoritativeAcceptanceCriteria": { "type": "array", "items": { "$ref": "#/$defs/acceptanceCriterion" } },
+        "unresolvedQuestions": { "$ref": "#/$defs/stringArray" }
+      }
+    },
+    "inferredIntent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["statement", "confidence", "basis"],
+      "properties": {
+        "statement": { "$ref": "#/$defs/nonEmptyString" },
+        "confidence": { "enum": ["LOW", "MEDIUM", "HIGH"] },
+        "basis": { "$ref": "#/$defs/nonEmptyString" }
+      }
+    },
+    "acceptanceCriterion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "criterion", "source"],
+      "properties": {
+        "id": { "$ref": "#/$defs/nonEmptyString" },
+        "criterion": { "$ref": "#/$defs/nonEmptyString" },
+        "source": { "$ref": "#/$defs/nonEmptyString" }
+      }
+    },
+    "matrixEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["category", "assessment", "basis", "verificationRefs"],
+      "properties": {
+        "category": { "enum": ["Static/build", "Unit", "Integration", "Contract/API", "E2E", "Database/migration", "Security", "Performance", "Compatibility", "Accessibility/visual", "Regression"] },
+        "assessment": { "enum": ["Required", "Recommended", "Not Applicable", "Blocked", "Deferred"] },
+        "basis": { "$ref": "#/$defs/nonEmptyString" },
+        "verificationRefs": { "$ref": "#/$defs/stringArray" },
+        "factBasis": { "$ref": "#/$defs/nonEmptyString" },
+        "prerequisite": { "$ref": "#/$defs/nonEmptyString" },
+        "rerunCondition": { "$ref": "#/$defs/nonEmptyString" },
+        "owner": { "$ref": "#/$defs/nonEmptyString" },
+        "trigger": { "$ref": "#/$defs/nonEmptyString" },
+        "residualRisk": { "$ref": "#/$defs/nonEmptyString" }
+      }
+    },
+    "risk": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "category", "priority", "description", "sourceRefs", "verificationRefs"],
+      "properties": {
+        "id": { "$ref": "#/$defs/nonEmptyString" },
+        "category": { "enum": ["Static/build", "Unit", "Integration", "Contract/API", "E2E", "Database/migration", "Security", "Performance", "Compatibility", "Accessibility/visual", "Regression"] },
+        "priority": { "enum": ["Must Verify", "Should Verify", "Optional", "Explicitly Not Verified"] },
+        "description": { "$ref": "#/$defs/nonEmptyString" },
+        "sourceRefs": { "$ref": "#/$defs/stringArray" },
+        "verificationRefs": { "$ref": "#/$defs/stringArray" }
+      }
+    },
+    "verification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "riskRefs", "layer", "method", "preconditions", "expectedResult", "requiredEvidence", "humanGateRefs"],
+      "properties": {
+        "id": { "$ref": "#/$defs/nonEmptyString" },
+        "riskRefs": { "$ref": "#/$defs/stringArray" },
+        "layer": { "enum": ["Static/unit", "API/integration", "E2E/system", "Specialist non-functional", "Manual acceptance"] },
+        "method": { "$ref": "#/$defs/nonEmptyString" },
+        "preconditions": { "$ref": "#/$defs/stringArray" },
+        "expectedResult": { "$ref": "#/$defs/nonEmptyString" },
+        "requiredEvidence": { "$ref": "#/$defs/nonEmptyStringArray" },
+        "humanGateRefs": { "$ref": "#/$defs/stringArray" },
+        "status": { "enum": ["PASS", "FAIL", "BLOCKED", "NEEDS_HUMAN_REVIEW"] },
+        "evidenceRefs": { "$ref": "#/$defs/stringArray" }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "verificationRef", "kind", "observed", "artifactRefs"],
+      "properties": {
+        "id": { "$ref": "#/$defs/nonEmptyString" },
+        "verificationRef": { "$ref": "#/$defs/nonEmptyString" },
+        "kind": { "enum": ["command", "artifact", "manual", "system"] },
+        "command": { "$ref": "#/$defs/nonEmptyString" },
+        "exitCode": { "type": "integer" },
+        "observed": { "$ref": "#/$defs/nonEmptyString" },
+        "artifactRefs": { "$ref": "#/$defs/stringArray" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "kind": { "const": "command" } }, "required": ["kind"] },
+          "then": { "required": ["command", "exitCode"] }
+        }
+      ]
+    },
+    "humanGate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "critical", "status", "question"],
+      "properties": {
+        "id": { "$ref": "#/$defs/nonEmptyString" },
+        "critical": { "type": "boolean" },
+        "status": { "enum": ["OPEN", "PENDING", "COMPLETE", "WAIVED"] },
+        "question": { "$ref": "#/$defs/nonEmptyString" }
+      }
+    },
+    "liteEligibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["decision", "basis", "disqualifiers", "safeLocalVerificationAvailable", "requiresFullTriggers"],
+      "properties": {
+        "decision": { "const": "LITE" },
+        "basis": { "$ref": "#/$defs/nonEmptyString" },
+        "disqualifiers": { "$ref": "#/$defs/stringArray" },
+        "safeLocalVerificationAvailable": { "type": "boolean" },
+        "requiresFullTriggers": { "$ref": "#/$defs/stringArray" }
+      }
+    },
+    "qaLiteGate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "evidenceRefs", "unresolvedBlockers", "pendingCriticalHumanGates"],
+      "properties": {
+        "status": { "enum": ["PASS", "FAIL", "BLOCKED", "NEEDS_HUMAN_REVIEW"] },
+        "evidenceRefs": { "$ref": "#/$defs/stringArray" },
+        "unresolvedBlockers": { "$ref": "#/$defs/stringArray" },
+        "pendingCriticalHumanGates": { "$ref": "#/$defs/stringArray" }
+      }
+    },
+    "qaPlanGate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "triggerBasis", "escalationBasis"],
+      "properties": {
+        "status": { "const": "OPEN" },
+        "triggerBasis": { "$ref": "#/$defs/nonEmptyStringArray" },
+        "escalationBasis": { "$ref": "#/$defs/nonEmptyStringArray" }
+      }
+    },
+    "conclusion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["overallStatus", "qaConclusionGate", "evidenceRefs", "unresolvedBlockers", "pendingCriticalHumanGates", "residualRisks", "releaseDecision"],
+      "properties": {
+        "overallStatus": { "enum": ["PASS", "FAIL", "BLOCKED", "NEEDS_HUMAN_REVIEW"] },
+        "qaConclusionGate": { "enum": ["COMPLETE", "BLOCKED"] },
+        "evidenceRefs": { "$ref": "#/$defs/stringArray" },
+        "unresolvedBlockers": { "$ref": "#/$defs/stringArray" },
+        "pendingCriticalHumanGates": { "$ref": "#/$defs/stringArray" },
+        "residualRisks": { "$ref": "#/$defs/stringArray" },
+        "releaseDecision": { "const": "none" }
+      }
+    },
+    "rigor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["level", "basis"],
+      "properties": {
+        "level": { "enum": ["Standard", "Audit"] },
+        "basis": { "$ref": "#/$defs/nonEmptyString" },
+        "approvalRef": { "$ref": "#/$defs/nonEmptyString" }
+      }
+    }
+  }
+}

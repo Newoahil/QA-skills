@@ -1,0 +1,263 @@
+{
+  "schemaVersion": "phase2-real-project-benchmark-v1",
+  "status": "draft",
+  "runConfig": {
+    "model": "cpa/gpt-5.6-sol",
+    "agent": "build",
+    "timeoutMs": 600000,
+    "budget": {
+      "maxRuns": 12,
+      "maxWallClockMs": 7200000,
+      "maxCostUsd": 12
+    }
+  },
+  "arms": {
+    "baseline": {
+      "armId": "baseline",
+      "skillLoaded": false,
+      "primaryRuns": [
+        {
+          "runId": "phase2-baseline-primary",
+          "primary": true,
+          "silentRerun": false,
+          "model": "cpa/gpt-5.6-sol",
+          "agent": "build",
+          "timeoutMs": 600000,
+          "budget": {
+            "maxRuns": 12,
+            "maxWallClockMs": 7200000,
+            "maxCostUsd": 12
+          }
+        }
+      ]
+    },
+    "skill": {
+      "armId": "skill",
+      "skillLoaded": true,
+      "primaryRuns": [
+        {
+          "runId": "phase2-skill-primary",
+          "primary": true,
+          "silentRerun": false,
+          "model": "cpa/gpt-5.6-sol",
+          "agent": "build",
+          "timeoutMs": 600000,
+          "budget": {
+            "maxRuns": 12,
+            "maxWallClockMs": 7200000,
+            "maxCostUsd": 12
+          }
+        }
+      ]
+    }
+  },
+  "pairs": [
+    {
+      "pairId": "dig-create-app-node22-test-path-pr4",
+      "caseType": "real-issue-pre-post",
+      "repositoryUrl": "https://github.com/DIG-Network/create-dig-app",
+      "repositoryLicense": "MIT",
+      "publicIssueUrl": "https://github.com/DIG-Network/create-dig-app/pull/4",
+      "publicIssueTitle": "fix: node --test breaks on Node 22 when passed a bare test/ path",
+      "request": "Perform read-only project QA for the reported Node test-runner compatibility problem. Determine whether the snapshot satisfies the public pull request acceptance evidence, execute only relevant local checks, and return an evidence-backed project verdict without changing files.",
+      "stack": "node",
+      "acceptanceEvidence": "The public pull request states that Node 22 treats a bare test directory as an entry script, so the pre-fix command fails with MODULE_NOT_FOUND while bare node --test discovers the same suite and passes after the fix.",
+      "expectedRisks": [
+        "Node version compatibility regression",
+        "Test discovery command mismatch",
+        "CI coverage gate failure"
+      ],
+      "expectedModules": [
+        "package.json test scripts",
+        "Node test suite",
+        "CI Node version matrix"
+      ],
+      "expectedFlows": [
+        "Run repository test suite on current Node",
+        "Trace package script to direct test command",
+        "Classify command failure versus product test failure"
+      ],
+      "prohibitedActions": [
+        "Do not modify project files",
+        "Do not install dependencies",
+        "Do not access network or production services"
+      ],
+      "preSnapshot": {
+        "snapshotId": "dig-create-app-node22-test-path-pr4-pre",
+        "commitSha": "15596b2e3ce12ac3587d502e0eacf50fb1af77ff",
+        "localSnapshot": "snapshots/create-dig-app/pre",
+        "treeSha256": "fa52323c773ceafd84a997b863dbb906ae02b9081b7bb3bb1409f9093816168a",
+        "expectedVerdict": "FAIL",
+        "directArgvArrays": [
+          [
+            "node",
+            "--test",
+            "test/"
+          ]
+        ],
+        "prerequisites": [
+          "Node 22 or newer is available",
+          "Repository tests require no dependency installation"
+        ]
+      },
+      "postSnapshot": {
+        "snapshotId": "dig-create-app-node22-test-path-pr4-post",
+        "commitSha": "9dfecb9401865874105b46a68e4ec69096949d3a",
+        "localSnapshot": "snapshots/create-dig-app/post",
+        "treeSha256": "4c3027bc0cca2fcaabb014f65bec66d570d1b334317c3841004c2d907b86a68c",
+        "expectedVerdict": "PASS",
+        "directArgvArrays": [
+          [
+            "node",
+            "--test"
+          ]
+        ],
+        "prerequisites": [
+          "Node 22 or newer is available",
+          "Repository tests require no dependency installation"
+        ]
+      },
+      "syntheticOrFaultInjection": false
+    },
+    {
+      "pairId": "dig-create-app-chip0007-collection-type-pr2",
+      "caseType": "real-issue-pre-post",
+      "repositoryUrl": "https://github.com/DIG-Network/create-dig-app",
+      "repositoryLicense": "MIT",
+      "publicIssueUrl": "https://github.com/DIG-Network/create-dig-app/pull/2",
+      "publicIssueTitle": "feat(nft-metadata): emit CHIP-0007 collection attributes as type, not trait_type",
+      "request": "Perform read-only project QA for the reported CHIP-0007 collection metadata defect. Determine whether collection attributes are emitted with the required field while item attributes retain their separate shape, execute relevant local checks, and return an evidence-backed project verdict without changing files.",
+      "stack": "node",
+      "acceptanceEvidence": "The public pull request requires collection-level attributes to emit type and retain legacy trait_type or traitType input compatibility, while item-level attributes must continue to emit trait_type and canonical output must stay aligned with the vendored template.",
+      "expectedRisks": [
+        "CHIP-0007 schema incompatibility",
+        "Collection and item attribute shape confusion",
+        "Canonical and vendored implementation drift"
+      ],
+      "expectedModules": [
+        "lib nft metadata builder",
+        "vendored NFT collection tool",
+        "NFT metadata regression tests"
+      ],
+      "expectedFlows": [
+        "Build collection metadata with a collection attribute",
+        "Verify collection attribute field shape",
+        "Verify item attribute backward compatibility and anti-drift coverage"
+      ],
+      "prohibitedActions": [
+        "Do not modify project files",
+        "Do not install dependencies",
+        "Do not access network or production services"
+      ],
+      "preSnapshot": {
+        "snapshotId": "dig-create-app-chip0007-collection-type-pr2-pre",
+        "commitSha": "ad68ba2c0db4b8e3051b7ea9950d16c4b41215b2",
+        "localSnapshot": "snapshots/create-dig-app-chip/pre",
+        "treeSha256": "558f80e2583e23e1f3b546199474ece313cfcff448f743bb01b85ea9ac534718",
+        "expectedVerdict": "FAIL",
+        "directArgvArrays": [
+          [
+            "node",
+            "--input-type=module",
+            "--eval",
+            "import { buildChip0007Metadata } from './lib/nft-metadata.js'\nconst metadata = buildChip0007Metadata({ name: 'x', collection: { id: 'c', name: 'C', attributes: [{ type: 'icon', value: 'https://dig.net/icon.png' }] } })\nconst attribute = metadata.collection.attributes[0]\nprocess.exit(attribute.type === 'icon' ? (Object.hasOwn(attribute, 'trait_type') ? 1 : 0) : 1)"
+          ]
+        ],
+        "prerequisites": [
+          "Node 18 or newer is available",
+          "Metadata probe requires no dependency installation"
+        ]
+      },
+      "postSnapshot": {
+        "snapshotId": "dig-create-app-chip0007-collection-type-pr2-post",
+        "commitSha": "933bdd5316c053c1b953265ee46f98ad5c45142f",
+        "localSnapshot": "snapshots/create-dig-app-chip/post",
+        "treeSha256": "51573f005e2355318ce209db1a9cf1621c1d3f35d0edb79241cb43fc6a1e2d55",
+        "expectedVerdict": "PASS",
+        "directArgvArrays": [
+          [
+            "node",
+            "--input-type=module",
+            "--eval",
+            "import { buildChip0007Metadata } from './lib/nft-metadata.js'\nconst metadata = buildChip0007Metadata({ name: 'x', collection: { id: 'c', name: 'C', attributes: [{ type: 'icon', value: 'https://dig.net/icon.png' }] } })\nconst attribute = metadata.collection.attributes[0]\nprocess.exit(attribute.type === 'icon' ? (Object.hasOwn(attribute, 'trait_type') ? 1 : 0) : 1)"
+          ]
+        ],
+        "prerequisites": [
+          "Node 18 or newer is available",
+          "Metadata probe requires no dependency installation"
+        ]
+      },
+      "syntheticOrFaultInjection": false
+    },
+    {
+      "pairId": "claude-skill-check-single-character-name-fix",
+      "caseType": "public-fix-pre-post",
+      "repositoryUrl": "https://github.com/MukundaKatta/claude-skill-check",
+      "repositoryLicense": "MIT",
+      "publicIssueUrl": "https://github.com/MukundaKatta/claude-skill-check/commit/93cad2aff35922a84cd6d778270c34592689b588",
+      "publicIssueTitle": "Fix name validation rejecting valid single-character names",
+      "request": "Perform read-only project QA for the public fix that allows a documented one-character lowercase skill name while continuing to reject invalid names. Execute relevant local checks and return an evidence-backed project verdict without changing files.",
+      "stack": "python",
+      "acceptanceEvidence": "The public commit states that the documented name range is one to sixty-four characters, the old regular expression rejected a single lowercase character, and the fix adds regression coverage while preserving trailing-hyphen rejection.",
+      "expectedRisks": [
+        "Documented validator contract mismatch",
+        "Regular expression boundary regression",
+        "Invalid trailing delimiter acceptance"
+      ],
+      "expectedModules": [
+        "Python skill validator",
+        "Name validation regular expression",
+        "Validator regression tests"
+      ],
+      "expectedFlows": [
+        "Validate a single-character lowercase name",
+        "Inspect documented name constraints",
+        "Check invalid-name regression coverage"
+      ],
+      "prohibitedActions": [
+        "Do not modify project files",
+        "Do not install dependencies",
+        "Do not access network or production services"
+      ],
+      "preSnapshot": {
+        "snapshotId": "claude-skill-check-single-character-name-fix-pre",
+        "commitSha": "d3eef30fb2f99d8921bae7bdc049a7c880e8b397",
+        "localSnapshot": "snapshots/claude-skill-check/pre",
+        "treeSha256": "bfc88a1d2a687f4e8e0089a7858969129aa1973edb250b6c7a33b58c49574df2",
+        "expectedVerdict": "FAIL",
+        "directArgvArrays": [
+          [
+            "python",
+            "-c",
+            "import sys\nsys.path.insert(0, 'src')\nfrom claude_skill_check.validator import validate_skill_source\nsource = '---\\nname: a\\ndescription: A long enough description for this validation case.\\n---\\nbody\\n'\nresult = validate_skill_source(source)\nsys.exit(0 if result.ok else 1)"
+          ]
+        ],
+        "prerequisites": [
+          "Python 3.11 is available",
+          "PyYAML 6.0.3 is available",
+          "Probe requires no dependency installation"
+        ]
+      },
+      "postSnapshot": {
+        "snapshotId": "claude-skill-check-single-character-name-fix-post",
+        "commitSha": "93cad2aff35922a84cd6d778270c34592689b588",
+        "localSnapshot": "snapshots/claude-skill-check/post",
+        "treeSha256": "8553c7f710c192affb107b778595bbf9c848a276a18f38af7539ce4930aed44c",
+        "expectedVerdict": "PASS",
+        "directArgvArrays": [
+          [
+            "python",
+            "-c",
+            "import sys\nsys.path.insert(0, 'src')\nfrom claude_skill_check.validator import validate_skill_source\nsource = '---\\nname: a\\ndescription: A long enough description for this validation case.\\n---\\nbody\\n'\nresult = validate_skill_source(source)\nsys.exit(0 if result.ok else 1)"
+          ]
+        ],
+        "prerequisites": [
+          "Python 3.11 is available",
+          "PyYAML 6.0.3 is available",
+          "Probe requires no dependency installation"
+        ]
+      },
+      "syntheticOrFaultInjection": false
+    }
+  ]
+}

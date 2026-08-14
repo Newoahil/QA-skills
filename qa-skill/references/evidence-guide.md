@@ -16,6 +16,8 @@ Actual evidence is required for every claimed result. Rerun evidence is required
 
 Missing runners, tools, dependencies, permissions, or external environments are environment or tooling blockers. Classify them as `BLOCKED`, not as product defects and not as `FAIL`.
 
+A missing project-configured runner is not automatically the end of verification. If the project's own language runtime is already present (for example `node` or `python`), and the already-existing, unmodified source can be exercised directly and safely — no install, no dependency mutation, no network, no generated or fake test file, just the runtime already there running the actual code with real inputs — that direct invocation is itself an existing safe local verification method, not a new tool being forced onto the project. Only record `BLOCKED` for a `Must Verify` item after actually considering whether such a direct, safe, read-only path exists; do not default to `BLOCKED` the moment a project-configured script or test command fails.
+
 ## Phase 1 evidence safety and source integrity
 
 Minimize and redact evidence before recording or sharing it. Never include credentials, tokens, secrets, personal data or PII, production data, or sensitive request/response or log content when a safer form is sufficient. Preserve only the minimum reviewable evidence, using hashes, paths, redacted excerpts, or summaries where raw values are unsafe. Sensitive raw data is never mandatory in a report.

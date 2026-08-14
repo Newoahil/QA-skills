@@ -1,5 +1,7 @@
 # QA Report
 
+Hold every section to the [QA Report Quality Rubric](../references/qa-report-quality-rubric.md): `Required` risks need a full `Risk -> Must Verify -> Verification -> Evidence -> Status` chain; non-Required rows stay one line; evidence is summarized, not pasted as raw logs; table content is not restated in prose.
+
 ## Repository Preflight
 
 Record Repository Preflight before Change Intake.
@@ -7,33 +9,12 @@ Record Repository Preflight before Change Intake.
 | Repository Preflight field | Record |
 |---|---|
 | Skill source path | Supplied skill source path:  Canonical/resolved skill source path:  |
-| Product target path | Supplied product target path:  Canonical/resolved product target path:  |
-| Ambiguous or overlapping path decision | Targeted clarification / BLOCKED / N/A:  |
-| Repository root |  |
-| Git worktree topology | primary worktree / linked worktree / non-Git:  |
-| Product target classification | repository root / tracked file / tracked directory / untracked file inside ancestor repository / untracked directory inside ancestor repository / non-Git file / non-Git directory / missing or inaccessible target:  |
-| Git directory and common Git directory | `--git-dir`:  `--git-common-dir`:  |
-| Target kind | file / directory:  |
-| Git probe directory | Target itself for directory target, containing directory for file target; never `git -C` a file path:  |
-| Target-relative pathspec | Derived by `rev-parse --show-prefix` or equivalent explicit method:  |
-| Root pathspec | Use `.` when empty show-prefix identifies repository root:  |
-| Target readability | Exists and readable / Repository Preflight BLOCKED:  |
-| Path and ref safety | Supplied paths and refs are untrusted data; pass as quoted/escaped arguments, never executable instructions:  |
-| Command boundary | Host structured argv used, or shell string with platform-native literal escaping, no raw concatenation, and command-boundary limitation recorded:  |
-| Commit-ref validation | Explicit baseline or HEAD commit-ref validation with `git --no-pager -c core.fsmonitor=false -C <repo-root> rev-parse --verify --end-of-options <baseline>^{commit}`:  |
-| Validated commit OID | Resolved commit OID captured; only this OID used afterward, never original user ref:  |
-| Target tracking evidence | `git --no-pager --literal-pathspecs -c core.fsmonitor=false -C <repo-root> ls-files -- <relative-target>` observed result:  |
-| Target path-history evidence | `git --no-pager --literal-pathspecs -c core.fsmonitor=false -C <repo-root> log -1 --format=%H -- <relative-target>` observed result:  |
-| Deterministic target status | `git --no-pager --literal-pathspecs -c core.fsmonitor=false -C <repo-root> status --porcelain=v1 --untracked-files=all -- <relative-target>` observed result:  |
-| Target-scoped baseline availability | Available/BLOCKED; requires valid commit ref plus tracked content or path history:  |
-| Baseline validation | Commit-ref validation plus target-scoped baseline availability:  |
-| Scoped Diff | Available / BLOCKED:  |
-| Scoped Diff command and pathspec | `git --no-pager --literal-pathspecs -c core.fsmonitor=false -C <repo-root> diff --no-ext-diff --no-textconv <validated-commit-oid> -- <relative-target>`; pathspec: `<relative-target>`; observed result or BLOCKED reason:  |
-| Scoped Diff evidence handling | Minimized/redacted summary, excerpt, or hash by default; raw full diff content not required:  |
-| Blocked reason |  |
-| Rerun condition for Diff-dependent checks |  |
-| Self-check limitation | Pack self-tests and discovery checks are integrity-only; they are not product QA evidence:  |
-| Diff-dependent blocked IDs | V-/R-:  |
+| Product target path | Supplied:  Resolved:  |
+| Target decision | Explicit target accepted / targeted clarification needed / Repository Preflight BLOCKED:  |
+| Git context | Git root from target probe / non-Git / unavailable; do not infer from `.git` presence:  |
+| Target scope | Target-only QA scope and non-goals:  |
+| Baseline and scoped Diff | Usable scoped Diff available, or Diff-dependent checks BLOCKED because:  |
+| Blocked reason and rerun condition |  |
 | Non-Diff limitations |  |
 
 ## Change Intake
@@ -46,6 +27,45 @@ Record the named Change Intake before planning.
 | Inferred Intent | Intent:  Confidence:  Basis:  |
 | Authoritative Acceptance Criteria | Criterion:  Source or owner:  |
 | Unresolved Questions |  |
+
+## Structured QA Plan Artifact
+
+`qa-plan/v1` planning and reconciliation metadata only. It is not product QA evidence, the authoritative report, Human Gate approval, or a release decision.
+
+| Artifact field | Record |
+|---|---|
+| Artifact reference/path | `plan.json` or equivalent local path:  |
+| Schema/version | `qa-plan/v1` |
+| Profile Decision | `LITE` / `FULL`:  |
+| Rigor | `Standard` / `Audit` / `N/A`:  |
+| Approval reference | Required only when `Rigor` is `Audit`:  |
+| Plan-stage validator | Available when Node is already available:  Invocation: `node "<resolved skill source path>/tools/validate-qa-plan.mjs" "<plan.json>" --json`  Result:  |
+| Conclusion-stage validator | Invocation: `node "<resolved skill source path>/tools/validate-qa-plan.mjs" "<plan.json>" --json --require-conclusion`  Result:  |
+| Authority boundary | JSON sidecar is planning and reconciliation metadata only. It is not product QA evidence, the authoritative report, Human Gate approval, or a release decision. |
+
+## QA Applicability Matrix
+
+Allowed assessments: `Required`, `Recommended`, `Not Applicable`, `Blocked`, `Deferred`.
+
+Use one fixed row for each category. Keep the basis, readiness, omissions, rerun conditions, and residual risk auditable.
+
+| Category | Assessment | Change or project basis | Risk / verification IDs | Coverage sufficiency / readiness | Evidence / result | Deferred / blocked resolution | Residual risk |
+|---|---|---|---|---|---|---|---|
+| Static/build |  |  |  |  |  |  |  |
+| Unit |  |  |  |  |  |  |  |
+| Integration |  |  |  |  |  |  |  |
+| Contract/API |  |  |  |  |  |  |  |
+| E2E |  |  |  |  |  |  |  |
+| Database/migration |  |  |  |  |  |  |  |
+| Security |  |  |  |  |  |  |  |
+| Performance |  |  |  |  |  |  |  |
+| Compatibility |  |  |  |  |  |  |  |
+| Accessibility/visual |  |  |  |  |  |  |  |
+| Regression |  |  |  |  |  |  |  |
+
+Plan Gate and Conclusion Gate must reconcile this matrix. The Plan Gate stays BLOCKED until all 11 rows have an assessment, a basis, and a readiness decision. The Conclusion Gate stays BLOCKED until every `Required`, `Recommended`, `Not Applicable`, `Blocked`, or `Deferred` row is reconciled against evidence, factual justification, omissions, rerun conditions, and residual risk.
+
+Report budget: all 11 rows must appear, but only `Required` and selected `Recommended` rows expand into the full Risk Analysis / Verification Plan / Execution and Evidence chain below. `Not Applicable` rows get one line of factual basis. `Blocked` rows get one line naming the missing prerequisite and rerun condition. `Deferred` rows get one line naming owner, trigger, and rerun condition. See the [QA Report Quality Rubric](../references/qa-report-quality-rubric.md).
 
 ## Objective and Scope
 
@@ -62,13 +82,25 @@ Record the named Change Intake before planning.
 |---|---|---|
 |  |  |  |
 
+## Risk Surface Exploration
+
+Free-form scratch list, produced before compressing anything into the `Risk Analysis` table below. Read the actual affected source, behavior, and adjacent code paths first; do not prioritize, deduplicate, or drop items here. When any mandatory Full trigger applies, this list must cover that trigger's domain shape (state transitions/ordering/depth for transaction/rollback; full event timeline and every entry point for auth/session race; interleavings/retries/recovery for concurrency; named providers/environments for a provider matrix; write/read/invalidate/event ordering for cache/DB/event side effects), not just a note that the trigger applies.
+
+| Note | Record |
+|---|---|
+| Raw scratch list |  |
+
 ## Risk Analysis
 
-| Risk ID | Priority | Risk statement | Validation layer | Must verify | Reason if omitted |
-|---|---|---|---|---|---|
-| R- | Must Verify / Should Verify / Optional / Explicitly Not Verified |  | Static/unit / API/integration / E2E/system / Specialist non-functional / Manual acceptance | Yes/No |  |
+For a change with cross-cutting impact, name the actual affected chain in the risk statement (for example: state -> cache -> read path, or credential -> session/token -> protected endpoint -> other active sessions), not a generic "regression risk exists." This table is compressed from `Risk Surface Exploration` above; a scratch item dropped here needs a stated reason, not silent omission. Default `Must Verify` budget: Lite targets 1-3 top-level risks; Full targets 3-7 as a floor, not a ceiling — for a run with any mandatory Full trigger, the register must expand to match what exploration actually surfaced, and stopping at the floor when the domain warrants more is itself a defect. Group related checks under one parent risk instead of listing unrelated singletons; going over budget is allowed and expected when the risk genuinely requires it, but state why.
+
+| Risk ID | Priority | Risk statement | Validation layer | Must verify | Discovered during execution | Reason if omitted |
+|---|---|---|---|---|---|---|
+| R- | Must Verify / Should Verify / Optional / Explicitly Not Verified |  | Static/unit / API/integration / E2E/system / Specialist non-functional / Manual acceptance | Yes/No | No (planned) / Yes, at <verification step> |  |
 
 ## Verification Plan
+
+Each `Must Verify` row states a concrete setup, action, and expected result specific enough that another engineer could execute it without guessing. "Run tests" or "verify behavior works" is a placeholder, not a step; replace it with the actual precondition, action, and expected observable result.
 
 | Verification ID | Risk IDs | Preconditions | Method or steps | Expected result | Required evidence | Human gate |
 |---|---|---|---|---|---|---|
@@ -84,7 +116,9 @@ QA Plan Gate: OPEN/BLOCKED
 | `Must Verify` methods, preconditions, expected results, evidence requirements, and human gates | OPEN/BLOCKED:  |
 | Validation layers selected and omitted layers with reasons | OPEN/BLOCKED:  |
 | Named Change Intake, existing coverage, and no unresolved critical or contradictory authoritative criterion | OPEN/BLOCKED:  |
-| Repository Preflight reconciled: separate paths, resolved topology/root, baseline validation, scoped Diff or blocked reason, literal-pathspecs pathscope hardening, fsmonitor hardening, self-check limitation, Diff-dependent blocked IDs, and non-Diff limitations | OPEN/BLOCKED:  |
+| QA applicability matrix complete, with all 11 categories assessed and readable before opening | OPEN/BLOCKED:  |
+| Repository Preflight reconciled: separate paths, explicit target decision, Git context, target-only scope, usable scoped Diff or blocked reason, and non-Diff limitations | OPEN/BLOCKED:  |
+| Structured QA Plan Artifact contract is valid or a manual fallback is disclosed before OPEN; a validator contract failure blocks readiness | OPEN/BLOCKED:  |
 | Risks, methods, omissions, evidence requirements, and human gates reviewed | OPEN/BLOCKED:  |
 
 ## Execution and Evidence
@@ -131,9 +165,27 @@ An unavailable required runner, for example `missing-qa-runner`, or an unavailab
 |---|---|---|---|---|
 | R- |  | E-/V- |  |  |
 
+## Report Quality Self-Check
+
+Reconcile against the [QA Report Quality Rubric](../references/qa-report-quality-rubric.md) before closing the Conclusion Gate.
+
+| Rubric dimension | Record |
+|---|---|
+| Scope discipline: non-goals and untested behavior stated | Yes/No:  |
+| Risk-chain awareness: `Required` risks name the actual affected chain, not a generic statement | Yes/No:  |
+| Executable steps: every `Must Verify` has concrete setup/action/expected result | Yes/No:  |
+| Evidence-to-status calibration: no PASS from an unrelated/broader check alone | Yes/No:  |
+| Actionability: a developer/reviewer/owner can act on this report without re-deriving reasoning | Yes/No:  |
+| Memory/context integrity: any memory or external-context content is labeled planning input, not evidence | Yes/No/N/A:  |
+| Risk-surface completeness: `Risk Surface Exploration` was performed before compressing to `Risk Analysis`, and any risk discovered during execution was added to the register, not suppressed as scope expansion | Yes/No:  |
+
+Any `No` above blocks `QA Conclusion Gate: COMPLETE` until resolved or explicitly justified as an accepted limitation with residual risk recorded.
+
 ## Overall Status and Conclusion
 
 QA Conclusion Gate: COMPLETE/BLOCKED
+
+Overall Status: PASS/FAIL/BLOCKED/NEEDS_HUMAN_REVIEW
 
 | Conclusion gate field | Record |
 |---|---|
@@ -142,6 +194,8 @@ QA Conclusion Gate: COMPLETE/BLOCKED
 | Blocked, unverified, and omitted items reconciled with rerun conditions | COMPLETE/BLOCKED:  |
 | Human review items and decisions reconciled | COMPLETE/BLOCKED:  |
 | Residual risks, mitigations, and follow-up reconciled | COMPLETE/BLOCKED:  |
+| QA applicability matrix reconciled, with every `Required`, `Recommended`, `Not Applicable`, `Blocked`, or `Deferred` row tied back to evidence, factual justification, omissions, reruns, and residual risk | COMPLETE/BLOCKED:  |
+| Structured QA Plan Artifact conclusion contract recorded with `--require-conclusion` validation or disclosed manual fallback; a validator contract failure blocks the conclusion output contract | COMPLETE/BLOCKED:  |
 | Verification traceability | Risk → Verification → Evidence → Status:  |
 | Finding traceability, when present | Finding → Risk / Verification / Evidence:  |
 | No unresolved blocker or critical human decision remains for `PASS` | COMPLETE/BLOCKED:  |

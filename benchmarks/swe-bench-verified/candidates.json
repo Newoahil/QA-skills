@@ -1,0 +1,135 @@
+{
+  "schemaVersion": "phase3-swe-bench-candidates-v1",
+  "status": "needs-snapshot-freeze",
+  "purpose": "Real public pre/post candidates for evaluating the Phase 3 GitHub-context MVP. These records are not executable benchmark manifest entries until local snapshots are created and treeSha256 values are computed from those frozen snapshots.",
+  "promotionRule": "Promote a candidate into benchmarks/real-projects/manifest.json only after both pre and post localSnapshot directories exist, their treeSha256 values are computed by the benchmark fingerprint function, and the directArgvArrays are verified locally without dependency install or network access.",
+  "candidates": [
+    {
+      "candidateId": "babel__babel-13928",
+      "repositoryUrl": "https://github.com/babel/babel",
+      "repositoryLicense": "MIT",
+      "publicIssueUrl": "https://github.com/babel/babel/pull/13928",
+      "relatedIssueUrl": "https://github.com/babel/babel/issues/13872",
+      "publicIssueTitle": "fix: incorrect await rejection following arrow function in parameters",
+      "caseType": "real-issue-pre-post",
+      "stack": "node",
+      "preCommitSha": "5134505bf93013c5fa7df66704df8d04becb7f7d",
+      "postCommitSha": "a6a526968d9de815384ef22a752a633be8296a80",
+      "expectedPreVerdict": "FAIL",
+      "expectedPostVerdict": "PASS",
+      "acceptanceEvidence": "The public PR fixes a parser regression where await/yield following an arrow function inside parameters was rejected because expression scope was exited at the wrong point. The fix moves expression-scope exit handling and adds parser fixtures for the failing await/yield cases.",
+      "expectedRisks": [
+        "Parser expression-scope regression",
+        "await and yield context misclassification",
+        "Parser fixture snapshot drift"
+      ],
+      "expectedModules": [
+        "packages/babel-parser parser expression scope",
+        "babel parser async-function and yield fixtures"
+      ],
+      "expectedFlows": [
+        "Parse the previously rejected async-function parameter case",
+        "Verify await/yield fixture behavior against the public PR acceptance evidence"
+      ],
+      "snapshotFreezeRequired": true,
+      "draftDirectArgvArrays": [
+        [
+          "node",
+          "--input-type=module",
+          "--eval",
+          "import { parse } from './packages/babel-parser/lib/index.js'\ntry {\n  parse('async function f(a = () => await 1) {}', { sourceType: 'module' })\n  process.exit(0)\n} catch (error) {\n  console.error(error.message)\n  process.exit(1)\n}"
+        ]
+      ],
+      "prerequisites": [
+        "Node is available",
+        "Babel parser package is already built in the frozen snapshot",
+        "Probe requires no dependency installation or network access"
+      ]
+    },
+    {
+      "candidateId": "astropy__astropy-7746",
+      "repositoryUrl": "https://github.com/astropy/astropy",
+      "repositoryLicense": "BSD-3-Clause",
+      "publicIssueUrl": "https://github.com/astropy/astropy/pull/7746",
+      "relatedIssueUrl": "https://github.com/astropy/astropy/issues/7389",
+      "publicIssueTitle": "handle zero size inputs in wcs",
+      "caseType": "real-issue-pre-post",
+      "stack": "python",
+      "preCommitSha": "d5bd3f68bb6d5ce3a61bdce9883ee750d1afade5",
+      "postCommitSha": "c2876d0bf70ac4fe4b1fe02ae94900598a4c2aba",
+      "expectedPreVerdict": "FAIL",
+      "expectedPostVerdict": "PASS",
+      "acceptanceEvidence": "The public PR closes a WCS bug where zero-size coordinate arrays raised instead of being returned consistently. The fix adds early returns for zero-size inputs and regression coverage in astropy.wcs tests.",
+      "expectedRisks": [
+        "Zero-size numpy input handling",
+        "WCS all_pix2world and all_world2pix edge-case regression",
+        "Compiled astropy.wcs extension availability"
+      ],
+      "expectedModules": [
+        "astropy/wcs/wcs.py",
+        "astropy/wcs/tests/test_wcs.py"
+      ],
+      "expectedFlows": [
+        "Construct a two-axis WCS and pass a zero-row coordinate array",
+        "Verify zero-size inputs return without raising"
+      ],
+      "snapshotFreezeRequired": true,
+      "draftDirectArgvArrays": [
+        [
+          "python",
+          "-c",
+          "import numpy as np\nfrom astropy.wcs import WCS\nw = WCS(naxis=2)\nout = w.all_pix2world(np.zeros((0, 2)), 0)\nraise SystemExit(0 if out.shape == (0, 2) else 1)"
+        ]
+      ],
+      "prerequisites": [
+        "Python is available",
+        "numpy is available",
+        "Astropy including compiled wcs extension is already built or installed for the frozen snapshot",
+        "Probe requires no dependency installation or network access"
+      ]
+    },
+    {
+      "candidateId": "babel__babel-15649",
+      "repositoryUrl": "https://github.com/babel/babel",
+      "repositoryLicense": "MIT",
+      "publicIssueUrl": "https://github.com/babel/babel/pull/15649",
+      "relatedIssueUrl": "https://github.com/babel/babel/issues/15648",
+      "publicIssueTitle": "Set shorthand false when renaming an identifier inside an object property",
+      "caseType": "real-issue-pre-post",
+      "stack": "node",
+      "preCommitSha": "35116224d21e16fb863293f9011d1d6c97ed0bf4",
+      "postCommitSha": "401873951ea77e4a63b6846786d6580472ab055f",
+      "expectedPreVerdict": "FAIL",
+      "expectedPostVerdict": "PASS",
+      "acceptanceEvidence": "The public PR fixes scope.rename leaving ObjectProperty shorthand true after the key and value diverge. The fix sets shorthand and extra.shorthand false for the renamed binding while preserving shadowed bindings, with regression tests in babel-traverse scope tests.",
+      "expectedRisks": [
+        "ObjectProperty shorthand AST invalidity after rename",
+        "Shadowed binding false positives",
+        "Babel traverse/parser/types build coupling"
+      ],
+      "expectedModules": [
+        "packages/babel-traverse scope renamer",
+        "packages/babel-traverse/test/scope.js"
+      ],
+      "expectedFlows": [
+        "Rename a destructured shorthand binding through path.scope.rename",
+        "Verify shorthand and extra.shorthand are false when key and value diverge",
+        "Verify shadowed object-property bindings are not incorrectly rewritten"
+      ],
+      "snapshotFreezeRequired": true,
+      "draftDirectArgvArrays": [
+        [
+          "node",
+          "--input-type=module",
+          "--eval",
+          "import traverse from './packages/babel-traverse/lib/index.js'\nimport { parse } from './packages/babel-parser/lib/index.js'\nconst ast = parse('const { a } = b')\nlet ok = false\ntraverse.default(ast, { Program(path) { path.scope.rename('a') } })\ntraverse.default(ast, { ObjectProperty(path) { ok = path.node.shorthand === false && (!path.node.extra || path.node.extra.shorthand === false) } })\nprocess.exit(ok ? 0 : 1)"
+        ]
+      ],
+      "prerequisites": [
+        "Node is available",
+        "Babel traverse, parser, and related packages are already built in the frozen snapshot",
+        "Probe requires no dependency installation or network access"
+      ]
+    }
+  ]
+}

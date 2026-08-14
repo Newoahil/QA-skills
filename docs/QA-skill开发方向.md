@@ -6,6 +6,14 @@
 
 QA Skill 不是测试框架、工具集合或自动发布系统，而是一套可复用的质量验证方法。它先建立可信的标准流程，再逐步适配项目上下文和项目知识。
 
+当前 Phase 1 的实际运行顺序已经更新为 `using-qa -> qa-triage -> qa-lite OR 共享的 Full 路线 qa-plan -> qa-execute -> qa-conclude`。QA-Lite 只适用于单个、边界明确、低风险的需求、修复或 Diff，并且必须有显式 target/scope 和现成、安全、可本地运行的验证器；只要存在歧义、跨模块或架构影响、高风险约束、环境或工具不确定，或用户明确要求 full/project/audit/whole-project 路线，就路由到 Full。
+
+QA-Lite 仍保留单 child、单 session、只读、证据优先、Human Gate 和外部修复后 fresh rerun evidence 的约束；它不引入自动修复，也不放松 PASS 只能由实际证据支持的规则。
+
+Phase 1 还交付 `qa-plan/v1` 两阶段 JSON sidecar 和零依赖 validator CLI。`plan` 阶段只记录 `method`、`preconditions`、`expectedResult` 和 `requiredEvidence`，不编造实际证据；`conclusion` 阶段再补 `status`、`evidenceRefs` 和 `conclusion`。`qa-skill/tools/validate-qa-plan.mjs` 只检查 Planner sidecar 的一致性，`--json` 用于 plan-stage，`--json --require-conclusion` 用于 conclusion-stage，退出码是 `0` 通过、`1` 合同不一致、`2` 用法或读取或加载错误。Node 不可用时不安装任何东西，手工执行同一套 schema、rubric 和 gate 规则。
+
+`qa-triage` 仍只返回 `LITE` 或 `FULL`。`rigor: Standard` 可以和 Full 一起使用，`rigor: Audit` 仍然是 Full route，并且需要 `approvalRef`。
+
 ## 两项核心能力
 
 ### 1. 可复用的标准质量验证流程
@@ -18,15 +26,18 @@ QA Skill 不是测试框架、工具集合或自动发布系统，而是一套�
 
 能力 1 是基础，能力 2 是适配层。项目适配可以改变验证内容、优先级和执行方式，但不能改变核心证据规则和人工决策规则。提效的目标是减少遗漏和重复判断，不是追求自动化数量。
 
+Phase 2 的项目路线基线与 Phase 1 的 triage-first 路线是分开的。`using-project-qa` 仍承载项目路线的 M1-M6 基线，QA-Lite 不是 project mode，且 approved effectiveness evidence 仍然 pending；本文档不重定义这条基线。
+
 ## 一套共享 QA 工作流
 
-所有阶段复用同一条闭环，范围可以从一次 Diff 扩大到项目或发布：
+Phase 1 复用同一 child/session，在 `using-qa -> qa-triage` 之后分流到 QA-Lite 或 Full 路线；Full 路线保持 `qa-plan -> qa-execute -> qa-conclude` 不变，并且在风险层执行前先完成 11 类 applicability matrix assessment。范围聚焦单个 Diff 或单次变更，不把项目级 baseline 语义并入 Phase 1：
 
 ```text
 用户手动触发，主 Agent 交接 supplied skill source path、resolved skill source path、supplied product target path、resolved product target path、目标范围和非目标、用户上下文及已知约束
-→ 同一 QA subagent 先执行 Repository Preflight，确认 product target、仓库边界、目标分类和可用基线
+→ 同一 QA subagent 先执行 Repository Preflight，确认显式 product target、仓库边界、目标范围和可用 Diff；歧义、缺失或不可读时 BLOCKED
 → 独立读取或检查实际目标变更或可用 Diff，不依赖摘要
 → 记录 Change Intake，分离 `Observed Facts`、带置信度和依据的 `Inferred Intent`、带来源/负责人的 `Authoritative Acceptance Criteria`、`Unresolved Questions`
+→ 完成 11 类 applicability matrix assessment，所有类别都要显式评估，但不一定执行
 → 定义范围与非目标
 → 分析风险
 → 按风险设计和选择验证层
@@ -37,7 +48,7 @@ QA Skill 不是测试框架、工具集合或自动发布系统，而是一套�
 → 交给人做验收和发布决定
 ```
 
-验证层按风险选择，不是固定套餐：
+验证层按风险选择，不是固定套餐。先做 applicability assessment，再选 layer；每个 category 都要被评估，Not Applicable 只是表示不执行，不是表示可以静默消失：
 
 | 验证层 | 主要关注 |
 |---|---|
@@ -55,7 +66,7 @@ QA Skill 不是测试框架、工具集合或自动发布系统，而是一套�
 
 **价值与目标**：让团队能围绕一次功能、修复或变更，完成范围清楚、风险可解释、证据可复查的 Diff QA。
 
-**操作闭环**：主 Agent 交接 supplied/resolved skill source path、supplied/resolved product target path、目标和上下文，QA subagent 先执行 Repository Preflight，再独立检查实际 Diff，然后记录 Change Intake 并分离 `Observed Facts`、`Inferred Intent`、`Authoritative Acceptance Criteria` 和 `Unresolved Questions`；之后才定义范围、分析风险，按风险选择验证层，检查已有测试覆盖和可用命令；以只读方式执行验证并收集证据，区分产品问题、测试问题、环境问题和需求问题，产品或测试修复在 QA 之外完成，外部修复后使用 fresh rerun evidence 重跑，最后生成可供复核的证据报告并保留人工决定。pack self-tests 和 discovery checks 只是 skill pack 完整性证据，不能替代 product-target QA。
+**操作闭环**：主 Agent 交接 supplied/resolved skill source path、supplied/resolved product target path、目标和上下文，QA subagent 先执行 Repository Preflight，要求显式 target，不从 skill source 或 cwd 推断目标；歧义、缺失或不可读时澄清或 BLOCKED；ancestor repo 不自动成为 untracked/no-history target 的有效基线；没有可用 Diff 时只阻塞 Diff-dependent checks。Phase 1 的 Repository Preflight 仅保持紧凑的行为级契约，详细 Git 命令配方，例如 literal pathspec、fsmonitor、OID 和 worktree topology，属于后续增强，不是当前最小契约的隐含要求。随后再独立检查实际 Diff，然后记录 Change Intake 并分离 `Observed Facts`、`Inferred Intent`、`Authoritative Acceptance Criteria` 和 `Unresolved Questions`；之后才定义范围、分析风险，按风险选择验证层，检查已有测试覆盖和可用命令；以只读方式执行验证并收集证据，区分产品问题、测试问题、环境问题和需求问题，产品或测试修复在 QA 之外完成，外部修复后使用 fresh rerun evidence 重跑，最后生成可供复核的证据报告并保留人工决定。pack self-tests 和 discovery checks 只是 skill pack 完整性证据，不能替代 product-target QA。
 
 **边界与非目标**：QA 是只读的，不编辑产品源代码、产品测试或测试文件、fixtures、snapshots、配置或文档；只允许写入 QA 报告和获准的临时 QA 产物，例如证据日志或截图。验证若需要项目文件编辑，必须停止并记录问题。不得绕过人工判断或自动批准发布，不自动修复产品；产品或测试修复在 QA 之外完成，外部修复或其他实质变化后必须有 fresh rerun evidence 才能改变状态。
 
