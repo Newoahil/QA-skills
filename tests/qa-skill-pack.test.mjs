@@ -101,6 +101,7 @@ const requiredProductFiles = Object.freeze([
 const qaLiteFiles = Object.freeze([
   'qa-triage/SKILL.md',
   'qa-lite/SKILL.md',
+  'references/bounded-issue-risk-checklist.md',
   'references/qa-lite-triage.md',
   'templates/qa-lite-report.md',
 ]);
@@ -1051,14 +1052,57 @@ test('P1-ROUTING-010 requires the QA subagent to load the authoritative skill ch
   }
 });
 
+test('P2-ROUTING-020 mandates high-complexity bounded Issue triggers route to Full', () => {
+  const testId = 'P2-ROUTING-020';
+  const qaTriage = readRequiredMarkdown('qa-triage/SKILL.md', testId);
+  const qaLiteTriageReference = readRequiredMarkdown('references/qa-lite-triage.md', testId);
+
+  const triggerPatterns = [
+    [/transaction[\s\S]{0,80}rollback[\s\S]{0,80}savepoint[\s\S]{0,160}(?:Full|qa-plan)/i, 'transaction/rollback/savepoint semantics'],
+    [/auth[\s\S]{0,80}session[\s\S]{0,80}permission\s+race\s+conditions?[\s\S]{0,160}(?:Full|qa-plan)/i, 'auth/session/permission race conditions'],
+    [/concurrency[\s\S]{0,80}ordering[\s\S]{0,80}idempotency\s+risk[\s\S]{0,160}(?:Full|qa-plan)/i, 'concurrency/ordering/idempotency risk'],
+    [/cross-module\s+state\s+consistency[\s\S]{0,160}(?:Full|qa-plan)/i, 'cross-module state consistency'],
+    [/provider\s+or\s+environment\s+matrix[\s\S]{0,160}(?:multiple\s+databases|multiple\s+runtimes)[\s\S]{0,160}(?:Full|qa-plan)/i, 'provider/environment matrix'],
+    [/retry[\s\S]{0,80}cancellation[\s\S]{0,80}timeout\s+behavior[\s\S]{0,160}(?:Full|qa-plan)/i, 'retry/cancellation/timeout behavior'],
+    [/cache[\s\S]{0,80}DB[\s\S]{0,80}event\s+side\s+effects[\s\S]{0,160}(?:Full|qa-plan)/i, 'cache/DB/event side effects'],
+  ];
+
+  for (const [relativePath, markdown] of [
+    ['qa-triage/SKILL.md', qaTriage],
+    ['references/qa-lite-triage.md', qaLiteTriageReference],
+  ]) {
+    for (const [pattern, label] of triggerPatterns) {
+      assert.match(markdown, pattern, `${testId}: ${relativePath} missing mandatory Full trigger for ${label}`);
+    }
+  }
+});
+
+test('P2-ROUTING-021 requires Full route completion before final delivery', () => {
+  const testId = 'P2-ROUTING-021';
+  const usingQa = readRequiredMarkdown('using-qa/SKILL.md', testId);
+
+  const requiredPatterns = [
+    [/Full\s+completion\s+contract/i, 'named Full completion contract'],
+    [/Profile\s+Decision:\s+FULL[\s\S]{0,260}same\s+QA\s+subagent\s+session[\s\S]{0,260}(?:load\s+and\s+execute|actually\s+load\s+and\s+execute)[\s\S]{0,220}qa-plan[\s\S]{0,120}qa-execute[\s\S]{0,120}qa-conclude/i, 'FULL requires same session load and execute plan/execute/conclude'],
+    [/(?:recording\s+the\s+Full\s+routing\s+decision|routing\s+decision)[\s\S]{0,220}stopping[\s\S]{0,160}(?:using-qa|qa-triage)[\s\S]{0,180}does\s+not\s+satisfy/i, 'routing-only Full stop is invalid'],
+    [/final\s+delivered\s+report[\s\S]{0,220}only\s+reflects[\s\S]{0,160}using-qa[\s\S]{0,80}qa-triage[\s\S]{0,220}without[\s\S]{0,120}QA\s+Plan\s+Gate[\s\S]{0,120}QA\s+Conclusion\s+Gate[\s\S]{0,160}incomplete/i, 'triage-level report without Full gate markers is incomplete'],
+    [/main\s+agent\s+and\s+host\s+relay[\s\S]{0,180}(?:must\s+not\s+be\s+accepted|must\s+not\s+accept|must\s+not\s+be\s+delivered|must\s+not\s+accept\s+or\s+deliver)[\s\S]{0,220}continue\s+the\s+same\s+session[\s\S]{0,180}remaining\s+Full\s+stages/i, 'main agent/host relay must not accept incomplete Full and must continue'],
+  ];
+
+  for (const [pattern, label] of requiredPatterns) {
+    assert.match(usingQa, pattern, `${testId}: using-qa/SKILL.md missing ${label}`);
+  }
+});
+
 test('P1-LITE-SEMANTICS-010 enforces Lite eligibility, escalation, and evidence integrity', () => {
   const testId = 'P1-LITE-SEMANTICS-010';
   const usingQa = readRequiredMarkdown('using-qa/SKILL.md', testId);
   const qaTriage = readRequiredMarkdown('qa-triage/SKILL.md', testId);
   const qaLite = readRequiredMarkdown('qa-lite/SKILL.md', testId);
+  const boundedChecklist = readRequiredMarkdown('references/bounded-issue-risk-checklist.md', testId);
   const qaLiteTriageReference = readRequiredMarkdown('references/qa-lite-triage.md', testId);
   const qaLiteReport = readRequiredMarkdown('templates/qa-lite-report.md', testId);
-  const contractText = `${usingQa}\n${qaTriage}\n${qaLite}\n${qaLiteTriageReference}\n${qaLiteReport}`;
+  const contractText = `${usingQa}\n${qaTriage}\n${qaLite}\n${boundedChecklist}\n${qaLiteTriageReference}\n${qaLiteReport}`;
 
   const routeEscalationPatterns = [
     [/cross-module[\s\S]{0,220}(?:architecture|scope|risk)[\s\S]{0,220}(?:escalat|route|forward|redirect)[\s\S]{0,220}(?:to\s+`?qa-plan`?|to\s+Full)/i, 'cross-module/architecture escalation'],
@@ -1072,6 +1116,7 @@ test('P1-LITE-SEMANTICS-010 enforces Lite eligibility, escalation, and evidence 
   ];
 
   const liteSemanticPatterns = [
+    [/Lite\s*=\s*compact\s+report,?\s+not\s+shallow\s+analysis/i, 'Lite is compact report not shallow analysis'],
     [/explicit\s+product\s+target/i, 'Lite route preserves explicit product target'],
     [/(?:preflight\s+[\s\S]{0,220}before\s+[\s\S]{0,220}(?:actual\s+)?Diff|preflight\s+[\s\S]{0,220}(?:Diff|source))/i, 'Lite runs preflight before Diff/source inspection'],
     [/(?:must\s+not|do\s+not|never)\s+(?:edit|change|modify|touch|write)\s+[\s\S]{0,220}(?:product\s+source|product\s+target|product\s+tests?|fixtures?|snapshots?|configuration|documentation)/i, 'Lite keeps read-only boundaries'],
@@ -1079,6 +1124,7 @@ test('P1-LITE-SEMANTICS-010 enforces Lite eligibility, escalation, and evidence 
     [/four\s+statuses|4\s+statuses/i, 'Lite exposes exactly four statuses'],
     [/Overall\s+Status:\s*PASS\/FAIL\/BLOCKED\/NEEDS_HUMAN_REVIEW/i, 'Lite report exposes canonical overall status line'],
     [/Risk\s*(?:-|→)\s*Verification\s*(?:-|→)\s*Evidence/i, 'Lite output uses traceability chain'],
+    [/Risk\s*->\s*Must\s+Verify\s*->\s*Verification\s*->\s*Evidence\s*->\s*Status/i, 'Lite output uses full Must Verify chain'],
     [/human\s+gate|NEEDS_HUMAN_REVIEW/i, 'Lite keeps Human Gate semantics'],
     [/fresh\s+rerun\s+evidence/i, 'Lite reruns tracked after external repair'],
     [/(?:exact\s+relay|authoritative\s+report|child-report-relay-evidence|report-source)/i, 'Lite exact relay delivery'],
@@ -1095,6 +1141,81 @@ test('P1-LITE-SEMANTICS-010 enforces Lite eligibility, escalation, and evidence 
     if (!pattern.test(contractText)) {
       failures.push(`qa-lite contract missing ${label}`);
     }
+  }
+
+  assertNoSemanticFailures(testId, failures);
+});
+
+test('P1-LITE-SEMANTICS-018 anchors bounded issue depth, markers, and token control', () => {
+  const testId = 'P1-LITE-SEMANTICS-018';
+  const qaTriage = readRequiredMarkdown('qa-triage/SKILL.md', testId);
+  const qaLite = readRequiredMarkdown('qa-lite/SKILL.md', testId);
+  const qaLiteTriageReference = readRequiredMarkdown('references/qa-lite-triage.md', testId);
+  const boundedChecklist = readRequiredMarkdown('references/bounded-issue-risk-checklist.md', testId);
+  const qaLiteReport = readRequiredMarkdown('templates/qa-lite-report.md', testId);
+  const contractText = `${qaTriage}\n${qaLite}\n${qaLiteTriageReference}\n${boundedChecklist}\n${qaLiteReport}`;
+  const failures = [];
+
+  const requiredPatterns = [
+    [contractText, 'Lite compact-not-shallow framing', /Lite\s*=\s*compact\s+report,?\s+not\s+shallow\s+analysis/i],
+    [contractText, 'Complexity Expansion Gate trigger types', /Complexity\s+Expansion\s+Gate[\s\S]{0,260}parser\/serializer[\s\S]{0,120}API\s+contract[\s\S]{0,120}runtime\s+edge[\s\S]{0,160}CLI\/config\s+compatibility[\s\S]{0,160}validator\s+boundary[\s\S]{0,160}data\/state\s+consistency[\s\S]{0,160}concurrency\/ordering[\s\S]{0,160}auth\/security\/session/i],
+    [contractText, 'Complexity Expansion Gate required output', /Change\s+type[\s\S]{0,120}Affected\s+surfaces[\s\S]{0,120}Adjacent\s+variants[\s\S]{0,120}Compatibility\s+risks[\s\S]{0,120}Downstream\s+consumers[\s\S]{0,160}Must\s+Verify\s+derived\s+from\s+above/i],
+    [contractText, 'unbounded complexity escalates Full', /(?:surface|risk)[\s\S]{0,160}cannot\s+be\s+bounded[\s\S]{0,160}escalat[\s\S]{0,80}Full/i],
+    [boundedChecklist, 'API contract checklist', /API\s+contract[\s\S]{0,120}old\/new\s+shape[\s\S]{0,80}downstream\s+caller[\s\S]{0,80}serialization[\s\S]{0,80}docs\/tests/i],
+    [boundedChecklist, 'parser serializer checklist', /Parser\/serializer[\s\S]{0,120}empty[\s\S]{0,80}null[\s\S]{0,80}nested[\s\S]{0,80}adjacent\s+tokens[\s\S]{0,80}roundtrip[\s\S]{0,80}invalid\s+input/i],
+    [boundedChecklist, 'runtime edge checklist', /Runtime\s+edge[\s\S]{0,120}zero\/no-op[\s\S]{0,80}already-done[\s\S]{0,80}ordering[\s\S]{0,80}async\/timer/i],
+    [boundedChecklist, 'CLI config checklist', /CLI\/config[\s\S]{0,120}default[\s\S]{0,80}override[\s\S]{0,80}env[\s\S]{0,80}CI\/runtime\s+version[\s\S]{0,80}help\s+text/i],
+    [boundedChecklist, 'validator checklist', /Validator[\s\S]{0,120}min\/max[\s\S]{0,80}charset[\s\S]{0,80}reserved[\s\S]{0,80}negative\s+controls[\s\S]{0,80}test\s+gap/i],
+    [boundedChecklist, 'data state checklist', /Data\/state[\s\S]{0,120}create\/update\/delete[\s\S]{0,80}rollback[\s\S]{0,80}cache[\s\S]{0,80}idempotency/i],
+    [boundedChecklist, 'auth security session checklist', /Auth\/security\/session[\s\S]{0,120}caller\s+identity[\s\S]{0,80}scope[\s\S]{0,80}session\s+lifetime[\s\S]{0,80}bypass\s+path[\s\S]{0,120}Full/i],
+    [qaLiteReport, 'QA Route stable marker', /^QA Route:\s*Lite$/m],
+    [qaLiteReport, 'Complexity Expansion Gate stable marker', /^Complexity Expansion Gate:\s*triggered\/skipped$/m],
+    [qaLiteReport, 'Overall Status standalone marker', /^Overall Status:\s*PASS\/FAIL\/BLOCKED\/NEEDS_HUMAN_REVIEW$/m],
+    [qaLiteReport, 'Report Quality Self-Check section', /^##\s+Report\s+Quality\s+Self-Check$/m],
+    [qaLiteReport, 'Top Risks Must Verify chain', /Top\s+Risks\s+\/\s+Must\s+Verify[\s\S]{0,260}Risk\s*->\s*Must\s+Verify\s*->\s*Verification\s*->\s*Evidence\s*->\s*Status/i],
+    [contractText, 'Lite token control', /top\s+3-5\s+risks[\s\S]{0,100}(?:<=|no\s+more\s+than)\s*5\s+`?Must\s+Verify`?[\s\S]{0,120}evidence\s+1-2\s+lines[\s\S]{0,120}no\s+repeated\s+rubric\s+prose/i],
+    [contractText, 'heavy docs only when needed', /heavy\s+Full\/Project\s+docs\s+only\s+when\s+needed/i],
+    [contractText, 'marker compliance blocks conclusion', /missing\s+route,?\s+status,?\s+self-check,?\s+or\s+chain[\s\S]{0,120}blocks?\s+(?:Lite\s+)?conclusion/i],
+  ];
+
+  for (const [markdown, label, pattern] of requiredPatterns) {
+    recordMissingPattern(failures, markdown, 'qa-lite bounded issue contract', label, pattern);
+  }
+
+  assertNoSemanticFailures(testId, failures);
+});
+
+test('P1-LITE-SEMANTICS-019 enforces final marker hard gate and strengthened type minimums', () => {
+  const testId = 'P1-LITE-SEMANTICS-019';
+  const usingQa = readRequiredMarkdown('using-qa/SKILL.md', testId);
+  const qaLite = readRequiredMarkdown('qa-lite/SKILL.md', testId);
+  const boundedChecklist = readRequiredMarkdown('references/bounded-issue-risk-checklist.md', testId);
+  const qaLiteReport = readRequiredMarkdown('templates/qa-lite-report.md', testId);
+  const contractText = `${usingQa}\n${qaLite}\n${boundedChecklist}\n${qaLiteReport}`;
+  const failures = [];
+
+  const requiredPatterns = [
+    [qaLite, 'qa-lite final-output hard gate before final answer inspects report', /Final-output\s+hard\s+gate[\s\S]{0,180}before\s+(?:the\s+)?final\s+answer[\s\S]{0,180}inspect\s+the\s+final\s+Markdown\s+report/i],
+    [qaLite, 'qa-lite revises missing exact markers before delivery', /exact\s+markers?[\s\S]{0,180}missing[\s\S]{0,160}revise\s+(?:the\s+)?report\s+before\s+delivery/i],
+    [contractText, 'all exact Lite markers listed together', /QA\s+Route:\s+Lite[\s\S]{0,160}Complexity\s+Expansion\s+Gate:\s+triggered\/skipped[\s\S]{0,180}Overall\s+Status:\s+PASS\/FAIL\/BLOCKED\/NEEDS_HUMAN_REVIEW[\s\S]{0,180}##\s+Report\s+Quality\s+Self-Check[\s\S]{0,180}Risk\s*->\s*Must\s+Verify\s*->\s*Verification\s*->\s*Evidence\s*->\s*Status/i],
+    [contractText, 'host summaries missing markers rejected', /(?:host\s+relay\/summaries|final\s+summaries\s+or\s+(?:host\s+)?relays)[\s\S]{0,160}missing\s+(?:these\s+)?(?:exact\s+)?(?:Lite\s+)?markers[\s\S]{0,160}(?:do\s+not\s+satisfy|rejected)/i],
+    [usingQa, 'using-qa Lite relay exact markers', /Lite\s+(?:delivery|handoff\s+and\s+relay)[\s\S]{0,180}exact\s+markers[\s\S]{0,220}QA\s+Route:\s+Lite[\s\S]{0,220}Report\s+Quality\s+Self-Check/i],
+    [usingQa, 'using-qa rejects final summaries relays without markers', /Reject\s+final\s+summaries\s+or\s+host\s+relays\s+without\s+these\s+Lite\s+markers/i],
+    [boundedChecklist, 'API contract old and new shape', /API\s+contract[\s\S]{0,160}old\s+shape\s+and\s+new\s+shape/i],
+    [boundedChecklist, 'API producer and consumer locations', /API\s+contract[\s\S]{0,220}producer\s+and\s+consumer\s+locations/i],
+    [boundedChecklist, 'API generated artifacts fixtures hashes', /API\s+contract[\s\S]{0,260}generated\s+artifacts\s+\/\s+fixtures\s+\/\s+hashes/i],
+    [boundedChecklist, 'API legacy compatibility docs tests controls', /legacy\s+input\s+compatibility[\s\S]{0,160}docs\/examples\/tests[\s\S]{0,160}positive\s+and\s+negative\s+compatibility\s+controls/i],
+    [boundedChecklist, 'parser failing minimal reproducer', /Parser\/serializer[\s\S]{0,160}failing\s+minimal\s+reproducer/i],
+    [boundedChecklist, 'parser variants and positive controls', /adjacent\/nested\/empty\/null\s+variant[\s\S]{0,180}positive\s+controls\s+for\s+already-supported\s+syntax/i],
+    [boundedChecklist, 'parser contrasting and stream controls', /negative\s+or\s+contrasting\s+type\s+controls[\s\S]{0,180}roundtrip\s+or\s+multi-document\/stream\s+control/i],
+    [boundedChecklist, 'parser semantic output distinction', /distinguish\s+non-crash\s+from\s+exact\s+semantic\s+output/i],
+    [qaLite, 'API Must Verify minimums', /API\s+contract\s+changes\s+need\s+at\s+least\s+one\s+`?Must\s+Verify`?\s+for\s+contract\s+split\/compatibility[\s\S]{0,220}(?:fixtures\/templates\/examples\/docs\/tests\/generated\s+artifacts|encoded\s+consumers)/i],
+    [qaLite, 'parser Must Verify minimums', /Parser\/serializer\s+changes\s+need\s+at\s+least\s+one\s+`?Must\s+Verify`?\s+for\s+the\s+failing\s+minimal\s+reproducer[\s\S]{0,220}adjacent\/null\/empty\s+variant[\s\S]{0,180}positive\s+or\s+contrasting\s+control/i],
+    [qaLiteReport, 'qa-lite report visible hard gate wording', /Final-output\s+hard\s+gate[\s\S]{0,180}before\s+final\s+answer[\s\S]{0,180}inspect\s+this\s+final\s+Markdown\s+report/i],
+  ];
+
+  for (const [markdown, label, pattern] of requiredPatterns) {
+    recordMissingPattern(failures, markdown, 'qa-lite P1.1 contract', label, pattern);
   }
 
   assertNoSemanticFailures(testId, failures);

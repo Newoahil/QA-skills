@@ -11,6 +11,8 @@ Run this skill only inside the one dedicated QA subagent session started by [`..
 
 Apply the all-or-Full triage from [`../references/qa-lite-triage.md`](../references/qa-lite-triage.md). QA-Lite is eligible only when every Lite condition is explicitly true and no Full trigger is present. Any missing, unreadable, ambiguous, contradictory, or later-invalidated fact routes to Full. Ambiguous cases must escalate to Full and continue through `qa-plan`, never by guessing Lite.
 
+Lite = compact report, not shallow analysis. For bounded issue changes that remain Lite, the same session still applies the Complexity Expansion Gate and bounded type checklist from [`../references/bounded-issue-risk-checklist.md`](../references/bounded-issue-risk-checklist.md) before execution.
+
 ## Lite Eligibility Checklist
 
 Record `Profile Decision: LITE` only when all conditions below are true:
@@ -29,6 +31,13 @@ Record `Profile Decision: FULL` and continue the same QA subagent through [`../q
 - Cross-module scope, cross-module risk, shared architecture concern, architecture-level behavior, or impact that spans module boundaries must escalate or route to Full through `qa-plan`.
 - Ambiguous acceptance, contradictory acceptance criteria, missing objective acceptance, unclear expected behavior, or unresolved root cause must escalate to Full through `qa-plan`.
 - Security or privacy issue, security/privacy concern, sensitive data scope, data migration risk or impact, permissions risk, authorization request, release risk, release request, operational risk, or other high-risk constraint must route to Full through `qa-plan`.
+- Transaction, rollback, or savepoint semantics must escalate to Full through `qa-plan`.
+- Auth, session, or permission race conditions must escalate to Full through `qa-plan`.
+- Concurrency, ordering, or idempotency risk must escalate to Full through `qa-plan`.
+- Cross-module state consistency must escalate to Full through `qa-plan`.
+- Provider or environment matrix, such as multiple databases or multiple runtimes, must escalate to Full through `qa-plan`.
+- Retry, cancellation, or timeout behavior must escalate to Full through `qa-plan`.
+- Cache, DB, or event side effects must escalate to Full through `qa-plan`.
 - Environment uncertainty, tool uncertainty, data uncertainty, permission uncertainty, dependency uncertainty, or runner uncertainty that affects any `Must Verify` item must escalate and route to Full through `qa-plan`.
 - Generated validation, generated checks, generated tests, generated assets, repair, recovery, resume, history comparison, capability discovery, capability scheduling, or resource scheduling remain Full and route to `qa-plan`.
 - Explicit full request, whole-project request, project-wide mode or goal, audit request, release QA, full QA, or whole-product QA falls back or routes to Full through `qa-plan`.
