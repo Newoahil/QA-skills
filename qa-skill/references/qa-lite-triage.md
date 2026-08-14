@@ -16,7 +16,7 @@ All of these must be true:
 - Explicit product target that is readable and separate from the skill source path.
 - Explicit readable product target scope and non-goals.
 - Scoped objective acceptance criteria are available enough to define expected results.
-- Scoped `Must Verify` items have an existing safe local verification method already present in the product target.
+- Scoped `Must Verify` items have an existing safe local verification method already present in the product target. A configured script is one such method, but so is directly invoking the product's own already-available language runtime against unmodified source; the absence of a configured script alone does not make Lite ineligible.
 - No project-wide claim, whole-product claim, audit claim, release claim, or Full trigger.
 
 ## Mandatory Full Triggers

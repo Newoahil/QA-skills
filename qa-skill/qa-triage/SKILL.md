@@ -20,7 +20,7 @@ Record `Profile Decision: LITE` only when all conditions below are true:
 1. The request is exactly one explicitly bounded requirement, fix, or Diff.
 2. The product target is explicit, readable, and separate from the skill source path.
 3. The product target has explicit readable scope and non-goals suitable for target-only QA.
-4. The scoped `Must Verify` items have an existing safe local verification method already available in the product target.
+4. The scoped `Must Verify` items have an existing safe local verification method already available in the product target. A project-configured command/script is one such method, but so is directly invoking the product's own already-available language runtime against the unmodified source when no configured script exists and no install or mutation is required (see [evidence guide](../references/evidence-guide.md)); do not treat the absence of a configured script alone as ineligibility.
 5. No escalation trigger exists.
 6. The request does not ask for or imply a project-wide claim, release claim, audit claim, or whole-product correctness claim.
 

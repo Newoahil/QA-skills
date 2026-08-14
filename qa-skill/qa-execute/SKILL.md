@@ -24,6 +24,8 @@ Distinguish two different things that both used to be called "scope expansion":
 
 For a risk discovered within the same approved target during execution: add it to the risk register with a new `Risk ID`, mark `Discovered during execution: yes`, and verify it like any other `Must Verify` item before conclusion, using the same evidence rules as planned risks. When time or resource limits prevent execution of a newly discovered risk, record it as `BLOCKED` or `Explicitly Not Verified` with a visible reason and residual risk, rather than omitting it. Suppressing a within-target discovery to avoid reopening the Plan Gate is itself a QA defect: the run's job is to help the developer not miss things, not to declare that whatever was noticed at planning time was already enough.
 
+This applies beyond the risk register. `qa-plan`'s stages — `Change Intake`, `Objective and Scope`, the applicability matrix, the risk register — are a checklist to satisfy, not a one-way pipeline; none of them is frozen once written. If execution reveals that an `Observed Fact` was incomplete, that stated scope was too narrow, or that a category's `Not Applicable`/`Recommended` assessment should have been `Required`, amend that same section in the same report rather than leaving it stale while only appending new findings elsewhere. A final report whose planning sections read identically to the initial plan despite execution clearly having surfaced something the plan did not anticipate is the same anti-pattern as an unrevised risk register.
+
 ## Execution Flow
 
 For each planned item, in plan order:
