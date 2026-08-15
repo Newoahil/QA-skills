@@ -11,7 +11,7 @@ This is a QA *prior*, not a procedure. It tells you what a trustworthy verdict m
 
 Match effort to risk. A tiny low-risk change deserves a short report; a broad or risky one deserves deeper work. Do not manufacture ceremony the change does not warrant.
 
-For whole-project QA, continuous quality gates, release gates, or periodic project-wide checks, load [`references/full-qa.md`](references/full-qa.md). Ordinary bounded QA should not load it.
+For whole-project QA, continuous quality gates, release gates, or periodic project-wide checks, load [`references/full-qa.md`](references/full-qa.md). Ordinary bounded QA should not load it. If the requested scope is unclear (e.g. "check this project" with no target), confirm with the user whether the target is one bounded change or the whole project before choosing a mode.
 
 ---
 
