@@ -1187,6 +1187,75 @@ test('P4-DEPTH-023 requires exploration-before-structure and allows execution-ti
   }
 });
 
+test('P5-DEPTH-024 treats planning stages as a checklist, not a one-way pipeline', () => {
+  const testId = 'P5-DEPTH-024';
+  const qaPlan = readRequiredMarkdown('qa-plan/SKILL.md', testId);
+  const qaExecute = readRequiredMarkdown('qa-execute/SKILL.md', testId);
+  const qaConclude = readRequiredMarkdown('qa-conclude/SKILL.md', testId);
+
+  const qaPlanPatterns = [
+    [/do\s+not\s+discard\s+the\s+plan\s+or\s+start\s+a\s+second,?\s+parallel\s+plan/i, 'still forbids discarding/parallel plans'],
+    [/checklist\s+to\s+satisfy,\s+not\s+a\s+one-way\s+pipeline/i, 'stages framed as checklist, not one-way pipeline'],
+    [/amend\s+that\s+same\s+item\s+in\s+the\s+same\s+report[\s\S]{0,220}(?:during|after)\s+execution/i, 'amend earlier items in the same report when execution reveals they were wrong'],
+    [/QA\s+coverage\s+and\s+correctness\s+take\s+priority\s+over\s+treating\s+an\s+already-written\s+section\s+as\s+final/i, 'coverage/correctness prioritized over section finality'],
+  ];
+
+  for (const [pattern, label] of qaPlanPatterns) {
+    assert.match(qaPlan, pattern, `${testId}: qa-plan/SKILL.md missing ${label}`);
+  }
+
+  const qaExecutePatterns = [
+    [/This\s+applies\s+beyond\s+the\s+risk\s+register/i, 'stage-revision extends beyond the risk register'],
+    [/none\s+of\s+them\s+is\s+frozen\s+once\s+written/i, 'no planning section is frozen once written'],
+    [/amend\s+that\s+same\s+section\s+in\s+the\s+same\s+report[\s\S]{0,220}stale/i, 'amend stale sections rather than leaving them'],
+  ];
+
+  for (const [pattern, label] of qaExecutePatterns) {
+    assert.match(qaExecute, pattern, `${testId}: qa-execute/SKILL.md missing ${label}`);
+  }
+
+  const qaConcludePatterns = [
+    [/extends\s+to\s+every\s+planning\s+section,\s+not\s+only\s+the\s+risk\s+register/i, 'conclusion check extends to every planning section'],
+    [/Planning\s+sections\s+that\s+read\s+identically\s+to\s+the\s+initial\s+plan[\s\S]{0,220}keep\s+the\s+QA\s+Conclusion\s+Gate\s+`?BLOCKED`?/i, 'unrevised planning sections keep Conclusion Gate blocked'],
+  ];
+
+  for (const [pattern, label] of qaConcludePatterns) {
+    assert.match(qaConclude, pattern, `${testId}: qa-conclude/SKILL.md missing ${label}`);
+  }
+});
+
+test('P5-PROJECT-025 propagates the direct-runtime evidence clarification to the project route', () => {
+  const testId = 'P5-PROJECT-025';
+  const projectQaExecute = readRequiredMarkdown('project-qa-execute/SKILL.md', testId);
+  const projectEvidenceGuide = readRequiredMarkdown('references/project-evidence-guide.md', testId);
+  const qaTriage = readRequiredMarkdown('qa-triage/SKILL.md', testId);
+  const qaLiteTriageReference = readRequiredMarkdown('references/qa-lite-triage.md', testId);
+
+  assert.match(
+    projectQaExecute,
+    /directly\s+invoking\s+the\s+module'?s?\s+own\s+already-available\s+language\s+runtime[\s\S]{0,220}unmodified\s+module\s+source\s+inside\s+the\s+isolated\s+workspace/i,
+    `${testId}: project-qa-execute/SKILL.md missing direct-runtime clarification`,
+  );
+
+  assert.match(
+    projectEvidenceGuide,
+    /module'?s?\s+own\s+language\s+runtime\s+is\s+already\s+present[\s\S]{0,220}exercised\s+directly\s+and\s+safely\s+inside\s+the\s+isolated\s+workspace/i,
+    `${testId}: references/project-evidence-guide.md missing direct-runtime clarification`,
+  );
+
+  assert.match(
+    qaTriage,
+    /directly\s+invoking\s+the\s+product'?s?\s+own\s+already-available\s+language\s+runtime[\s\S]{0,220}do\s+not\s+treat\s+the\s+absence\s+of\s+a\s+configured\s+script\s+alone\s+as\s+ineligibility/i,
+    `${testId}: qa-triage/SKILL.md missing eligibility clarification`,
+  );
+
+  assert.match(
+    qaLiteTriageReference,
+    /so\s+is\s+directly\s+invoking\s+the\s+product'?s?\s+own\s+already-available\s+language\s+runtime[\s\S]{0,220}does\s+not\s+make\s+Lite\s+ineligible/i,
+    `${testId}: references/qa-lite-triage.md missing eligibility clarification`,
+  );
+});
+
 test('P1-LITE-SEMANTICS-010 enforces Lite eligibility, escalation, and evidence integrity', () => {
   const testId = 'P1-LITE-SEMANTICS-010';
   const usingQa = readRequiredMarkdown('using-qa/SKILL.md', testId);
