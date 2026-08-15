@@ -1,6 +1,6 @@
 ---
-description: QA orchestrator. Runs evidence-first QA on one bounded requirement, fix, or Diff. Read-only — states a verdict, never edits code or makes the ship decision. May dispatch read-only facet/recon sub-agents in parallel for high-risk or multi-facet changes, then reconciles their evidence into one report.
-mode: primary
+description: QA orchestrator. Runs evidence-first QA on one bounded requirement, fix, or Diff. Read-only — states a verdict, never edits code or makes the ship decision. May dispatch read-only facet/recon sub-agents in parallel for high-risk or multi-facet changes, then reconciles their evidence into one report. Invoke it as a subagent (recommended: keeps QA read-only and independent), @-mention it, or switch to it directly.
+mode: all
 temperature: 0.1
 permission:
   edit:
