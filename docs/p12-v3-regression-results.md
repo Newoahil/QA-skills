@@ -97,6 +97,35 @@ Evidence per case (all first-hand; no "looks correct"):
 - qa-facet dispatch: 0/5 (all covered serially in one session). P8 dispatched 1 facet on nextauth;
   this run did not -> run-to-run variance, coverage preserved.
 
+### 3.3 False-positive control (nextauth post-fix)
+
+The 5 cases above are all pre-fix snapshots, so a skill that blindly returned FAIL would still
+score 5/5. To test the opposite failure mode (wrongly failing FIXED code), a post-fix nextauth
+snapshot was built and QA'd:
+
+- PR #13465 is OPEN (not merged to main); its head is `e7a32ba19ce4869437f460b30c69dec750adb63d`
+  on branch `fix/client-session-race`. The fix adds `AbortController` / `abortFetches` guards to
+  `_getSession` in `packages/next-auth/src/react.tsx` so a stale fetch resolving after signOut is
+  aborted and cannot resurrect the session.
+- A clone was checked out to that head (guard confirmed present via grep: `abortFetches`,
+  `AbortController`). No dependencies installed, no build.
+- Same runner/agent/model. Result:
+
+| Snapshot | HEAD | Overall | Evidence |
+|---|---|---|---|
+| nextauth pre-fix | `1116034...` | FAIL | reproduced the stale-session race |
+| nextauth post-fix | `e7a32ba1...` | PASS | probe shows the guard aborts the stale result (no resurrection) |
+
+The post-fix PASS was evidence-backed, not "code looks fixed": vitest/node_modules were absent so
+QA did not install; it ran an equivalent local Node probe of the shared-AbortController / current-
+controller pattern and observed `{"finalApplied":true,"staleApplied":false,"session":null,"abortCleared":true}`,
+i.e. the stale result is dropped after the signed-out state is applied. newSkillPath true, oldBackup
+false, facet 0, read-only held (no install/deny). Token total ~498k (cacheRead 438784), toolUse 25.
+
+Conclusion (fact): on the same case, pre-fix -> FAIL and post-fix -> PASS, both first-hand. The skill
+distinguished the bug from its fix rather than reflexively failing. No false positive observed on
+this one control (n=1).
+
 ## 4. Comparison vs baseline (P8 baseline arm final reports)
 
 Baseline reports read from `...\cases\<case>\artifacts\baseline\final-report.md`
