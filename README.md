@@ -25,9 +25,11 @@ qa-skill/
     ├── qa.md                   QA orchestrator（mode: all，只读焊死）
     └── qa-facet.md             只读 facet 子 agent（hidden，仅被 qa 调用）
 
+tests/regression/               bounded QA 回归 harness（run-qa-regression.mjs + 用法说明）
 docs/
 ├── QA-skill开发文档-0813.md    完整设计与开发文档
-├── p7 / p8 / p9 ...            各阶段实验与验证数据
+├── p7 / p8 / p9 / p12 ...      各阶段实验与验证数据
+_archive/                       已弃用产物（如 qa-skill-minimal），仅存历史，请勿安装
 ```
 
 ## 快速开始
@@ -49,14 +51,16 @@ docs/
 - **四状态判定**：PASS / FAIL / BLOCKED / NEEDS_HUMAN_REVIEW，一份 QA 恰好一行 `Overall Status:`。
 - **机制级只读**：产品文件 `edit: deny`，防越权委托由 permission 焊死，而非靠散文自觉。
 - **按风险编排**：高风险 / 多面向变更时并行派 `qa-facet` 子 agent 取证再收口；简单变更一个 session 直接做完。
-- **可编排闭环**：开发 agent 派 QA -> 拿报告 + 用例设计 -> 招询 -> 修复 -> 再验证（1-2 轮上限）。
-- **可选跨 run 沉淀**：项目建 `.qa/` 后跨多次 QA 积累可复用的检查用例与团队约定（opt-in，不主动创建）。
+- **可编排闭环**：开发 agent 派 QA -> 拿报告 + 用例设计 -> 招询 -> 修复 -> 再验证（1-2 轮上限）。报告收尾自带一句修复 handoff 提示，使调用方即使没加载 `using-qa.md` 也能得知下一步。
+- **环境未就绪的交接（Plan B）**：某项因环境未就绪（缺依赖/服务/数据）而 BLOCKED 时，QA 不止步于标注残余风险，还产出一张结构化 `environment-needed` 交接单（缺什么/跑什么/预期/谁能接）；由主/开发 agent 在用户授权下搭好环境，再回 QA 复验。QA 自身仍只读、不装依赖、不搭环境。
+- **可选跨 run 沉淀**：项目建 `.qa/` 后跨多次 QA 积累可复用的检查用例与团队约定（opt-in，不主动创建）；可沉淀"环境配方"供后续复用/CI 对接。
 - **全项目 QA 模式**（条件加载 `references/full-qa.md`）：切分项目为自然单元 -> 每个单元当 bounded 跑六阶段 -> 收口出覆盖 + 风险。主打持续质量门禁 / 发版 / 定期体检；额外验单元间集成点（尤其 Feign/HTTP/RPC/MQ 跨服务边界）；退出判据是"切分完整 + 每单元有明确交代（验了 / 无验证依据 / BLOCKED / 未覆盖），无静默漏切"；有 `.qa/` 时可增量（只深验变化单元 + 抽查稳定单元）。普通 bounded QA 不加载它，零额外成本。
 
 ## 验证状态
 
-- **主流程**：已实测（5 案对比 baseline / 旧完整版 / 旧精简版 / 新版，质量为项目历史最高，全部判定正确且均由亲历证据支撑，体量约为旧版 3.6%）。
-- **调用闭环 / 跨 run 沉淀**：已实现并落地，尚未做专门的端到端 / 跨 run 场景实测。
-- **全项目 QA 模式**：已实现（`full-qa.md` 入口层），尚未做专门的全量场景实测。
+- **主流程**：已实测（P8：5 案对比 baseline / 旧完整版 / 旧精简版 / 新版，质量为项目历史最高，全部判定正确且均由亲历证据支撑，体量约为旧版 3.6%）。
+- **回归复测（P12）**：当前版本再跑同 5 案 pre-fix 快照，5/5 判定正确、全部亲历证据、只读机制守住、确认加载新版；相较 baseline 未退化，fake-timers 一案更强。
+- **假阳性控制**：构造 nextauth post-fix（已修复）快照复验，正确判 PASS —— 说明 skill 能区分"有 bug"与"已修复"，非反射式判 FAIL。（n=1 单个控制。）
+- **调用闭环 / 报告 handoff / 环境交接（Plan B）/ 跨 run 沉淀 / 全项目 QA 模式**：均已实现并落地，尚未做专门的端到端 / 全量 / 跨 run 场景实测。
 
-详见 `docs/p8-prior-redesign-verify-20260814-results.md` 等。
+- 回归 harness 见 [`tests/regression/`](tests/regression/)。详见 `docs/p8-prior-redesign-verify-20260814-results.md`、`docs/p12-v3-regression-results.md` 等。
