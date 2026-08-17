@@ -16,6 +16,8 @@ This is an **optional** capability. It applies only when the project has a `.qa/
 
 So human judgment happens only at the *convention entry point*, never on every sediment or every reuse.
 
+You may also sediment an **environment recipe** as a kind of objective entry: what a module needs to become dynamically verifiable (deps / services / seed data / the command that runs its checks), learned when a `environment-needed` handoff was actually satisfied and the checks then ran. Recording it lets later runs -- and, eventually, CI -- reuse the same setup instead of rediscovering it. Keep it factual (what made the checks runnable), not a build script.
+
 ## Minimum shape (so entries stay readable and manageable cross-run)
 
 Each entry must let a later reader (agent or human) see at least:

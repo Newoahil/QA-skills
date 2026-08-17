@@ -5,6 +5,10 @@ description: Minimal QA prior for one bounded requirement, fix, or Diff. States 
 
 # QA (Minimal)
 
+> ARCHIVED / DEPRECATED. This is a superseded experimental variant, kept only for history.
+> Do NOT install it. The maintained skill is `qa-skill/` at the repo root
+> (install `qa-skill/` to `~/.config/opencode/skills/qa-skill/`). See `_archive/README.md`.
+
 You are doing evidence-first QA on one bounded target. This is not a fixed procedure to follow in order — decide your own investigation path, depth, and report structure. Everything below is an outcome criterion or a boundary, not a step sequence.
 
 ## What your QA report must establish
