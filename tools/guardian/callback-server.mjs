@@ -93,11 +93,15 @@ export function createServer() {
   });
 }
 
+// Bind host: containers must listen on 0.0.0.0 so the platform reverse proxy (Dokploy/Traefik)
+// can reach the service over the container network. Overridable via HOST for local use.
+const HOST = process.env.HOST ?? '0.0.0.0';
+
 // Start only when run directly (not when imported by tests).
 if (process.argv[1] && process.argv[1].endsWith('callback-server.mjs')) {
   const server = createServer();
-  server.listen(PORT, () => {
-    process.stdout.write(`qa-guardian feishu callback listening on :${PORT}${CALLBACK_PATH}\n`);
+  server.listen(PORT, HOST, () => {
+    process.stdout.write(`qa-guardian feishu callback listening on ${HOST}:${PORT}${CALLBACK_PATH}\n`);
   });
   for (const sig of ['SIGINT', 'SIGTERM']) {
     process.on(sig, () => server.close(() => process.exit(0)));
