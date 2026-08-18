@@ -130,7 +130,7 @@ export function startFollowupRound(record, command, now = new Date().toISOString
   });
   return {
     ...previous,
-    schema_version: 2,
+    schema_version: 3,
     state: STATES.INVESTIGATING,
     risk: null,
     branch: null,

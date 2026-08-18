@@ -125,6 +125,7 @@ test('startFollowupRound preserves history and resets round-local fields', () =>
   const next = startFollowupRound(record, { commentId: 9, data: 'new acceptance issue' }, '2026-08-18T12:00:00.000Z');
   assert.equal(next.state, STATES.INVESTIGATING);
   assert.equal(next.processing_round, 2);
+  assert.equal(next.schema_version, 3);
   assert.equal(next.branch, null);
   assert.equal(next.fix_rounds, 0);
   assert.equal(next.last_followup_comment_id, 9);
