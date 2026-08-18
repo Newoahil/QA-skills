@@ -22,6 +22,9 @@ import { acquireLock, renewLock, releaseLock } from './lock.mjs';
 import { deliverNotifications, defaultGhComment, defaultCurlPost } from './notify-io.mjs';
 import { createLogger } from './runtime-io.mjs';
 import { projectLabels } from './label-io.mjs';
+import { prepareInvestigation } from './investigation-runtime.mjs';
+import { processPlanBuilder, processSpecialistRunner } from './investigation-process.mjs';
+import { discoverCapabilities } from './capabilities.mjs';
 import { readArtifact } from './artifacts.mjs';
 import { assessFixingEntry } from './plan-gate.mjs';
 
@@ -179,6 +182,28 @@ async function tick(repoDir, config, logger) {
   }
 
   const investigationMode = config.investigation_mode ?? 'legacy';
+  if (investigationMode !== 'legacy') {
+    const guardianDir = guardianDirOf(repoDir);
+    const dossier = readArtifact(guardianDir, issue, 'dossier');
+    const planArtifact = readArtifact(guardianDir, issue, 'plan');
+    if (!dossier || !planArtifact) {
+      try {
+        await prepareInvestigation({
+          issue, repoDir, guardianDir, issueClass: config.default_issue_class ?? 'bug',
+          complexity: config.investigation_complexity ?? 'complex',
+          capabilities: discoverCapabilities({ env: process.env }),
+          config, runSpecialist: processSpecialistRunner,
+          buildPlan: (args) => processPlanBuilder({ ...args, repoDir }),
+        });
+        logger.info('investigation.artifacts_ready', { issue, mode: investigationMode });
+      } catch (error) {
+        releaseLock(lockFile, handle);
+        logger.error('investigation.failed', { issue, error_message: error instanceof Error ? error.message : 'unknown' });
+        return;
+      }
+    }
+  }
+
   if (investigationMode !== 'legacy') {
     const guardianDir = guardianDirOf(repoDir);
     const dossier = readArtifact(guardianDir, issue, 'dossier');
