@@ -12,6 +12,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, openSync, writeSync, closeSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
+import { stripUtf8Bom } from './runtime-io.mjs';
 
 export class LockError extends Error {
   constructor(code, message) {
@@ -23,7 +24,7 @@ export class LockError extends Error {
 
 function readLockRaw(fs, lockFile) {
   if (!fs.existsSync(lockFile)) return null;
-  const parsed = JSON.parse(fs.readFileSync(lockFile, 'utf8'));
+  const parsed = JSON.parse(stripUtf8Bom(fs.readFileSync(lockFile, 'utf8')));
   return {
     pid: Number(parsed.pid),
     token: String(parsed.token ?? ''),
