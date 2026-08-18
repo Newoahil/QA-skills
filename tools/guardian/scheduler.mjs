@@ -25,7 +25,7 @@ import { projectLabels } from './label-io.mjs';
 import { prepareInvestigation } from './investigation-runtime.mjs';
 import { processPlanBuilder, processSpecialistRunner } from './investigation-process.mjs';
 import { discoverCapabilities } from './capabilities.mjs';
-import { readArtifact } from './artifacts.mjs';
+import { quarantineArtifacts, readArtifactPair } from './artifacts.mjs';
 import { assessFixingEntry } from './plan-gate.mjs';
 
 const DEFAULT_INTERVAL_MS = 60 * 1000;
@@ -198,9 +198,11 @@ async function tick(repoDir, config, logger) {
   const investigationMode = config.investigation_mode ?? 'enforced';
   if (investigationMode !== 'legacy') {
     const guardianDir = guardianDirOf(repoDir);
-    const dossier = readArtifact(guardianDir, issue, 'dossier');
-    const planArtifact = readArtifact(guardianDir, issue, 'plan');
-    if (!dossier || !planArtifact) {
+    const pair = readArtifactPair(guardianDir, issue);
+    const dossier = pair.dossier;
+    const planArtifact = pair.plan;
+    if (!pair.complete) {
+      if (dossier || planArtifact) quarantineArtifacts(guardianDir, issue);
       try {
         const prepared = await prepareInvestigation({
           issue, repoDir, guardianDir, issueClass: config.default_issue_class ?? 'bug',
@@ -243,8 +245,9 @@ async function tick(repoDir, config, logger) {
 
   if (investigationMode !== 'legacy') {
     const guardianDir = guardianDirOf(repoDir);
-    const dossier = readArtifact(guardianDir, issue, 'dossier');
-    const planArtifact = readArtifact(guardianDir, issue, 'plan');
+    const pair = readArtifactPair(guardianDir, issue);
+    const dossier = pair.dossier;
+    const planArtifact = pair.plan;
     const gate = assessFixingEntry({ plan: planArtifact, dossier, investigationMode });
     if (!gate.allowed || gate.shadow === true) {
       releaseLock(lockFile, handle);

@@ -32,6 +32,29 @@ export function readArtifact(guardianDir, issue, name) {
   return readJsonFile(file);
 }
 
+export function readArtifactPair(guardianDir, issue) {
+  const dossier = readArtifact(guardianDir, issue, 'dossier');
+  const plan = readArtifact(guardianDir, issue, 'plan');
+  if (!dossier || !plan) return { complete: false, dossier, plan, reason: 'missing-pair' };
+  if (dossier.investigation_id && plan.investigation_id && dossier.investigation_id !== plan.investigation_id) {
+    return { complete: false, dossier, plan, reason: 'revision-mismatch' };
+  }
+  return { complete: true, dossier, plan, reason: null };
+}
+
+export function quarantineArtifacts(guardianDir, issue) {
+  const dir = artifactDir(guardianDir, issue);
+  const moved = [];
+  for (const name of ['dossier', 'plan']) {
+    const file = path.join(dir, `${name}.json`);
+    if (!existsSync(file)) continue;
+    const target = `${file}.invalid-${randomUUID()}`;
+    renameSync(file, target);
+    moved.push(target);
+  }
+  return moved;
+}
+
 export function artifactPaths(guardianDir, issue) {
   const dir = artifactDir(guardianDir, issue);
   return {
