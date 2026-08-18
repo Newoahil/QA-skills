@@ -46,18 +46,43 @@
 
 > ⚠️ **`command_authors` 不配 = 所有 `/guardian` 命令失效**。这是有意的安全默认，防止任意评论（含伪造回调）批准 HIGH 风险方案。至少填入你自己的 GitHub 登录名。
 
-### 2. 启动
+### 2. 启动（一键脚本，推荐）
+
+一键脚本会自动补 node/gh/git 到 PATH、校验 config + `command_authors`，再启动 scheduler：
 
 ```powershell
-# Windows（PATH 若缺失先补）
-$env:PATH = "C:\Users\ttx\AppData\Local\nvm\v24.19.0;C:\Program Files\GitHub CLI;C:\Program Files\Git\cmd;C:\Program Files\Git\bin;" + $env:PATH
-node tools\guardian\scheduler.mjs --repo D:\你的项目
+# Windows
+.\tools\guardian\scheduler-start.ps1 -TargetRepo D:\你的项目
 ```
 
 ```bash
 # Linux/macOS
-node tools/guardian/scheduler.mjs --repo /path/to/repo
+tools/guardian/scheduler-start.sh --target /path/to/repo
 ```
+
+#### 目标仓库注入（三种方式，任选其一）
+
+目标仓库支持配置/变量注入，优先级从高到低：
+
+1. **命令行参数**：`-TargetRepo D:\你的项目` / `--target /path`
+2. **环境变量** `QA_GUARDIAN_REPO`：
+   ```powershell
+   $env:QA_GUARDIAN_REPO = "D:\你的项目"
+   .\tools\guardian\scheduler-start.ps1
+   ```
+   ```bash
+   export QA_GUARDIAN_REPO=/path/to/repo
+   tools/guardian/scheduler-start.sh
+   ```
+3. **旁置配置文件** `tools/guardian/scheduler.config.json`（gitignored，参考 `scheduler.config.example.json`）：
+   ```json
+   { "target_repo": "D:\\你的项目" }
+   ```
+   配好后直接 `.\tools\guardian\scheduler-start.ps1`，无需任何参数。
+4. 都不给 → 用当前目录。
+
+> 直接跑底层脚本也支持 `--repo` 与 `QA_GUARDIAN_REPO`：
+> `node tools/guardian/scheduler.mjs --repo <repo>`。
 
 - N=1：同一时刻只跑一个活跃 issue（原子锁 + 心跳续租，长运行不会被误判过期）。
 - gate/STALLED/HANDED_BACK 事件会自动发通知（幂等，同状态不重复推）。
@@ -86,9 +111,9 @@ node tools/guardian/scheduler.mjs --repo /path/to/repo
 - 仅授权目标仓库（如 `LambdaTheory/tuantuanrent`）
 - 权限：**Issues → Read and write**（仅此，最小权限）
 
-### 3. Dokploy 部署
+### 3. 部署回调服务
 
-用 `tools/guardian/docker-compose.yml`（build context = 仓库根），配置以下环境变量（**不要写进 git**）：
+环境变量清单（**不要写进 git**；参考 `tools/guardian/.env.example`）：
 
 | 环境变量 | 值 |
 |---|---|
@@ -100,7 +125,23 @@ node tools/guardian/scheduler.mjs --repo /path/to/repo
 | `CALLBACK_PATH` | 可选，默认 `/feishu/callback` |
 | `MAX_BODY_BYTES` | 可选，请求体上限，默认 65536 |
 
-部署后 Dokploy 会给一个公网 HTTPS 域名。
+#### 3a. 本地自测（可选，先验证再上云）
+
+在仓库根目录：
+
+```bash
+cp tools/guardian/.env.example tools/guardian/.env   # 填入真实值（.env 已 gitignore）
+docker compose --env-file tools/guardian/.env -f tools/guardian/docker-compose.yml up --build
+# 另开终端自测：
+curl http://127.0.0.1:8787/healthz                    # → {"ok":true}
+```
+
+#### 3b. Dokploy 部署
+
+1. 在 Dokploy 新建一个 **Compose** 应用，指向本仓库（分支 `auto-qa`），compose 文件路径填 `tools/guardian/docker-compose.yml`。
+2. 在 Dokploy 的 Environment 面板填上表 4 个必填变量（不要提交到 git）。
+3. Deploy。Dokploy 会分配一个公网 HTTPS 域名。
+4. 健康检查：浏览器/curl 访问 `https://<域名>/healthz` → `{"ok":true}`。
 
 ### 4. 回填飞书事件订阅回调地址
 
