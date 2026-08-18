@@ -80,7 +80,7 @@ if (-not (Test-Path -LiteralPath $TargetRepo)) { throw "TargetRepo does not exis
 # --- 2. Install agents globally -------------------------------------------------------
 Write-Step "Installing QA agents -> $AgentsDst"
 New-Item -ItemType Directory -Force -Path $AgentsDst | Out-Null
-foreach ($a in @("qa-guardian.md","qa.md","qa-facet.md")) {
+foreach ($a in @("qa-guardian.md","qa.md","qa-facet.md","guardian-code.md","guardian-business.md","guardian-runtime.md","guardian-docs.md")) {
   $src = Join-Path $AgentsSrc $a
   if (-not (Test-Path -LiteralPath $src)) { throw "missing agent source: $src" }
   Copy-Item -Force -LiteralPath $src -Destination (Join-Path $AgentsDst $a)

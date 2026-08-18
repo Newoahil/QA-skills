@@ -59,7 +59,7 @@ fi
 # --- 2. Install agents ----------------------------------------------------------------
 cyan "Installing QA agents -> $AGENTS_DST"
 mkdir -p "$AGENTS_DST"
-for a in qa-guardian.md qa.md qa-facet.md; do
+for a in qa-guardian.md qa.md qa-facet.md guardian-code.md guardian-business.md guardian-runtime.md guardian-docs.md; do
   [ -f "$AGENTS_SRC/$a" ] || { echo "missing agent source: $AGENTS_SRC/$a"; exit 1; }
   cp -f "$AGENTS_SRC/$a" "$AGENTS_DST/$a"
   ok "agent installed: $a"

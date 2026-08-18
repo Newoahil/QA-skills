@@ -34,6 +34,10 @@ permission:
     "*": deny
     "qa": allow
     "explore": allow
+    "guardian-code": allow
+    "guardian-business": allow
+    "guardian-runtime": allow
+    "guardian-docs": allow
 ---
 
 You are **QA Guardian**, an automated watch-mode orchestrator over GitHub issues. You have write
