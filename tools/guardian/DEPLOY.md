@@ -109,7 +109,7 @@ tools/guardian/scheduler-start.sh --target /path/to/repo
    { "target_repo": "D:\\你的项目" }
    ```
    配好后直接 `.\tools\guardian\scheduler-start.ps1`，无需任何参数。
-4. 都不给 → 用当前目录。
+4. 都不给时：只有当前目录本身存在 `.qa/guardian/config.json` 才使用当前目录；如果当前目录是 QA-skills 工具仓库或其他未配置目录，启动脚本会要求你输入真正的业务项目目录，**不会静默监控 QA-skills**。
 
 > 直接跑底层脚本也支持 `--repo` 与 `QA_GUARDIAN_REPO`：
 > `node tools/guardian/scheduler.mjs --repo <repo>`。

@@ -23,7 +23,17 @@ if [ -z "$TARGET_REPO" ] && [ -n "${QA_GUARDIAN_REPO:-}" ]; then TARGET_REPO="$Q
 if [ -z "$TARGET_REPO" ] && [ -f "$SCRIPT_DIR/scheduler.config.json" ]; then
   TARGET_REPO="$(node -e "const c=require('$SCRIPT_DIR/scheduler.config.json');process.stdout.write(c.target_repo||'')")"
 fi
-if [ -z "$TARGET_REPO" ]; then TARGET_REPO="$(pwd)"; fi
+if [ -z "$TARGET_REPO" ]; then
+  CWD="$(pwd)"
+  if [ -f "$CWD/.qa/guardian/config.json" ]; then
+    TARGET_REPO="$CWD"
+  else
+    echo "    未指定目标项目，不能默认监控 QA-skills 工具仓库。"
+    read -r -p "    请输入要监控的项目目录（直接回车取消）: " INPUT_REPO
+    [ -n "$INPUT_REPO" ] || { echo "已取消：请通过 --target、QA_GUARDIAN_REPO 或 scheduler.config.json 指定目标项目。"; exit 1; }
+    TARGET_REPO="$INPUT_REPO"
+  fi
+fi
 
 command -v node >/dev/null 2>&1 || { echo "node not found — install Node.js >= 18"; exit 1; }
 

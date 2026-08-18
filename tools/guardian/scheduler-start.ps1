@@ -46,7 +46,8 @@ $utf8 = New-Object System.Text.UTF8Encoding($false)
 $OutputEncoding = $utf8
 $GuardianRepo = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 
-# Resolve target repo by precedence: param > env > sibling config file > cwd.
+# Resolve target repo by precedence: param > env > sibling config file > current directory only
+# when it is already a configured target repo; otherwise ask instead of silently watching QA-skills.
 if (-not $TargetRepo) { $TargetRepo = $env:QA_GUARDIAN_REPO }
 if (-not $TargetRepo) {
   $schedCfg = Join-Path $PSScriptRoot "scheduler.config.json"
@@ -55,7 +56,17 @@ if (-not $TargetRepo) {
     if ($sc.target_repo) { $TargetRepo = $sc.target_repo }
   }
 }
-if (-not $TargetRepo) { $TargetRepo = (Get-Location).Path }
+if (-not $TargetRepo) {
+  $cwd = (Get-Location).Path
+  if (Test-Path -LiteralPath (Join-Path $cwd ".qa\guardian\config.json")) {
+    $TargetRepo = $cwd
+  } else {
+    Write-Host "    未指定目标项目，不能默认监控 QA-skills 工具仓库。" -ForegroundColor Yellow
+    $inputRepo = Read-Host "    请输入要监控的项目目录（例如 D:\tuantuanrent，直接回车取消）"
+    if (-not $inputRepo) { throw "已取消：请通过 -TargetRepo、QA_GUARDIAN_REPO 或 scheduler.config.json 指定目标项目。" }
+    $TargetRepo = $inputRepo.Trim('"')
+  }
+}
 
 function Find-Node {
   $c = Get-Command node -ErrorAction SilentlyContinue

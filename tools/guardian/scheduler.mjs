@@ -145,6 +145,14 @@ export function resolveRepoDir(argv = process.argv, env = process.env) {
   return process.cwd();
 }
 
+export function assertTargetRepoConfigured(repoDir) {
+  const configPath = path.join(repoDir, '.qa', 'guardian', 'config.json');
+  if (!existsSync(configPath)) {
+    throw new Error(`目标项目未配置 Guardian: ${configPath}；请使用 --repo <项目目录> 或设置 QA_GUARDIAN_REPO`);
+  }
+  return repoDir;
+}
+
 export async function runScheduler({ repoDir, config = readConfig(repoDir), signal } = {}) {
   if (!repoDir) throw new Error('scheduler requires repoDir');
   const interval = Number(config.poll_interval_ms ?? DEFAULT_INTERVAL_MS);
@@ -172,7 +180,7 @@ async function main() {
   const controller = new AbortController();
   const stop = () => controller.abort();
   for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, stop);
-  await runScheduler({ repoDir: resolveRepoDir(), signal: controller.signal });
+  await runScheduler({ repoDir: assertTargetRepoConfigured(resolveRepoDir()), signal: controller.signal });
 }
 
 if (process.argv[1] && process.argv[1].endsWith('scheduler.mjs')) {
