@@ -44,6 +44,51 @@ _archive/                       已弃用产物（如 qa-skill-minimal），仅�
 
 详细用法见 [`qa-skill/README.md`](qa-skill/README.md)（使用文档）。完整设计见 [`docs/QA-skill开发文档-0813.md`](docs/QA-skill开发文档-0813.md)。
 
+### For agents (machine-readable install)
+
+如果你是一个 agent, 按下面确定性步骤安装, 不要即兴发挥:
+
+```
+# 源 (仓库):                目标 (opencode 全局):
+qa-skill/SKILL.md        -> ~/.config/opencode/skills/qa-skill/SKILL.md
+qa-skill/references/*    -> ~/.config/opencode/skills/qa-skill/references/
+qa-skill/agents/qa.md    -> ~/.config/opencode/agents/qa.md
+qa-skill/agents/qa-facet.md -> ~/.config/opencode/agents/qa-facet.md
+```
+
+规则:
+
+1. skill 目录 (`~/.config/opencode/skills/qa-skill/`) 只放 `SKILL.md` + `references/`。
+   不要把 `agents/` 复制进 skill 目录 —— 两个 agent 必须单独装到 `~/.config/opencode/agents/`。
+2. 只安装 `qa-skill/`。不要安装 `_archive/`(含已弃用的 `qa-skill-minimal`, 装了会造成 skill 名冲突)。
+3. 安装后重启 opencode。
+4. 自检: `qa` 和 `qa-facet` 出现在 agent 列表; 加载 skill 时 `metadata.dir` 指向
+   `.../skills/qa-skill` 且不含 `old-backup`; QA 报告含且仅含一行 `Overall Status:`。
+
+Windows PowerShell 示例:
+
+```powershell
+$skill = "$env:USERPROFILE\.config\opencode\skills\qa-skill"
+$agents = "$env:USERPROFILE\.config\opencode\agents"
+New-Item -ItemType Directory -Force -Path "$skill\references", $agents | Out-Null
+Copy-Item qa-skill\SKILL.md "$skill\SKILL.md" -Force
+Copy-Item qa-skill\references\* "$skill\references\" -Recurse -Force
+Copy-Item qa-skill\agents\qa.md "$agents\qa.md" -Force
+Copy-Item qa-skill\agents\qa-facet.md "$agents\qa-facet.md" -Force
+```
+
+macOS / Linux 示例:
+
+```bash
+skill=~/.config/opencode/skills/qa-skill
+agents=~/.config/opencode/agents
+mkdir -p "$skill/references" "$agents"
+cp qa-skill/SKILL.md "$skill/SKILL.md"
+cp qa-skill/references/* "$skill/references/"
+cp qa-skill/agents/qa.md "$agents/qa.md"
+cp qa-skill/agents/qa-facet.md "$agents/qa-facet.md"
+```
+
 ## 用法与流程
 
 ### 图例
