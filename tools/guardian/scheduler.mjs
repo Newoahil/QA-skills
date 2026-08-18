@@ -194,6 +194,22 @@ async function tick(repoDir, config, logger) {
   }
 
   try {
+  const currentBeforeRun = readState(guardianDirOf(repoDir), issue);
+  if (currentBeforeRun && plan.toRun.command) {
+    writeState(guardianDirOf(repoDir), {
+      ...currentBeforeRun,
+      last_consumed_comment_id: plan.toRun.command.commentId,
+      fix_rounds: plan.toRun.clearFixRounds ? 0 : currentBeforeRun.fix_rounds,
+      stall_retries: plan.toRun.nextStallRetries ?? currentBeforeRun.stall_retries,
+    }, { touch: false });
+  }
+  if (currentBeforeRun && action === 'STALLED' && plan.toRun.nextStallRetries) {
+    writeState(guardianDirOf(repoDir), {
+      ...currentBeforeRun,
+      stall_retries: plan.toRun.nextStallRetries,
+      last_phase: 'stalled',
+    }, { touch: false });
+  }
 
   const investigationMode = config.investigation_mode ?? 'enforced';
   if (investigationMode !== 'legacy') {

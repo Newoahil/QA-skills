@@ -225,7 +225,11 @@ The full link:
    - `FAIL` → back to **FIXING** (do not re-ask the human). The FIXING↔VERIFYING loop is capped at
      **1–2 rounds** (reuse `references/using-qa.md`). Over the cap → `HANDED_BACK`
      (`reason=fix-rounds-exceeded`). **A `FAIL` never advances to PR_OPENED**, for low-risk too.
-   - `PASS` → continue. `qa` PASS is the last machine gate before a low-risk issue reaches a PR.
+    - `PASS` → continue. `qa` PASS is the last machine gate before a low-risk issue reaches a PR.
+      Before PR creation, materialize a `.qa/guardian/<n>/qa-verdict.json` artifact containing the
+      exact status, issue, fix branch, verification timestamp, report hash, and evidence summary.
+      A PR/trace is QA-approved only when this machine-readable artifact validates and status is
+      exactly `PASS`; `FAIL`, `BLOCKED`, missing, stale, or mismatched verdicts never open a PR.
 7. **PR_OPENED** — `git commit` (conventional message with `fixes #<n>`), `git push -u origin
    fix/issue-<n>`, `gh pr create --base <base_branch>` (PR body = diagnosis + QA conclusion
    summary + risk level). Then **dual-write the trace**: an issue comment (fix summary +
