@@ -36,7 +36,7 @@ bootstrap 会:装 3 个 agent 到全局、装 qa-skill、给目标仓库写 `sub
 
 ```powershell
 node --test "tests/guardian/*.test.mjs"
-# 预期:tests 59 / pass 59 / fail 0
+# 预期:tests 254 / pass 254 / fail 0（数量随功能增长；关键是 fail 0）
 ```
 
 对应验收项映射:
@@ -192,7 +192,7 @@ node --test "tests/guardian/*.test.mjs"
 跑完后按此勾选:
 
 ```
-L1 确定性逻辑:  node --test "tests/guardian/*.test.mjs" → [ ] 128/128 pass
+L1 确定性逻辑:  node --test "tests/guardian/*.test.mjs" → [ ] 254/254 pass（fail 0）
 L2 端到端:
   UC-A 低风险到PR停闸门2         [ ]
   UC-B 高风险停闸门1零改动        [ ]

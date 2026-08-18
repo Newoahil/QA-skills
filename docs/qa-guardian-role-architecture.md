@@ -150,8 +150,8 @@ never correctness — but the hash guard prevents even that).
 These are load-bearing runtime facts. Phase 1 changes **none** of them.
 
 - **State machine.** The canonical `STATES` in [`state.mjs`](../tools/guardian/state.mjs) stay
-  exactly as-is (scheme A). No new state names, no renamed states, no new transitions. The 204-test
-  suite is the guard.
+  exactly as-is (scheme A). No new state names, no renamed states, no new transitions. The guardian
+  test suite is the guard.
 - **GitHub discovery label.** Discovery stays `gh issue list --label qa-guardian`; the claim label
   stays `qa-guardian-claimed`. Role rename does **not** rename the discovery label.
 - **Projected labels.** `qa-guardian:bug` / `:request` / `:risk-high` / `:risk-low` / `:gate-1` /
