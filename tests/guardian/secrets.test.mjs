@@ -12,7 +12,7 @@ test('env values are resolved by canonical key', () => {
     GITHUB_TOKEN: 'ghp_x',
     GITHUB_REPO: 'o/r',
   };
-  const s = loadSecrets({ env, repoDir: 'D:/does-not-exist-xyz' });
+  const s = loadSecrets({ env, repoDir: 'D:/does-not-exist-xyz', ignoreFiles: true });
   assert.equal(s.feishu_app_id, 'cli_x');
   assert.equal(s.feishu_app_secret, 'app_secret_x');
   assert.equal(s.github_token, 'ghp_x');
@@ -21,12 +21,12 @@ test('env values are resolved by canonical key', () => {
 });
 
 test('empty env values are treated as absent', () => {
-  const s = loadSecrets({ env: { GITHUB_TOKEN: '' }, repoDir: 'D:/does-not-exist-xyz' });
+  const s = loadSecrets({ env: { GITHUB_TOKEN: '' }, repoDir: 'D:/does-not-exist-xyz', ignoreFiles: true });
   assert.equal(s.github_token, undefined);
 });
 
 test('requireSecrets throws naming the missing ENV vars, without echoing values', () => {
-  const s = loadSecrets({ env: { GITHUB_TOKEN: 'x' }, repoDir: 'D:/does-not-exist-xyz' });
+  const s = loadSecrets({ env: { GITHUB_TOKEN: 'x' }, repoDir: 'D:/does-not-exist-xyz', ignoreFiles: true });
   try {
     requireSecrets(s, ['github_token', 'feishu_app_secret', 'feishu_encrypt_key']);
     assert.fail('should have thrown');
@@ -38,6 +38,6 @@ test('requireSecrets throws naming the missing ENV vars, without echoing values'
 });
 
 test('requireSecrets passes when all present', () => {
-  const s = loadSecrets({ env: { GITHUB_TOKEN: 'x', GITHUB_REPO: 'o/r' }, repoDir: 'D:/does-not-exist-xyz' });
+  const s = loadSecrets({ env: { GITHUB_TOKEN: 'x', GITHUB_REPO: 'o/r' }, repoDir: 'D:/does-not-exist-xyz', ignoreFiles: true });
   assert.equal(requireSecrets(s, ['github_token', 'github_repo']), s);
 });

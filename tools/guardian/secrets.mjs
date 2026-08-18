@@ -46,7 +46,7 @@ function readJsonFileSecrets(repoDir) {
  */
 export function loadSecrets(opts = {}) {
   const env = opts.env ?? process.env;
-  const fileSecrets = readJsonFileSecrets(opts.repoDir);
+  const fileSecrets = opts.ignoreFiles ? {} : readJsonFileSecrets(opts.repoDir);
 
   const out = {};
   for (const [key, envName] of Object.entries(SECRET_ENV)) {
