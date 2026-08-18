@@ -6,8 +6,12 @@ import { spawn } from 'node:child_process';
 function extractJson(text) {
   const source = String(text).trim();
   const fenced = source.match(/```json\s*([\s\S]*?)```/i);
-  const candidate = fenced?.[1] ?? source.slice(source.lastIndexOf('{'));
-  return JSON.parse(candidate);
+  if (fenced) return JSON.parse(fenced[1]);
+  // Accept exactly one complete JSON object only. Never select the last `{` from arbitrary
+  // model output: trailing JSON-like text could otherwise replace the authoritative plan.
+  const parsed = JSON.parse(source);
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('specialist output must be one JSON object');
+  return parsed;
 }
 
 export function runAgentJson({ agent, repoDir, prompt, timeoutMs = 600000, spawnImpl = spawn }) {

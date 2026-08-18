@@ -15,7 +15,7 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { readJsonFile } from './runtime-io.mjs';
 
-import { pollIssue, defaultGhReader, DEFAULT_LEASE_MS } from './poll.mjs';
+import { pollIssue, defaultGhReader, DEFAULT_LEASE_MS, invocationArgvFor } from './poll.mjs';
 import { readState, startFollowupRound, writeState } from './state.mjs';
 import { planTick } from './scheduler-core.mjs';
 import { acquireLock, renewLock, releaseLock } from './lock.mjs';
@@ -165,7 +165,8 @@ async function tick(repoDir, config, logger) {
     return;
   }
 
-  const { issue, invokeArgv, action, toState } = plan.toRun;
+  const { issue, action, toState } = plan.toRun;
+  let invokeArgv = plan.toRun.invokeArgv;
   if (!invokeArgv) {
     logger.warn('run.skipped_no_invocation', { issue, action, to_state: toState });
     return;
@@ -181,6 +182,8 @@ async function tick(repoDir, config, logger) {
     return;
   }
 
+  try {
+
   const investigationMode = config.investigation_mode ?? 'legacy';
   if (investigationMode !== 'legacy') {
     const guardianDir = guardianDirOf(repoDir);
@@ -188,13 +191,26 @@ async function tick(repoDir, config, logger) {
     const planArtifact = readArtifact(guardianDir, issue, 'plan');
     if (!dossier || !planArtifact) {
       try {
-        await prepareInvestigation({
+        const prepared = await prepareInvestigation({
           issue, repoDir, guardianDir, issueClass: config.default_issue_class ?? 'bug',
           complexity: config.investigation_complexity ?? 'complex',
           capabilities: discoverCapabilities({ env: process.env }),
           config, runSpecialist: processSpecialistRunner,
           buildPlan: (args) => processPlanBuilder({ ...args, repoDir }),
         });
+        const state = readState(guardianDir, issue) ?? { issue };
+        writeState(guardianDir, {
+          ...state,
+          dossier_path: prepared.artifact_paths.dossier_path,
+          plan_path: prepared.artifact_paths.plan_path,
+          dossier_status: prepared.validation.valid ? 'valid' : 'invalid',
+          plan_status: prepared.planResult.valid ? 'valid' : 'invalid',
+          evidence_count: prepared.dossier.evidence.length,
+          hypothesis_ids: prepared.dossier.hypotheses.map((item) => item.id),
+          unresolved_fact_count: prepared.dossier.unresolved_facts.length,
+          acceptance_criteria_count: prepared.dossier.acceptance_criteria.length,
+          last_phase: 'plan-validated',
+        }, { touch: false });
         logger.info('investigation.artifacts_ready', { issue, mode: investigationMode });
       } catch (error) {
         releaseLock(lockFile, handle);
@@ -215,6 +231,15 @@ async function tick(repoDir, config, logger) {
       return;
     }
     logger.info('run.plan_gate_passed', { issue, mode: investigationMode });
+  }
+
+  // Refresh the prompt after artifacts exist so the write-capable agent receives the exact
+  // validated dossier/plan paths rather than an ungrounded generic invocation.
+  if (investigationMode !== 'legacy') {
+    invokeArgv = invocationArgvFor(repoDir, issue, plan.toRun, {
+      dossierPath: path.join(guardianDirOf(repoDir), String(issue), 'dossier.json'),
+      planPath: path.join(guardianDirOf(repoDir), String(issue), 'plan.json'),
+    });
   }
 
   if (plan.toRun.claim_source === 'new-open') {
@@ -245,6 +270,11 @@ async function tick(repoDir, config, logger) {
   try {
     const code = await runInvocation(repoDir, invokeArgv, lockFile, handle, leaseMs);
     logger.info('run.exit', { issue, exit_code: code });
+  }
+  catch (error) {
+    logger.error('run.error', { issue, error_message: error instanceof Error ? error.message : 'unknown' });
+    throw error;
+  }
   } finally {
     releaseLock(lockFile, handle);
   }
