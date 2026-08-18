@@ -65,7 +65,7 @@ export function isTerminalState(state) {
 // A fresh state record for a newly discovered issue.
 export function newState(issueNumber, now = new Date().toISOString()) {
   return {
-    schema_version: 2,
+    schema_version: 3,
     issue: Number(issueNumber),
     state: STATES.DISCOVERED,
     risk: null, // LOW | HIGH once assessed
@@ -86,6 +86,29 @@ export function newState(issueNumber, now = new Date().toISOString()) {
     claim_id: null,
     claimed_at: null,
     claim_source: null, // labeled | new-open | followup
+    dossier_path: null,
+    plan_path: null,
+    dossier_revision: null,
+    dossier_status: 'missing',
+    plan_status: 'missing',
+    plan_hash: null,
+    investigation_started_at: null,
+    investigation_completed_at: null,
+    investigation_budget_ms: null,
+    investigation_attempts: 0,
+    specialists_requested: [],
+    specialists_completed: [],
+    specialist_failures: [],
+    hypothesis_ids: [],
+    selected_hypothesis: null,
+    unresolved_fact_count: 0,
+    production_dependency: false,
+    acceptance_criteria_count: 0,
+    evidence_count: 0,
+    plan_validation_errors: [],
+    last_phase: null,
+    last_error_class: null,
+    last_child_exit_code: null,
   };
 }
 
