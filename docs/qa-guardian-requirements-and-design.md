@@ -649,6 +649,15 @@ Guardian 走到任一闸门时，**不允许靠 agent"自觉停对地方"**，�
   - **联网豁免边界**（与 §10 "默认不联网"冲突的显式解法）：Guardian 仍 `webfetch/websearch: deny`；webhook 仅通过 **bash `curl` 到 config 里那个固定 URL** 实现，且在 agent 定义里约定**只允许 POST 到该配置 URL、不得用于其他联网**。这是"受限单点联网豁免"，不是放开任意网络。
   - **幂等**：同一 issue 同一阶段的通知在状态文件记 `last_notified_state`，同状态不重复推（避免每轮轮询重复骚扰）。
 
+#### 11B.5-a 已交付实现（超出原「通用 webhook」设计的落地范围）
+
+原 §11B.5 只描述通用 webhook（Slack/企微/通用）。实际交付在此基础上扩展如下（记录以对齐文档与代码）：
+
+- **飞书通道（`notify_channel: "feishu"`）**：webhook body 由 `notify-feishu.mjs` 渲染为飞书交互卡片；`generic`（默认）仍发原始 JSON，向后兼容。通道格式化集中在 `buildChannelBody`，notify 决策保持通道无关。
+- **飞书卡片按钮回调服务**（云端，`callback-server.mjs` + Dockerfile/compose，见 `tools/guardian/DEPLOY.md`）：飞书卡片按钮点击经**强制签名校验**（sha256 + 常量时间比较 + 5 分钟防重放 + 严格 timestamp）、verb 白名单、事件去重后，用 GitHub REST + fine-grained PAT 写一条 `/guardian <verb> <意见>` issue 评论。回调**只写评论**，绝不 merge/close/改代码——与「人在 GitHub 手打命令」同一条安全路径。请求体设大小上限（超限 413）。
+- **命令作者授权（`command_authors`，fail-closed）**：poller 只采纳白名单内 GitHub 登录名发出的 `/guardian` 命令;**未配置则任何命令都不生效**。这消除「任意/伪造评论批准 HIGH 方案」的授权漏洞——即使飞书回调写了评论，其 GitHub 身份也必须在白名单内才被采纳（双重授权）。
+- **投递接线（FR-21）**：常驻 scheduler 每 tick 通过 `notify-io.mjs`（`gh` 评论 + `curl` webhook）真实投递 gate/STALLED/HANDED_BACK 通知，幂等持久化 `last_notified_state`、best-effort per issue。
+
 ### 11B.6 铁律：Guardian 永不"傻停等对话"
 
 把"不可见卡死"强制转成"可见等待"的核心纪律，写进 agent 定义并作为验收项：

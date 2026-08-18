@@ -140,6 +140,37 @@ node --test "tests/guardian/*.test.mjs"
 2. 等超过 `lease_ms`(默认 30 分钟)后再轮询。
 3. **预期:** `poll.mjs` 判 `STALLED`;`INVESTIGATING`(只读幂等)自动重跑 1 次;仍卡则 `HANDED_BACK(reason=stalled)` + 通知。不被当"处理中"无限跳过。
 
+### UC-H 命令作者授权 fail-closed(安全)
+
+1. 未配置 `command_authors` 时,在 `GATE_1_WAIT` 的 issue 下评论 `/guardian approve`,再轮询。
+   - **预期:** `poll.mjs` 判 `SKIP/gate1-waiting`,命令不生效(fail-closed)。
+2. 配置 `command_authors: ["你的登录名"]` 后:
+   - 由**名单内**作者评论 `/guardian approve` → `RESUME/FIXING`。
+   - 由**名单外**作者(或伪造)评论 `/guardian approve` → 仍 `SKIP`,被忽略。
+3. **通过判据:** 只有可信作者的命令被采纳;伪造/任意评论零效果。
+
+### UC-I 常驻 scheduler + 真实 N=1(§15.1)
+
+1. 配好 `.qa/guardian/config.json`(含 `command_authors`),启动 `node tools/guardian/scheduler.mjs --repo <repo>`。
+2. **预期:** 每轮列出 open `qa-guardian` issue、逐个 poll、按 N=1 只跑一个;`.qa/guardian/.scheduler.lock` 存在且带 `token`/`renewed_at`,运行中心跳续租。
+3. 同机再启动第二个 scheduler(或运行超过 `lease_ms` 的长任务):
+   - **预期:** 第二实例拿不到锁(原子获取返回 null)→ 不并发启动;长任务因心跳续租不被误判过期。
+4. **通过判据:** 任意时刻至多一个活跃 run;长运行不被抢占。
+
+### UC-J 通知投递真实发出(FR-21 / §11B.5)
+
+1. 让一个 issue 进入 `GATE_1_WAIT` / `STALLED` / `HANDED_BACK`。
+2. **预期:** scheduler tick 真正发通知——issue 评论一定发;配了 `notify_webhook` 时 `curl` POST 也发;同状态不重复推(幂等,`last_notified_state`)。
+3. **通过判据:** 每个 notify-worthy 状态恰好一条通知;通知 body 只含 issue#/阶段/链接/原因,无代码/密钥。
+
+### UC-K 飞书卡片回调 → GitHub 评论(端到端)
+
+1. 部署回调服务(见 `DEPLOY.md`),飞书事件订阅回填 `https://<域名>/feishu/callback`,握手通过(challenge)。
+2. 在飞书 gate 卡片点「批准/打回」等按钮(revise/rework 填意见)。
+3. **预期:** 回调**验签通过**后,以 REST PAT 写 `/guardian <verb> <意见>` 到对应 issue;该评论作者身份需在 `command_authors` 内才会被 poller 采纳,驱动下一步。
+4. **安全核查:** 无签名/过期/畸形 timestamp/非法 verb 一律拒绝(401/400);超大 body → 413;回调**只写评论**,绝不 merge/close/改代码。
+5. **通过判据:** 合法按钮点击驱动下一步;非法回调零副作用。
+
 ---
 
 ## 验收结论模板
@@ -147,14 +178,18 @@ node --test "tests/guardian/*.test.mjs"
 跑完后按此勾选:
 
 ```
-L1 确定性逻辑:  node --test → [ ] 59/59 pass
+L1 确定性逻辑:  node --test "tests/guardian/*.test.mjs" → [ ] 128/128 pass
 L2 端到端:
-  UC-A 低风险到PR停闸门2       [ ]
-  UC-B 高风险停闸门1零改动      [ ]
-  UC-C 信息不足不冒进+显式态    [ ]
-  UC-D 修-验上限+FAIL不进PR     [ ]
-  UC-E 去重/独立分支            [ ]
-  UC-F 只读独立性+无merge/close [ ]
-  UC-G STALLED兜底             [ ]
+  UC-A 低风险到PR停闸门2         [ ]
+  UC-B 高风险停闸门1零改动        [ ]
+  UC-C 信息不足不冒进+显式态      [ ]
+  UC-D 修-验上限+FAIL不进PR       [ ]
+  UC-E 去重/独立分支              [ ]
+  UC-F 只读独立性+无merge/close   [ ]
+  UC-G STALLED兜底               [ ]
+  UC-H 命令作者授权 fail-closed   [ ]
+  UC-I 常驻scheduler+真实N=1      [ ]
+  UC-J 通知投递真实发出           [ ]
+  UC-K 飞书卡片回调→GitHub评论    [ ]
 总判定: PASS / 待修
 ```

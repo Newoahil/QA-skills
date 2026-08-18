@@ -9,20 +9,32 @@ It does **not** modify `qa` / `qa-facet` / `SKILL.md` / `references/*` — it di
 `qa` agent as an independent judge (the guardian never grades its own fix). Full design:
 [`docs/qa-guardian-requirements-and-design.md`](../../docs/qa-guardian-requirements-and-design.md).
 
-> **This is the MVP.** It gets the single-issue chain working manually (design §15.2). The always-on
-> scheduler/cron loop (§15.1) is a documented follow-up — the deterministic routing this MVP ships
-> (`poll.mjs` + `state-router.mjs`) is exactly what that scheduler will call per issue.
+> **Two ways to run.** Either drive one issue by hand (§15.2, below) or run the always-on resident
+> scheduler (§15.1) that polls, enforces N=1, runs the agent, and delivers notifications. The
+> Feishu interactive-card notification + card-button callback service (button → `/guardian` comment)
+> ship too. Deployment for the scheduler and the cloud callback service is in
+> [`DEPLOY.md`](./DEPLOY.md).
 
 ## What's here
 
 | File | Role | Design ref |
 |---|---|---|
 | `state.mjs` | `.qa/guardian/<n>.json` schema + read/write + lease | §11A.3, §11B.4 |
-| `state-router.mjs` | poll-time dispatch table (dedup + gate recovery + STALLED) | §11A.2 |
-| `commands.mjs` | `/guardian approve\|revise\|reject\|rework\|retry` comment protocol | §11.2 |
+| `state-router.mjs` | poll-time dispatch table (dedup + gate recovery + STALLED + author auth) | §11A.2 |
+| `commands.mjs` | `/guardian approve\|revise\|reject\|rework\|retry` protocol + trusted-author gate | §11.2 |
 | `risk.mjs` | LOW-whitelist + fail-safe-HIGH grading (pure) | §5A |
-| `notify.mjs` | dual-channel notify (issue comment + webhook), idempotent | §11B.5 |
+| `notify.mjs` | dual-channel notify decision (issue comment + webhook), idempotent | §11B.5 |
+| `notify-feishu.mjs` | Feishu interactive-card builder (per-state buttons + input) | §11B.5 |
+| `notify-io.mjs` | notification delivery (gh comment + curl webhook) + orchestration | §11B.5 / FR-21 |
 | `poll.mjs` | single-issue entry: read state → route → print action/invocation | §15.2 |
+| `scheduler.mjs` | resident watch loop: list → poll → planTick → notify + run (N=1) | §15.1 |
+| `scheduler-core.mjs` | pure N=1 tick planning (which issue to run, which to notify) | §15.1 |
+| `lock.mjs` | atomic N=1 lock (exclusive-create + heartbeat + owner release) | §11B.4 |
+| `feishu-callback.mjs` | Feishu signature verify + card-action parse + verb whitelist | §11B.5 |
+| `callback-handler.mjs` | callback request handling (verify → parse → comment, dedup) | §11B.5 |
+| `callback-server.mjs` | HTTP boundary for the cloud callback service | §11B.5 |
+| `github-comment.mjs` | REST PAT issue-comment client (cloud, no `gh`) | §12 |
+| `secrets.mjs` | env-first secret loader (gitignored file fallback) | — |
 
 The write-capable agent itself is [`qa-skill/agents/qa-guardian.md`](../../qa-skill/agents/qa-guardian.md).
 
@@ -43,12 +55,29 @@ The write-capable agent itself is [`qa-skill/agents/qa-guardian.md`](../../qa-sk
    ```bash
    mkdir -p .qa/guardian
    ```
-   Optionally add a webhook for proactive notifications:
+   Configure `.qa/guardian/config.json`:
    ```json
-   // .qa/guardian/config.json
-   { "notify_webhook": "https://hooks.slack.com/services/XXX" }
+   {
+     "command_authors": ["your-github-login"],
+     "poll_interval_ms": 60000,
+     "lease_ms": 1800000,
+     "base_branch": "dev",
+     "notify_webhook": "https://open.feishu.cn/open-apis/bot/v2/hook/XXXX",
+     "notify_channel": "feishu"
+   }
    ```
-   If absent, notifications degrade to issue comments only (the link is never blocked).
+
+   | key | meaning | default |
+   |---|---|---|
+   | `command_authors` | **trusted `/guardian` command authors (security, required).** Only these GitHub logins can drive commands; **unset = every command is ignored (fail-closed)** | none |
+   | `poll_interval_ms` | resident scheduler poll interval | 60000 |
+   | `lease_ms` | N=1 lock lease (heartbeat-renewed while a run is live) | 1800000 |
+   | `base_branch` | PR target branch | dev |
+   | `notify_webhook` | notification webhook URL (Feishu bot / generic) | none → comment-only |
+   | `notify_channel` | `generic` (raw JSON) or `feishu` (interactive card) | generic |
+
+   > Set `command_authors` or **nothing will be approvable** — this is the deliberate fail-closed
+   > guard against an arbitrary or forged comment approving a HIGH-risk plan.
 5. **Label an issue.** Put the `qa-guardian` label on the GitHub issue you want handled (one-time
    human authorization).
 
@@ -89,7 +118,22 @@ Because each run is a one-shot process, you resume by leaving a comment the next
 | `/guardian rework <opinion>` | (gate 2) send the PR back for another fix round |
 | `/guardian retry` | (handed-back) re-enter the pipeline from scratch |
 
-## Poll routing (what the scheduler will call)
+## Run the resident scheduler (§15.1, unattended)
+
+Instead of driving one issue by hand, run the always-on scheduler on a machine that has
+`opencode`, an authenticated `gh`, `git`, and the target repo checked out:
+
+```bash
+node tools/guardian/scheduler.mjs --repo <repo>
+```
+
+Each tick it lists open `qa-guardian` issues, polls each, picks a single runnable issue under an
+**atomic N=1 lock** (heartbeat-renewed for the whole run so a long run is never mistaken for dead),
+runs the guardian agent, and **delivers notifications** for gate/STALLED/HANDED_BACK events
+(idempotent per state). Full deployment — including the cloud Feishu callback service — is in
+[`DEPLOY.md`](./DEPLOY.md).
+
+## Poll routing (what the scheduler calls)
 
 `poll.mjs` is the deterministic decision the scheduler runs per issue. It reads the issue's state +
 GitHub facts and prints the action + the next guardian invocation:
@@ -117,6 +161,10 @@ command above against a real repo to validate the full chain.
 
 ## Safety model (why this is trustworthy unattended)
 
+- **Command authorization (fail-closed).** Only `/guardian` commands from a login in
+  `command_authors` are honored; an unconfigured whitelist honors nothing. A forged/replayed Feishu
+  callback comment or an arbitrary repo commenter cannot approve a plan — the poller checks the
+  comment author, and the cloud callback identity must itself be in `command_authors` to take effect.
 - **Separation of powers.** The guardian writes code; the **read-only `qa`** (mechanically unable to
   edit) judges it. The guardian's `task` whitelist is `qa` + `explore` only — it cannot dispatch a
   write-capable agent to grade for it.
