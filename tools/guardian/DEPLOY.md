@@ -48,6 +48,7 @@
 | `FEISHU_WS_ENABLED` | `true`/`false`，显式关闭可只跑 scheduler | credentials 存在时启用 |
 | `notify_webhook` | 通知 webhook 地址（飞书自定义机器人或通用 webhook） | 无（降级为只发 issue 评论） |
 | `notify_channel` | `generic`（原始 JSON）或 `feishu`（交互卡片） | generic |
+| `investigation_mode` | `legacy` / `shadow` / `enforced`：调查 dossier/plan 迁移开关 | legacy |
 
 > ⚠️ **`command_authors` 不配 = 所有 `/guardian` 命令失效**。这是有意的安全默认，防止任意评论（含伪造回调）批准 HIGH 风险方案。至少填入你自己的 GitHub 登录名。
 
@@ -62,6 +63,14 @@
 
 `followup` 仅在 `DONE` 或 `GATE_2_WAIT` 生效，开启新的 `processing_round`，保存旧分支/PR
 历史并使用新分支；不自动 reopen 已关闭 issue，也不 force-push 旧 PR。`rework` 仍表示打回当前 PR。
+
+### 无人值守调查增强迁移
+
+- `legacy`：保持现有已验证流程，不强制 dossier/plan。
+- `shadow`：生成 dossier/plan 并记录 validator 结果，但不凭此直接授权编辑。
+- `enforced`：只有 evidence-backed、验收标准完整且 plan validator 通过的计划才可进入 FIXING；不确定事项进入 Gate 1。
+
+建议按 `legacy → shadow → enforced` 逐阶段切换；回滚只修改 config，不删除 `.qa/guardian/<issue>/` artifact。
 
 ### 2. 启动（一键脚本，推荐）
 

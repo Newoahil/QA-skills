@@ -69,7 +69,8 @@ The write-capable agent itself is [`qa-skill/agents/qa-guardian.md`](../../qa-sk
      "lease_ms": 1800000,
      "base_branch": "dev",
      "notify_webhook": "https://open.feishu.cn/open-apis/bot/v2/hook/XXXX",
-     "notify_channel": "feishu"
+      "notify_channel": "feishu",
+      "investigation_mode": "legacy"
    }
    ```
 
@@ -81,12 +82,15 @@ The write-capable agent itself is [`qa-skill/agents/qa-guardian.md`](../../qa-sk
    | `lease_ms` | N=1 lock lease (heartbeat-renewed while a run is live) | 1800000 |
    | `base_branch` | PR target branch | dev |
    | `notify_webhook` | notification webhook URL (Feishu bot / generic) | none → comment-only |
-   | `notify_channel` | `generic` (raw JSON) or `feishu` (interactive card) | generic |
+    | `notify_channel` | `generic` (raw JSON) or `feishu` (interactive card) | generic |
+    | `investigation_mode` | `legacy`, `shadow`, or `enforced` dossier/plan migration mode | legacy |
 
    > Set `command_authors` or **nothing will be approvable** — this is the deliberate fail-closed
     > guard against an arbitrary or forged comment approving a HIGH-risk plan.
     In `new-open` mode, historical unlabeled issues are not claimed. Newly claimed issues receive
     `qa-guardian` and `qa-guardian-claimed`; `.qa/guardian/<n>.json` remains authoritative.
+    The stronger investigation phases write `.qa/guardian/<n>/dossier.json` and `plan.json`;
+    use `shadow` before `enforced`, and use `legacy` as rollback.
 5. **Label an issue.** Put the `qa-guardian` label on the GitHub issue you want handled (one-time
    human authorization).
 

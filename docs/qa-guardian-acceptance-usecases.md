@@ -179,6 +179,12 @@ node --test "tests/guardian/*.test.mjs"
 4. 下一轮 poll 消费该评论，状态进入新的 `INVESTIGATING` round；`processing_round` 递增，上一轮 branch/PR 保留在 `round_history`。
 5. **通过判据:** 新一轮重新调查/质检；旧 PR 不被 force-push，已关闭 issue 不被自动 reopen。
 
+### UC-M 调查 dossier/plan shadow 模式
+
+1. 配置 `investigation_mode: "shadow"`，创建一个 bug 或 request issue。
+2. **预期:** investigation 生成 dossier/plan，并记录 hypotheses、evidence、unresolved facts、acceptance criteria 和 validator 结果，但不直接修改产品代码。
+3. **通过判据:** artifact 可读取、缺证据/未确定事实可见，现有 Gate 1/Gate 2/qa 安全边界保持不变；切回 `legacy` 可回滚。
+
 ---
 
 ## 验收结论模板
