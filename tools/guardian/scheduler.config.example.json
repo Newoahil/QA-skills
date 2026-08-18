@@ -1,0 +1,4 @@
+{
+  "_comment": "Optional launcher config for scheduler-start.ps1/.sh. Copy to scheduler.config.json (gitignored) to avoid passing --repo each time. Precedence: CLI arg > env QA_GUARDIAN_REPO > this file > cwd.",
+  "target_repo": "D:\\tuantuanrent"
+}

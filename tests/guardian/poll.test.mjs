@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { invocationFor, invocationArgvFor, RUNTIME_GUARDRAILS } from '../../tools/guardian/poll.mjs';
+import { resolveRepoDir } from '../../tools/guardian/scheduler.mjs';
 import { STATES } from '../../tools/guardian/state.mjs';
 
 test('RUNTIME_GUARDRAILS expose stable scheduler constraint ids', () => {
@@ -59,4 +60,17 @@ test('invocationArgvFor returns a shell-free argv array (no shell injection surf
 
 test('invocationArgvFor returns null for non-runnable decisions', () => {
   assert.equal(invocationArgvFor('D:\\repo', 191, { action: 'SKIP' }), null);
+});
+
+test('resolveRepoDir precedence: --repo arg > env > cwd', () => {
+  assert.equal(
+    resolveRepoDir(['node', 'scheduler.mjs', '--repo', 'D:\\from-arg'], { QA_GUARDIAN_REPO: 'D:\\from-env' }),
+    'D:\\from-arg',
+  );
+  assert.equal(
+    resolveRepoDir(['node', 'scheduler.mjs'], { QA_GUARDIAN_REPO: 'D:\\from-env' }),
+    'D:\\from-env',
+  );
+  // empty env value is ignored → falls through to cwd
+  assert.equal(resolveRepoDir(['node', 'scheduler.mjs'], { QA_GUARDIAN_REPO: '' }), process.cwd());
 });

@@ -131,10 +131,22 @@ async function tick(repoDir, config) {
   }
 }
 
+// Resolve which repo the scheduler watches. Precedence (highest first):
+//   1. CLI: --repo <dir>
+//   2. env: QA_GUARDIAN_REPO
+//   3. current working directory
+// Exported + pure (argv/env injected) so it is unit-testable.
+export function resolveRepoDir(argv = process.argv, env = process.env) {
+  const i = argv.indexOf('--repo');
+  if (i >= 0 && argv[i + 1]) return argv[i + 1];
+  if (typeof env.QA_GUARDIAN_REPO === 'string' && env.QA_GUARDIAN_REPO.length > 0) {
+    return env.QA_GUARDIAN_REPO;
+  }
+  return process.cwd();
+}
+
 async function main() {
-  const repoDir = process.argv.includes('--repo')
-    ? process.argv[process.argv.indexOf('--repo') + 1]
-    : process.cwd();
+  const repoDir = resolveRepoDir();
   const config = readConfig(repoDir);
   const interval = Number(config.poll_interval_ms ?? DEFAULT_INTERVAL_MS);
 
