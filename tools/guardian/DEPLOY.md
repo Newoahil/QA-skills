@@ -138,21 +138,24 @@ tools/guardian/scheduler-start.sh --target /path/to/repo
 
 #### 3a. 本地自测（可选，先验证再上云）
 
-在仓库根目录：
+在仓库根目录（compose 不再硬绑宿主端口，本地自测临时映射一个宿主端口即可）：
 
 ```bash
 cp tools/guardian/.env.example tools/guardian/.env   # 填入真实值（.env 已 gitignore）
-docker compose --env-file tools/guardian/.env -f tools/guardian/docker-compose.yml up --build
+# 本地临时把容器 8787 映射到宿主 18787 自测（不改 compose）：
+docker compose --env-file tools/guardian/.env -f tools/guardian/docker-compose.yml run --rm -p 18787:8787 qa-guardian-callback &
 # 另开终端自测：
-curl http://127.0.0.1:8787/healthz                    # → {"ok":true}
+curl http://127.0.0.1:18787/healthz                  # → {"ok":true}
 ```
 
 #### 3b. Dokploy 部署
 
 1. 在 Dokploy 新建一个 **Compose** 应用，指向本仓库（分支 `auto-qa`），compose 文件路径填 `tools/guardian/docker-compose.yml`。
 2. 在 Dokploy 的 Environment 面板填上表 4 个必填变量（不要提交到 git）。
-3. Deploy。Dokploy 会分配一个公网 HTTPS 域名。
-4. 健康检查：浏览器/curl 访问 `https://<域名>/healthz` → `{"ok":true}`。
+3. **加 Domain**：Dokploy → 该服务 → Domains → Add，**Container Port 填 `8787`**，Dokploy 反代会分配公网 HTTPS 域名并路由到容器。
+   > compose **不硬绑宿主端口**（只 `expose: 8787`）——否则共享主机上会 `port is already allocated`。对外访问一律走 Dokploy 的 Domain，不要用 `宿主IP:8787`。
+4. Deploy。
+5. 健康检查：浏览器/curl 访问 `https://<域名>/healthz` → `{"ok":true}`。
 
 ### 4. 回填飞书事件订阅回调地址
 

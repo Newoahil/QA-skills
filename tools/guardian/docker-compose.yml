@@ -1,7 +1,12 @@
 # QA Guardian — Feishu callback service (Dokploy compose)
 #
-# Deploy this on your Dokploy cloud server. Dokploy assigns a public HTTPS domain; set the
-# Feishu event callback URL to https://<domain>/feishu/callback.
+# Deploy this on your Dokploy cloud server. Add a Domain in Dokploy pointing to this service on
+# container port 8787; Dokploy's reverse proxy assigns a public HTTPS domain and routes to it.
+# Then set the Feishu event callback URL to https://<domain>/feishu/callback.
+#
+# Do NOT hard-bind a host port here (e.g. `ports: 8787:8787`) — on a shared Dokploy host that
+# collides ("port is already allocated"). We only `expose` the container port; Dokploy's proxy
+# reaches it over the internal network via the Domain you configure.
 #
 # Secrets are provided via Dokploy environment variables (NOT committed):
 #   FEISHU_VERIFICATION_TOKEN, FEISHU_ENCRYPT_KEY, GITHUB_TOKEN, GITHUB_REPO
@@ -14,8 +19,8 @@ services:
       context: ../..
       dockerfile: tools/guardian/Dockerfile
     restart: unless-stopped
-    ports:
-      - "8787:8787"
+    expose:
+      - "8787"
     environment:
       PORT: "8787"
       CALLBACK_PATH: "/feishu/callback"
