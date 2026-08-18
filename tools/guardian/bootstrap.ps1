@@ -172,6 +172,12 @@ Write-Host "  3. Run the single-issue chain (§15.2):"
 Write-Host "       opencode run --agent qa-guardian --dir `"$TargetRepo`" ``" -ForegroundColor Gray
 Write-Host "         `"Watch GitHub issue #<n>: investigate root cause, assess risk, dispatch read-only qa, open a dev PR, stop at gate 2.`"" -ForegroundColor Gray
 Write-Host "  4. If it stops at gate 1 (high-risk), reply on the issue:  /guardian approve"
+Write-Host "       (only logins in config command_authors are honored; unset = no command works)" -ForegroundColor Gray
 Write-Host ""
 Write-Host "  Poll routing check (no live run):" -ForegroundColor Cyan
 Write-Host "       node `"$GuardianRepo\tools\guardian\poll.mjs`" --repo `"$TargetRepo`" --issue <n>" -ForegroundColor Gray
+Write-Host ""
+Write-Host "  Unattended watch mode + Feishu (see tools/guardian/DEPLOY.md):" -ForegroundColor Cyan
+Write-Host "    - Set command_authors (REQUIRED), poll_interval_ms, notify_webhook/notify_channel in .qa/guardian/config.json" -ForegroundColor Gray
+Write-Host "    - Resident scheduler (this machine): node `"$GuardianRepo\tools\guardian\scheduler.mjs`" --repo `"$TargetRepo`"" -ForegroundColor Gray
+Write-Host "    - Feishu callback service (cloud): deploy tools/guardian/docker-compose.yml on Dokploy; DEPLOY.md has env + callback URL setup" -ForegroundColor Gray
