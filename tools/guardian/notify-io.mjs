@@ -99,10 +99,20 @@ export function deliverNotifications(args) {
 // action; gate waits are announced by their state when a decision carries one.
 export function notifyTargetState(decision) {
   switch (decision.action) {
+    case 'GATE_1_WAIT':
+      return 'GATE_1_WAIT';
+    case 'GATE_2_WAIT':
+      return 'GATE_2_WAIT';
+    case 'SKIP':
+      if (decision.reason === 'gate1-waiting') return 'GATE_1_WAIT';
+      if (decision.reason === 'gate2-waiting') return 'GATE_2_WAIT';
+      return null;
     case 'STALLED':
       return 'STALLED';
     case 'HANDED_BACK':
       return 'HANDED_BACK';
+    case 'DONE':
+      return 'DONE';
     default:
       return null;
   }

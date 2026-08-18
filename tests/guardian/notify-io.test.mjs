@@ -28,8 +28,11 @@ function spyIo() {
 }
 
 test('notifyTargetState maps STALLED/HANDED_BACK; others → null', () => {
+  assert.equal(notifyTargetState({ action: 'SKIP', reason: 'gate1-waiting' }), 'GATE_1_WAIT');
+  assert.equal(notifyTargetState({ action: 'SKIP', reason: 'gate2-waiting' }), 'GATE_2_WAIT');
   assert.equal(notifyTargetState({ action: 'STALLED' }), 'STALLED');
   assert.equal(notifyTargetState({ action: 'HANDED_BACK' }), 'HANDED_BACK');
+  assert.equal(notifyTargetState({ action: 'DONE' }), 'DONE');
   assert.equal(notifyTargetState({ action: 'START' }), null);
   assert.equal(notifyTargetState({ action: 'SKIP' }), null);
 });

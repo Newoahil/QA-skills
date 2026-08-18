@@ -97,6 +97,13 @@ test('parseCardAction requires opinion text for revise', () => {
   assert.deepEqual(parseCardAction(ok), { issue: 191, verb: 'revise', text: '放开支付中状态' });
 });
 
+test('parseCardAction requires opinion text for followup', () => {
+  const empty = { action: { value: { issue: 191, verb: 'followup' }, input_value: ' ' } };
+  assert.throws(() => parseCardAction(empty), (e) => e instanceof CallbackError && e.code === 'missing-text');
+  const ok = { action: { value: { issue: 191, verb: 'followup' }, input_value: '新的验收问题' } };
+  assert.deepEqual(parseCardAction(ok), { issue: 191, verb: 'followup', text: '新的验收问题' });
+});
+
 test('parseCardAction rejects a non-positive issue number', () => {
   const event = { action: { value: { issue: 0, verb: 'approve' } } };
   assert.throws(() => parseCardAction(event), (e) => e instanceof CallbackError && e.code === 'bad-issue');

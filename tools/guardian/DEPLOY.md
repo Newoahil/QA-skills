@@ -222,7 +222,7 @@ Dockerfile 内置 healthcheck 已指向该端点。
 ### 安全边界（已内建）
 
 - 所有卡片回调**强制签名校验**（sha256 + 常量时间比较 + 5 分钟防重放 + 严格 timestamp）。
-- verb 白名单：只允许 approve/revise/reject/rework/retry。
+- verb 白名单：只允许 approve/revise/reject/rework/retry/followup；`revise`、`rework`、`followup` 必须带非空文本。
 - 回调**只写 `/guardian <verb>` 评论**，绝不 merge/close/改代码。
 - 请求体大小上限（超限 413），签名前不缓冲大 body。
 - event_id 原子去重（发评论前占位，失败回滚）。

@@ -171,6 +171,14 @@ node --test "tests/guardian/*.test.mjs"
 4. **安全核查:** 无签名/过期/畸形 timestamp/非法 verb 一律拒绝(401/400);超大 body → 413;回调**只写评论**,绝不 merge/close/改代码。
 5. **通过判据:** 合法按钮点击驱动下一步;非法回调零副作用。
 
+### UC-L DONE 卡片提交新验收问题
+
+1. 让一个 issue 完成上一轮并进入 `DONE`，确认 scheduler 投递 DONE 飞书卡片。
+2. 在卡片中点击「提交新验收问题」，输入新的验收问题并提交。
+3. **预期:** 飞书 WS 回调写入可信作者的 `/guardian followup <问题>` 评论；空输入被拒绝，不产生评论。
+4. 下一轮 poll 消费该评论，状态进入新的 `INVESTIGATING` round；`processing_round` 递增，上一轮 branch/PR 保留在 `round_history`。
+5. **通过判据:** 新一轮重新调查/质检；旧 PR 不被 force-push，已关闭 issue 不被自动 reopen。
+
 ---
 
 ## 验收结论模板
@@ -191,5 +199,6 @@ L2 端到端:
   UC-I 常驻scheduler+真实N=1      [ ]
   UC-J 通知投递真实发出           [ ]
   UC-K 飞书卡片回调→GitHub评论    [ ]
+  UC-L DONE卡片→followup新验收轮次 [ ]
 总判定: PASS / 待修
 ```

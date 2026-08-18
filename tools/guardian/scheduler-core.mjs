@@ -10,7 +10,13 @@
 // and notifications. A run is startable only for actionable decisions (START/RESUME/STALLED).
 
 export const RUNNABLE_ACTIONS = Object.freeze(['START', 'RESUME', 'STALLED']);
-export const NOTIFY_ACTIONS = Object.freeze(['STALLED', 'HANDED_BACK']);
+export const NOTIFY_ACTIONS = Object.freeze(['GATE_1_WAIT', 'GATE_2_WAIT', 'STALLED', 'HANDED_BACK', 'DONE']);
+
+export function isNotifyDecision(decision) {
+  return NOTIFY_ACTIONS.includes(decision.action)
+    || decision.reason === 'gate1-waiting'
+    || decision.reason === 'gate2-waiting';
+}
 
 /**
  * Is the N=1 lock currently held by a live run?
@@ -39,7 +45,7 @@ export function planTick(args) {
 
   // Notifications are independent of the run lock: a gate stop still deserves a card even if
   // another issue is running. (The notify layer itself is idempotent per last_notified_state.)
-  const notify = decisions.filter((d) => NOTIFY_ACTIONS.includes(d.action));
+  const notify = decisions.filter(isNotifyDecision);
 
   if (lockBusy) {
     return { toRun: null, lockBusy: true, notify };

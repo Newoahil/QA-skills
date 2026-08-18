@@ -79,6 +79,6 @@ test('assertSafeBody rejects a body with extra (potentially leaky) keys', () => 
   assert.throws(() => assertSafeBody({ issue: 1, stage: 'X', secret: 'token' }), /disallowed keys/);
 });
 
-test('NOTIFY_STATES only covers gate/stall/handback (not progress-only states)', () => {
-  assert.deepEqual([...NOTIFY_STATES].sort(), ['GATE_1_WAIT', 'GATE_2_WAIT', 'HANDED_BACK', 'STALLED'].sort());
+test('NOTIFY_STATES covers gate/stall/handback/done (not progress-only states)', () => {
+  assert.deepEqual([...NOTIFY_STATES].sort(), ['DONE', 'GATE_1_WAIT', 'GATE_2_WAIT', 'HANDED_BACK', 'STALLED'].sort());
 });

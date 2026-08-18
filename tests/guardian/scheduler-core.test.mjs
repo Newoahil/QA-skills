@@ -48,8 +48,18 @@ test('no runnable decisions → toRun null', () => {
   assert.equal(plan.notify.some((x) => x.action === 'HANDED_BACK'), true);
 });
 
-test('notify list covers STALLED and HANDED_BACK only (not START/SKIP/DONE)', () => {
+test('notify list covers STALLED/HANDED_BACK/DONE only (not START/SKIP)', () => {
   const decisions = [d(1, 'START'), d(2, 'SKIP'), d(3, 'STALLED'), d(4, 'HANDED_BACK'), d(5, 'DONE')];
   const plan = planTick({ decisions, lock: null, leaseMs: LEASE, now: NOW });
-  assert.deepEqual(plan.notify.map((x) => x.issue).sort(), [3, 4]);
+  assert.deepEqual(plan.notify.map((x) => x.issue).sort(), [3, 4, 5]);
+});
+
+test('gate waiting decisions are notify candidates even when action is SKIP', () => {
+  const decisions = [
+    { issue: 1, action: 'SKIP', reason: 'gate1-waiting' },
+    { issue: 2, action: 'SKIP', reason: 'gate2-waiting' },
+    { issue: 3, action: 'SKIP', reason: 'gate2-waiting' },
+  ];
+  const plan = planTick({ decisions, lock: null, leaseMs: 1800000, now: Date.now() });
+  assert.deepEqual(plan.notify.map((x) => x.issue), [1, 2, 3]);
 });

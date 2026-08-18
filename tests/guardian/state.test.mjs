@@ -128,5 +128,6 @@ test('startFollowupRound preserves history and resets round-local fields', () =>
   assert.equal(next.branch, null);
   assert.equal(next.fix_rounds, 0);
   assert.equal(next.last_followup_comment_id, 9);
+  assert.equal(next.last_notified_state, null);
   assert.equal(next.round_history[0].pr_url, 'https://pr/42');
 });

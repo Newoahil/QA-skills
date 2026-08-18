@@ -14,8 +14,8 @@ import crypto from 'node:crypto';
 
 import { ALLOWED_CALLBACK_VERBS } from './notify-feishu.mjs';
 
-// Verbs that require accompanying opinion text (revise/rework). Plain verbs ignore text.
-export const VERBS_REQUIRING_TEXT = Object.freeze(['revise', 'rework']);
+// Verbs that require accompanying opinion/problem text. Plain verbs ignore text.
+export const VERBS_REQUIRING_TEXT = Object.freeze(['revise', 'rework', 'followup']);
 
 export class CallbackError extends Error {
   constructor(code, message) {

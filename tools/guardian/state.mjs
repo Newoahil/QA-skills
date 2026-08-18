@@ -121,6 +121,7 @@ export function startFollowupRound(record, command, now = new Date().toISOString
     last_followup_comment_id: command.commentId,
     last_followup_data: command.data,
     last_consumed_comment_id: command.commentId,
+    last_notified_state: null,
     handed_back_reason: null,
     claim_source: 'followup',
   };
