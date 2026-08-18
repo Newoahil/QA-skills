@@ -15,6 +15,7 @@ This file summarizes all project changes, decisions, requirements, and bug recor
 - [bug-addaeb3484574da4898bc2d0d5a022d6] #qa-guardian #windows #configuration — 启动脚本从 tools/guardian 双击时把 QA-skills 工具目录作为当前工作目录并默认 target_repo，导致寻找错误的 .qa/guardian/config.json；现在只有当前目录已配置 Guardian 才回退使用，否则要求输入真实业务项目目录，并同步保护 scheduler.mjs 直接启动路径。 (2026-08-18)
 - [change-0071a9a0e32c40c28601c3ff7d6ad8b6] #qa-guardian #plan-gate #runtime — scheduler 现在消费 investigation_mode，在 shadow/enforced 模式读取 dossier/plan 并调用 assessFixingEntry，未通过计划门不启动 write-capable Guardian；legacy 保持兼容，190/190 测试通过。 (2026-08-18)
 - [change-0fcf1b08d1784c49b5e6ec1c2d6c527f] #qa-guardian #artifacts #state — 新增 dossier/plan 原子 artifact store，state schema 增加调查阶段、specialist、evidence、plan、生产依赖、round 元数据并兼容旧记录，167/167 测试通过。 (2026-08-18)
+- [change-12b834a1483f4fad8368e33dfe64947a] #qa-guardian #qa #state — 新增 machine-readable qa-verdict contract，要求 PASS 前置 PR；scheduler 启动 command-driven run 前持久化 consumed comment、clearFixRounds 和 stall_retries；196/196 测试通过。 (2026-08-18)
 - [change-260993fcf6504e8eb9e54f84f0dd45f4] #qa-guardian #integration #investigation — 新增 investigation-runtime.mjs，把注入的 specialist runner、coordinator dossier synthesis、artifact persistence、plan builder 和 plan validation 串成可调用 runtime adapter，192/192 测试通过。 ()
 - [change-2955e2780a8b4097bfdf09d765453605] #qa-guardian #reliability #timeout — scheduler child invocation 增加 child_timeout_ms 与 kill/timeout code，investigation failure 写入 dossier/plan failed、attempts/error/phase 状态，192/192 测试通过。 (2026-08-18)
 - [change-39d97b0a4c854e3893e13ba9e9a5859d] #qa-guardian #documentation #deployment — 修复 review-work 文档缺口——README 更正 scheduler 已交付状态+补运行段+config 键表+作者授权安全项，验收用例新增 UC-H..UC-K（授权/N=1/通知/飞书回调）并把测试数更新到 128，设计文档 §11B.5-a 补记飞书通道/回调/command_authors/FR-21 接线为已交付范围，文档与代码对齐。 (2026-08-18)
@@ -69,6 +70,7 @@ This file summarizes all project changes, decisions, requirements, and bug recor
 <!-- add new records here -->
 | change-0071a9a0e32c40c28601c3ff7d6ad8b6 | 2026-08-18 | 强化 Guardian Phase 8：真实 scheduler plan gate 接入 | done | [link](changes/2026-08-18-change-0071a9a0e32c40c28601c3ff7d6ad8b6-plan-gate-runtime.md) |
 | change-0fcf1b08d1784c49b5e6ec1c2d6c527f | 2026-08-18 | 强化 Guardian Phase 3：调查 artifact 持久化与状态扩展 | done | [link](changes/2026-08-18-change-0fcf1b08d1784c49b5e6ec1c2d6c527f-artifact-state.md) |
+| change-12b834a1483f4fad8368e33dfe64947a | 2026-08-18 | QA verdict contract 与 scheduler state reconciliation | done | [link](changes/2026-08-18-change-12b834a1483f4fad8368e33dfe64947a-qa-verdict-state.md) |
 | change-260993fcf6504e8eb9e54f84f0dd45f4 |  |  | done | [link](changes/2026-08-18-change-260993fcf6504e8eb9e54f84f0dd45f4-investigation-runtime.md) |
 | change-2955e2780a8b4097bfdf09d765453605 | 2026-08-18 | 修复 Strong Guardian runtime timeout 与调查失败持久化 | done | [link](changes/2026-08-18-change-2955e2780a8b4097bfdf09d765453605-runtime-reliability.md) |
 | change-39d97b0a4c854e3893e13ba9e9a5859d | 2026-08-18 | QA Guardian 文档收尾第三批（README/验收用例/设计文档对齐） | done | [link](changes/2026-08-18-change-39d97b0a4c854e3893e13ba9e9a5859d-guardian-docs-batch3.md) |
@@ -150,7 +152,8 @@ This file summarizes all project changes, decisions, requirements, and bug recor
 - orchestration: change-ab75b9ee58354673b48b9c875f91a889
 - plan-gate: change-0071a9a0e32c40c28601c3ff7d6ad8b6, change-cc34c0f387b04539bef2107012ba5deb, change-d9e9344cce4a4afbb937c6c637a7931c
 - planning: change-494b8d8a5ef14682bd96aeefdd945693
-- qa-guardian: bug-19e5ffff30db46ccbca9f8ca73551ad1, bug-1a88afaf58fe4f13859d209b49b49027, bug-541a9d6211594221a5ceb08950e80881, bug-9df5a75c67504f4fac0d315dd7cef2dd, bug-addaeb3484574da4898bc2d0d5a022d6, change-0071a9a0e32c40c28601c3ff7d6ad8b6, change-0fcf1b08d1784c49b5e6ec1c2d6c527f, change-260993fcf6504e8eb9e54f84f0dd45f4, change-2955e2780a8b4097bfdf09d765453605, change-39d97b0a4c854e3893e13ba9e9a5859d, change-41675aeea2c446eea10506e55cbbd08d, change-47dc8b8da91e4b6fa99315f0e3712686, change-494b8d8a5ef14682bd96aeefdd945693, change-559f7f25f2834bb2b50e4b7bcf9a3bfb, change-5abf095ac5524443a5d7a9038a01a1e8, change-66dd4c4f08114b48899480c39d8052a7, change-6ff6c658477b423eae1d6e18a33f92b9, change-a1a8b1267e6946a098431b0dfbd102b6, change-a43b7803dba74e9bae48e0bed222011c, change-a4cb962beea34d6491bc3c850bbd7590, change-ab75b9ee58354673b48b9c875f91a889, change-c4f7796c3fa940589c4c90921c26455c, change-c783251f5b134af9b8bd7e15628fc7c6, change-c79535dd171745ee98a74bae8ca3c2ba, change-c9452e10a1264645a06915267c49e44d, change-cc34c0f387b04539bef2107012ba5deb, change-d4732a411e254c618517828d62e5ed70, change-d9e9344cce4a4afbb937c6c637a7931c, change-e34b035b981b4224a44621ba7457d5b2
+- qa: change-12b834a1483f4fad8368e33dfe64947a
+- qa-guardian: bug-19e5ffff30db46ccbca9f8ca73551ad1, bug-1a88afaf58fe4f13859d209b49b49027, bug-541a9d6211594221a5ceb08950e80881, bug-9df5a75c67504f4fac0d315dd7cef2dd, bug-addaeb3484574da4898bc2d0d5a022d6, change-0071a9a0e32c40c28601c3ff7d6ad8b6, change-0fcf1b08d1784c49b5e6ec1c2d6c527f, change-12b834a1483f4fad8368e33dfe64947a, change-260993fcf6504e8eb9e54f84f0dd45f4, change-2955e2780a8b4097bfdf09d765453605, change-39d97b0a4c854e3893e13ba9e9a5859d, change-41675aeea2c446eea10506e55cbbd08d, change-47dc8b8da91e4b6fa99315f0e3712686, change-494b8d8a5ef14682bd96aeefdd945693, change-559f7f25f2834bb2b50e4b7bcf9a3bfb, change-5abf095ac5524443a5d7a9038a01a1e8, change-66dd4c4f08114b48899480c39d8052a7, change-6ff6c658477b423eae1d6e18a33f92b9, change-a1a8b1267e6946a098431b0dfbd102b6, change-a43b7803dba74e9bae48e0bed222011c, change-a4cb962beea34d6491bc3c850bbd7590, change-ab75b9ee58354673b48b9c875f91a889, change-c4f7796c3fa940589c4c90921c26455c, change-c783251f5b134af9b8bd7e15628fc7c6, change-c79535dd171745ee98a74bae8ca3c2ba, change-c9452e10a1264645a06915267c49e44d, change-cc34c0f387b04539bef2107012ba5deb, change-d4732a411e254c618517828d62e5ed70, change-d9e9344cce4a4afbb937c6c637a7931c, change-e34b035b981b4224a44621ba7457d5b2
 - read-only: change-47dc8b8da91e4b6fa99315f0e3712686
 - recovery: change-a43b7803dba74e9bae48e0bed222011c
 - reliability: change-2955e2780a8b4097bfdf09d765453605, change-a1a8b1267e6946a098431b0dfbd102b6, change-a4cb962beea34d6491bc3c850bbd7590, change-e34b035b981b4224a44621ba7457d5b2
@@ -161,7 +164,7 @@ This file summarizes all project changes, decisions, requirements, and bug recor
 - safety-gate: change-494b8d8a5ef14682bd96aeefdd945693
 - security: bug-19e5ffff30db46ccbca9f8ca73551ad1, change-5abf095ac5524443a5d7a9038a01a1e8, change-a1a8b1267e6946a098431b0dfbd102b6
 - specialists: change-47dc8b8da91e4b6fa99315f0e3712686
-- state: change-0fcf1b08d1784c49b5e6ec1c2d6c527f
+- state: change-0fcf1b08d1784c49b5e6ec1c2d6c527f, change-12b834a1483f4fad8368e33dfe64947a
 - timeout: change-2955e2780a8b4097bfdf09d765453605
 - unattended-quality: change-559f7f25f2834bb2b50e4b7bcf9a3bfb
 - usability: change-c783251f5b134af9b8bd7e15628fc7c6, change-d4732a411e254c618517828d62e5ed70
