@@ -28,6 +28,7 @@ This file summarizes all project changes, decisions, requirements, and bug recor
 - [change-c783251f5b134af9b8bd7e15628fc7c6] #qa-guardian #deployment #usability — 新增 scheduler-start.ps1/.sh 一键启动（自动补 PATH/解析 node/校验 command_authors），目标仓库支持三级注入（CLI --repo > env QA_GUARDIAN_REPO > 旁置 scheduler.config.json > cwd，scheduler.mjs 抽出可测的 resolveRepoDir），并补 .env.example + DEPLOY 回调部署清单（本地 compose 自测 + Dokploy），129/129 测试通过。 (2026-08-18)
 - [change-c79535dd171745ee98a74bae8ca3c2ba] #qa-guardian #review #followup — 将 DONE followup、Gate 通知和跨轮次 DONE 幂等的 focused injected regression 纳入正式测试，完整 Guardian suite 达到 153/153 pass，避免审查证据依赖未跟踪临时文件。 (2026-08-18)
 - [change-c9452e10a1264645a06915267c49e44d] #qa-guardian #feishu #followup — 修复 DONE 飞书 followup 的空输入漏洞、Gate 1/Gate 2 卡片通知不可达、跨轮次 DONE 通知幂等标记继承问题，并补 UC-L 与回归测试，149/149 测试通过。 (2026-08-18)
+- [change-cc34c0f387b04539bef2107012ba5deb] #qa-guardian #runtime-integration #plan-gate — 将 investigation-process/investigation-runtime 接入 scheduler 的 shadow/enforced 路径：真实执行只读 specialist 子进程、写 dossier/plan artifact、执行 plan gate，失败或不完整计划不启动 write-capable Guardian；192/192 测试通过。 (2026-08-18)
 - [change-d4732a411e254c618517828d62e5ed70] #qa-guardian #usability #deployment — scheduler-start.ps1 增 -Init/-CommandAuthors/-BaseBranch，config 不存在时一步创建（BOM-free UTF-8，修 PS5.1 Set-Content BOM 导致 node JSON.parse 失败）或交互提示，已存在则直接启动；新增 scheduler-start.bat 双击入口（自动 ExecutionPolicy Bypass 调 ps1 并转发参数），129/129 测试通过、init 冒烟验证 config 可被 node 解析。 (2026-08-18)
 - [change-d9e9344cce4a4afbb937c6c637a7931c] #qa-guardian #plan-gate #safety — 新增 plan-gate.mjs，把 legacy/shadow/enforced 三种调查模式映射为是否允许写入，enforced 下只有 dossier-backed decision-complete LOW plan 可自主进入 FIXING，183/183 测试通过。 (2026-08-18)
 - [change-e34b035b981b4224a44621ba7457d5b2] #qa-guardian #budgets #reliability — 新增 budgets.mjs 纯预算核心，支持标准/复杂调查预算、specialist 数量/截止时间、剩余预算和 timeout 分类，179/179 测试通过；尚未接入 runtime。 (2026-08-18)
@@ -77,6 +78,7 @@ This file summarizes all project changes, decisions, requirements, and bug recor
 | change-c783251f5b134af9b8bd7e15628fc7c6 | 2026-08-18 | QA Guardian scheduler 一键启动脚本 + 目标仓库可注入 + 回调部署清单 | done | [link](changes/2026-08-18-change-c783251f5b134af9b8bd7e15628fc7c6-guardian-oneclick-start-target-injection.md) |
 | change-c79535dd171745ee98a74bae8ca3c2ba | 2026-08-18 | DONE followup/Gate 通知 review 回归测试正式纳入 | done | [link](changes/2026-08-18-change-c79535dd171745ee98a74bae8ca3c2ba-followup-review-regression.md) |
 | change-c9452e10a1264645a06915267c49e44d | 2026-08-18 | 修复 DONE followup 卡片 review 阻塞项 | done | [link](changes/2026-08-18-change-c9452e10a1264645a06915267c49e44d-followup-review-fixes.md) |
+| change-cc34c0f387b04539bef2107012ba5deb | 2026-08-18 | 强化 Guardian Phase 9：investigation runtime 接入真实 scheduler | done | [link](changes/2026-08-18-change-cc34c0f387b04539bef2107012ba5deb-phase9-runtime-integration.md) |
 | change-d4732a411e254c618517828d62e5ed70 | 2026-08-18 | QA Guardian scheduler 一键创建 config + 启动 + .bat 双击入口 | done | [link](changes/2026-08-18-change-d4732a411e254c618517828d62e5ed70-guardian-init-and-bat-launcher.md) |
 | change-d9e9344cce4a4afbb937c6c637a7931c | 2026-08-18 | 强化 Guardian Phase 8：plan-gated execution core | done | [link](changes/2026-08-18-change-d9e9344cce4a4afbb937c6c637a7931c-plan-gate.md) |
 | change-e34b035b981b4224a44621ba7457d5b2 | 2026-08-18 | 强化 Guardian Phase 7：调查与子任务预算核心 | done | [link](changes/2026-08-18-change-e34b035b981b4224a44621ba7457d5b2-runtime-budgets.md) |
@@ -136,13 +138,14 @@ This file summarizes all project changes, decisions, requirements, and bug recor
 - notification: change-c4f7796c3fa940589c4c90921c26455c
 - observability: change-6ff6c658477b423eae1d6e18a33f92b9
 - orchestration: change-ab75b9ee58354673b48b9c875f91a889
-- plan-gate: change-0071a9a0e32c40c28601c3ff7d6ad8b6, change-d9e9344cce4a4afbb937c6c637a7931c
+- plan-gate: change-0071a9a0e32c40c28601c3ff7d6ad8b6, change-cc34c0f387b04539bef2107012ba5deb, change-d9e9344cce4a4afbb937c6c637a7931c
 - planning: change-494b8d8a5ef14682bd96aeefdd945693
-- qa-guardian: bug-1a88afaf58fe4f13859d209b49b49027, bug-541a9d6211594221a5ceb08950e80881, bug-9df5a75c67504f4fac0d315dd7cef2dd, bug-addaeb3484574da4898bc2d0d5a022d6, change-0071a9a0e32c40c28601c3ff7d6ad8b6, change-0fcf1b08d1784c49b5e6ec1c2d6c527f, change-260993fcf6504e8eb9e54f84f0dd45f4, change-39d97b0a4c854e3893e13ba9e9a5859d, change-41675aeea2c446eea10506e55cbbd08d, change-47dc8b8da91e4b6fa99315f0e3712686, change-494b8d8a5ef14682bd96aeefdd945693, change-559f7f25f2834bb2b50e4b7bcf9a3bfb, change-5abf095ac5524443a5d7a9038a01a1e8, change-66dd4c4f08114b48899480c39d8052a7, change-6ff6c658477b423eae1d6e18a33f92b9, change-ab75b9ee58354673b48b9c875f91a889, change-c4f7796c3fa940589c4c90921c26455c, change-c783251f5b134af9b8bd7e15628fc7c6, change-c79535dd171745ee98a74bae8ca3c2ba, change-c9452e10a1264645a06915267c49e44d, change-d4732a411e254c618517828d62e5ed70, change-d9e9344cce4a4afbb937c6c637a7931c, change-e34b035b981b4224a44621ba7457d5b2
+- qa-guardian: bug-1a88afaf58fe4f13859d209b49b49027, bug-541a9d6211594221a5ceb08950e80881, bug-9df5a75c67504f4fac0d315dd7cef2dd, bug-addaeb3484574da4898bc2d0d5a022d6, change-0071a9a0e32c40c28601c3ff7d6ad8b6, change-0fcf1b08d1784c49b5e6ec1c2d6c527f, change-260993fcf6504e8eb9e54f84f0dd45f4, change-39d97b0a4c854e3893e13ba9e9a5859d, change-41675aeea2c446eea10506e55cbbd08d, change-47dc8b8da91e4b6fa99315f0e3712686, change-494b8d8a5ef14682bd96aeefdd945693, change-559f7f25f2834bb2b50e4b7bcf9a3bfb, change-5abf095ac5524443a5d7a9038a01a1e8, change-66dd4c4f08114b48899480c39d8052a7, change-6ff6c658477b423eae1d6e18a33f92b9, change-ab75b9ee58354673b48b9c875f91a889, change-c4f7796c3fa940589c4c90921c26455c, change-c783251f5b134af9b8bd7e15628fc7c6, change-c79535dd171745ee98a74bae8ca3c2ba, change-c9452e10a1264645a06915267c49e44d, change-cc34c0f387b04539bef2107012ba5deb, change-d4732a411e254c618517828d62e5ed70, change-d9e9344cce4a4afbb937c6c637a7931c, change-e34b035b981b4224a44621ba7457d5b2
 - read-only: change-47dc8b8da91e4b6fa99315f0e3712686
 - reliability: change-e34b035b981b4224a44621ba7457d5b2
 - review: change-c79535dd171745ee98a74bae8ca3c2ba
 - runtime: change-0071a9a0e32c40c28601c3ff7d6ad8b6
+- runtime-integration: change-cc34c0f387b04539bef2107012ba5deb
 - safety: change-d9e9344cce4a4afbb937c6c637a7931c
 - safety-gate: change-494b8d8a5ef14682bd96aeefdd945693
 - security: change-5abf095ac5524443a5d7a9038a01a1e8
