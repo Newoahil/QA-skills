@@ -101,7 +101,7 @@ function guardianDirOf(repoDir) {
 // Run one issue's guardian invocation to completion, holding + heartbeating the N=1 lock for
 // its whole duration. Spawns WITHOUT a shell (argv array), so issue-derived prompt text can
 // never be interpreted by a shell. Returns the child's exit code.
-function runInvocation(repoDir, invokeArgv, lockFile, handle, leaseMs) {
+function runInvocation(repoDir, invokeArgv, lockFile, handle, leaseMs, timeoutMs = 20 * 60 * 1000, signal) {
   return new Promise((resolve) => {
     const child = spawn(invokeArgv.cmd, invokeArgv.args, {
       cwd: repoDir, shell: false, stdio: 'inherit', windowsHide: true,
@@ -111,11 +111,16 @@ function runInvocation(repoDir, invokeArgv, lockFile, handle, leaseMs) {
       renewLock(lockFile, handle, { leaseMs });
     }, HEARTBEAT_MS);
     if (typeof beat.unref === 'function') beat.unref();
+    let timedOut = false;
     const done = (code) => {
       clearInterval(beat);
+      clearTimeout(timer);
       resolve(code);
     };
-    child.on('exit', (code) => done(code ?? 0));
+    const stop = () => { if (!child.killed) child.kill(); };
+    const timer = setTimeout(() => { timedOut = true; stop(); }, timeoutMs);
+    if (signal) signal.addEventListener('abort', stop, { once: true });
+    child.on('exit', (code) => done(timedOut ? 124 : (code ?? 0)));
     child.on('error', () => done(1));
   });
 }
@@ -219,6 +224,16 @@ async function tick(repoDir, config, logger) {
         }, { touch: false });
         logger.info('investigation.artifacts_ready', { issue, mode: investigationMode });
       } catch (error) {
+        const failureState = readState(guardianDir, issue) ?? { issue };
+        writeState(guardianDir, {
+          ...failureState,
+          dossier_status: 'failed',
+          plan_status: 'failed',
+          investigation_attempts: (failureState.investigation_attempts ?? 0) + 1,
+          last_error_class: 'investigation-failed',
+          last_phase: 'investigation',
+          plan_validation_errors: [error instanceof Error ? error.message : 'investigation failed'],
+        }, { touch: false });
         releaseLock(lockFile, handle);
         logger.error('investigation.failed', { issue, error_message: error instanceof Error ? error.message : 'unknown' });
         return;
@@ -274,7 +289,7 @@ async function tick(repoDir, config, logger) {
 
   logger.info('run.begin', { issue, action, to_state: toState });
   try {
-    const code = await runInvocation(repoDir, invokeArgv, lockFile, handle, leaseMs);
+    const code = await runInvocation(repoDir, invokeArgv, lockFile, handle, leaseMs, Number(config.child_timeout_ms ?? 20 * 60 * 1000));
     logger.info('run.exit', { issue, exit_code: code });
   }
   catch (error) {
