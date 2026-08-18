@@ -14,6 +14,7 @@ This file summarizes all project changes, decisions, requirements, and bug recor
 - [bug-addaeb3484574da4898bc2d0d5a022d6] #qa-guardian #windows #configuration — 启动脚本从 tools/guardian 双击时把 QA-skills 工具目录作为当前工作目录并默认 target_repo，导致寻找错误的 .qa/guardian/config.json；现在只有当前目录已配置 Guardian 才回退使用，否则要求输入真实业务项目目录，并同步保护 scheduler.mjs 直接启动路径。 (2026-08-18)
 - [change-0fcf1b08d1784c49b5e6ec1c2d6c527f] #qa-guardian #artifacts #state — 新增 dossier/plan 原子 artifact store，state schema 增加调查阶段、specialist、evidence、plan、生产依赖、round 元数据并兼容旧记录，167/167 测试通过。 (2026-08-18)
 - [change-39d97b0a4c854e3893e13ba9e9a5859d] #qa-guardian #documentation #deployment — 修复 review-work 文档缺口——README 更正 scheduler 已交付状态+补运行段+config 键表+作者授权安全项，验收用例新增 UC-H..UC-K（授权/N=1/通知/飞书回调）并把测试数更新到 128，设计文档 §11B.5-a 补记飞书通道/回调/command_authors/FR-21 接线为已交付范围，文档与代码对齐。 (2026-08-18)
+- [change-41675aeea2c446eea10506e55cbbd08d] #qa-guardian #documentation #migration — README/DEPLOY/验收文档补充 investigation_mode legacy/shadow/enforced、dossier/plan artifact 和 rollback 说明，187/187 测试通过。 (2026-08-18)
 - [change-47dc8b8da91e4b6fa99315f0e3712686] #qa-guardian #specialists #read-only — 新增 guardian-code/business/runtime/docs 四类只读 specialist agent，扩展 qa-guardian 仅允许这些指定只读角色和 qa/explore，所有写入/安装/生产/网络越权保持拒绝，167/167 测试通过。 (2026-08-18)
 - [change-494b8d8a5ef14682bd96aeefdd945693] #qa-guardian #planning #safety-gate — 新增 plan-validator.mjs，要求根因证据、影响文件、非目标、测试/验收、回滚、风险和 evidence_ids 完整；request 不可默认 LOW，未确定事实和无效 dossier 不得进入 autonomous-ready，164/164 测试通过。 (2026-08-18)
 - [change-559f7f25f2834bb2b50e4b7bcf9a3bfb] #qa-guardian #evidence #unattended-quality — 新增 evidence.mjs 结构化证据、假设评分、dossier 校验和决策就绪判断，覆盖 bug/request、证据 provenance、未确定事实与 request 验收标准，158/158 测试通过。 (2026-08-18)
@@ -60,6 +61,7 @@ This file summarizes all project changes, decisions, requirements, and bug recor
 <!-- add new records here -->
 | change-0fcf1b08d1784c49b5e6ec1c2d6c527f | 2026-08-18 | 强化 Guardian Phase 3：调查 artifact 持久化与状态扩展 | done | [link](changes/2026-08-18-change-0fcf1b08d1784c49b5e6ec1c2d6c527f-artifact-state.md) |
 | change-39d97b0a4c854e3893e13ba9e9a5859d | 2026-08-18 | QA Guardian 文档收尾第三批（README/验收用例/设计文档对齐） | done | [link](changes/2026-08-18-change-39d97b0a4c854e3893e13ba9e9a5859d-guardian-docs-batch3.md) |
+| change-41675aeea2c446eea10506e55cbbd08d | 2026-08-18 | 强化 Guardian Phase 10：dossier/plan 迁移文档与 shadow/enforced 回滚说明 | done | [link](changes/2026-08-18-change-41675aeea2c446eea10506e55cbbd08d-phase10-docs.md) |
 | change-47dc8b8da91e4b6fa99315f0e3712686 | 2026-08-18 | 强化 Guardian Phase 4：只读调查 specialist 角色 | done | [link](changes/2026-08-18-change-47dc8b8da91e4b6fa99315f0e3712686-specialists.md) |
 | change-494b8d8a5ef14682bd96aeefdd945693 | 2026-08-18 | 强化 Guardian Phase 2：Plan Validator | done | [link](changes/2026-08-18-change-494b8d8a5ef14682bd96aeefdd945693-plan-validator.md) |
 | change-559f7f25f2834bb2b50e4b7bcf9a3bfb | 2026-08-18 | 强化 Guardian Phase 1：Evidence Contract | done | [link](changes/2026-08-18-change-559f7f25f2834bb2b50e4b7bcf9a3bfb-evidence-contract.md) |
@@ -118,19 +120,20 @@ This file summarizes all project changes, decisions, requirements, and bug recor
 - configuration: bug-addaeb3484574da4898bc2d0d5a022d6
 - deployment: bug-1a88afaf58fe4f13859d209b49b49027, change-39d97b0a4c854e3893e13ba9e9a5859d, change-c4f7796c3fa940589c4c90921c26455c, change-c783251f5b134af9b8bd7e15628fc7c6, change-d4732a411e254c618517828d62e5ed70
 - docker: bug-1a88afaf58fe4f13859d209b49b49027
-- documentation: change-39d97b0a4c854e3893e13ba9e9a5859d
+- documentation: change-39d97b0a4c854e3893e13ba9e9a5859d, change-41675aeea2c446eea10506e55cbbd08d
 - encoding: bug-541a9d6211594221a5ceb08950e80881
 - evidence: change-559f7f25f2834bb2b50e4b7bcf9a3bfb
 - feishu: change-c9452e10a1264645a06915267c49e44d
 - followup: change-66dd4c4f08114b48899480c39d8052a7, change-c79535dd171745ee98a74bae8ca3c2ba, change-c9452e10a1264645a06915267c49e44d
 - investigation: change-ab75b9ee58354673b48b9c875f91a889
 - launcher: bug-9df5a75c67504f4fac0d315dd7cef2dd
+- migration: change-41675aeea2c446eea10506e55cbbd08d
 - notification: change-c4f7796c3fa940589c4c90921c26455c
 - observability: change-6ff6c658477b423eae1d6e18a33f92b9
 - orchestration: change-ab75b9ee58354673b48b9c875f91a889
 - plan-gate: change-d9e9344cce4a4afbb937c6c637a7931c
 - planning: change-494b8d8a5ef14682bd96aeefdd945693
-- qa-guardian: bug-1a88afaf58fe4f13859d209b49b49027, bug-541a9d6211594221a5ceb08950e80881, bug-9df5a75c67504f4fac0d315dd7cef2dd, bug-addaeb3484574da4898bc2d0d5a022d6, change-0fcf1b08d1784c49b5e6ec1c2d6c527f, change-39d97b0a4c854e3893e13ba9e9a5859d, change-47dc8b8da91e4b6fa99315f0e3712686, change-494b8d8a5ef14682bd96aeefdd945693, change-559f7f25f2834bb2b50e4b7bcf9a3bfb, change-5abf095ac5524443a5d7a9038a01a1e8, change-66dd4c4f08114b48899480c39d8052a7, change-6ff6c658477b423eae1d6e18a33f92b9, change-ab75b9ee58354673b48b9c875f91a889, change-c4f7796c3fa940589c4c90921c26455c, change-c783251f5b134af9b8bd7e15628fc7c6, change-c79535dd171745ee98a74bae8ca3c2ba, change-c9452e10a1264645a06915267c49e44d, change-d4732a411e254c618517828d62e5ed70, change-d9e9344cce4a4afbb937c6c637a7931c, change-e34b035b981b4224a44621ba7457d5b2
+- qa-guardian: bug-1a88afaf58fe4f13859d209b49b49027, bug-541a9d6211594221a5ceb08950e80881, bug-9df5a75c67504f4fac0d315dd7cef2dd, bug-addaeb3484574da4898bc2d0d5a022d6, change-0fcf1b08d1784c49b5e6ec1c2d6c527f, change-39d97b0a4c854e3893e13ba9e9a5859d, change-41675aeea2c446eea10506e55cbbd08d, change-47dc8b8da91e4b6fa99315f0e3712686, change-494b8d8a5ef14682bd96aeefdd945693, change-559f7f25f2834bb2b50e4b7bcf9a3bfb, change-5abf095ac5524443a5d7a9038a01a1e8, change-66dd4c4f08114b48899480c39d8052a7, change-6ff6c658477b423eae1d6e18a33f92b9, change-ab75b9ee58354673b48b9c875f91a889, change-c4f7796c3fa940589c4c90921c26455c, change-c783251f5b134af9b8bd7e15628fc7c6, change-c79535dd171745ee98a74bae8ca3c2ba, change-c9452e10a1264645a06915267c49e44d, change-d4732a411e254c618517828d62e5ed70, change-d9e9344cce4a4afbb937c6c637a7931c, change-e34b035b981b4224a44621ba7457d5b2
 - read-only: change-47dc8b8da91e4b6fa99315f0e3712686
 - reliability: change-e34b035b981b4224a44621ba7457d5b2
 - review: change-c79535dd171745ee98a74bae8ca3c2ba
