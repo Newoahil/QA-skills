@@ -182,9 +182,15 @@ async function tick(repoDir, config, logger) {
     return;
   }
 
+  if (action === 'STALLED' && plan.toRun.idempotentStage !== true) {
+    releaseLock(lockFile, handle);
+    logger.warn('run.blocked_non_idempotent_stall', { issue, from_state: plan.toRun.fromState });
+    return;
+  }
+
   try {
 
-  const investigationMode = config.investigation_mode ?? 'legacy';
+  const investigationMode = config.investigation_mode ?? 'enforced';
   if (investigationMode !== 'legacy') {
     const guardianDir = guardianDirOf(repoDir);
     const dossier = readArtifact(guardianDir, issue, 'dossier');

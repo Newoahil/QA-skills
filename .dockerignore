@@ -1,0 +1,9 @@
+**/secrets.json
+**/.env
+**/.env.*
+**/.scheduler.lock
+.qa/guardian/*.json
+.qa/guardian/*/
+node_modules/
+.git/
+.codegraph/

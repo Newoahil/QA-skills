@@ -46,7 +46,8 @@ function readJsonFileSecrets(repoDir) {
  */
 export function loadSecrets(opts = {}) {
   const env = opts.env ?? process.env;
-  const fileSecrets = opts.ignoreFiles ? {} : readJsonFileSecrets(opts.repoDir);
+  const allowFileFallback = opts.allowFileFallback === true || String(env.NODE_ENV ?? '').toLowerCase() !== 'production';
+  const fileSecrets = opts.ignoreFiles || !allowFileFallback ? {} : readJsonFileSecrets(opts.repoDir);
 
   const out = {};
   for (const [key, envName] of Object.entries(SECRET_ENV)) {

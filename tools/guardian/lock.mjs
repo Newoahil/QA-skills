@@ -11,7 +11,7 @@
 // two processes with the same pid (containers, pid reuse) cannot spoof ownership.
 
 import { randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync, openSync, writeSync, closeSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, openSync, writeSync, closeSync, readFileSync, writeFileSync, rmSync, renameSync } from 'node:fs';
 import { stripUtf8Bom } from './runtime-io.mjs';
 
 export class LockError extends Error {
@@ -40,7 +40,7 @@ export function isLockLive(lock, { leaseMs, now }) {
 }
 
 // Default fs surface (injectable for tests).
-const realFs = { existsSync, mkdirSync, openSync, writeSync, closeSync, readFileSync, writeFileSync, rmSync };
+const realFs = { existsSync, mkdirSync, openSync, writeSync, closeSync, readFileSync, writeFileSync, rmSync, renameSync };
 
 /**
  * Try to acquire the lock atomically. Returns an owner handle { token } on success, or null
@@ -72,9 +72,24 @@ export function acquireLock(lockFile, opts) {
   if (isLockLive(existing, { leaseMs: opts.leaseMs, now })) {
     return null; // someone else holds a live lock → N=1 respected
   }
-  // Stale: overwrite in place with our fresh ownership.
-  fs.writeFileSync(lockFile, payload());
-  return { token };
+  // Stale takeover: atomically move the old lock out of the canonical path. Only one contender
+  // can rename it; all other contenders see the rename failure and must fail closed. Then acquire
+  // the canonical path with exclusive create. Never overwrite a contested lock in place.
+  const staleFile = `${lockFile}.${randomUUID()}.stale`;
+  try {
+    fs.renameSync(lockFile, staleFile);
+  } catch (e) {
+    if (e?.code === 'ENOENT') return null;
+    throw e;
+  }
+  try {
+    const fd = fs.openSync(lockFile, 'wx');
+    fs.writeSync(fd, payload());
+    fs.closeSync(fd);
+    return { token };
+  } finally {
+    if (fs.existsSync(staleFile)) fs.rmSync(staleFile);
+  }
 }
 
 /**

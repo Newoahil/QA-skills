@@ -70,7 +70,7 @@ The write-capable agent itself is [`qa-skill/agents/qa-guardian.md`](../../qa-sk
      "base_branch": "dev",
      "notify_webhook": "https://open.feishu.cn/open-apis/bot/v2/hook/XXXX",
       "notify_channel": "feishu",
-      "investigation_mode": "legacy"
+      "investigation_mode": "enforced"
    }
    ```
 

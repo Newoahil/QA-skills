@@ -48,7 +48,7 @@
 | `FEISHU_WS_ENABLED` | `true`/`false`，显式关闭可只跑 scheduler | credentials 存在时启用 |
 | `notify_webhook` | 通知 webhook 地址（飞书自定义机器人或通用 webhook） | 无（降级为只发 issue 评论） |
 | `notify_channel` | `generic`（原始 JSON）或 `feishu`（交互卡片） | generic |
-| `investigation_mode` | `legacy` / `shadow` / `enforced`：调查 dossier/plan 迁移开关 | legacy |
+| `investigation_mode` | `legacy` / `shadow` / `enforced`：调查 dossier/plan 迁移开关；无人值守默认 enforced | enforced |
 
 > ⚠️ **`command_authors` 不配 = 所有 `/guardian` 命令失效**。这是有意的安全默认，防止任意评论（含伪造回调）批准 HIGH 风险方案。至少填入你自己的 GitHub 登录名。
 

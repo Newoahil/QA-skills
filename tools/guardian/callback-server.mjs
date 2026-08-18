@@ -53,7 +53,7 @@ function readBody(req) {
 
 export function createServer() {
   const logger = createLogger({ component: 'callback-server' });
-  const secrets = requireSecrets(loadSecrets(), [
+  const secrets = requireSecrets(loadSecrets({ allowFileFallback: false }), [
     'feishu_verification_token',
     'feishu_encrypt_key',
     'github_token',
