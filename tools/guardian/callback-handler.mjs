@@ -12,8 +12,8 @@ import {
   CallbackError,
   parseCardAction,
   verifySignature,
-  commandToCommentBody,
 } from './feishu-callback.mjs';
+import { executeNormalizedAction } from './action-executor.mjs';
 
 function json(status, obj) {
   return { status, body: JSON.stringify(obj), headers: { 'Content-Type': 'application/json' } };
@@ -66,9 +66,6 @@ export async function handleCallback(args) {
   }
 
   const id = eventIdOf(event);
-  if (id && seen.has(id)) {
-    return json(200, { ok: true, deduped: true });
-  }
 
   let cmd;
   try {
@@ -78,23 +75,20 @@ export async function handleCallback(args) {
     throw e;
   }
 
-  // Reserve the event id BEFORE posting so a concurrent duplicate callback cannot both post.
-  // If the post then fails, un-reserve so a legitimate retry can succeed.
-  if (id) seen.add(id);
-  const body = commandToCommentBody(cmd);
-  let result;
-  try {
-    result = await postComment(secrets.github_repo, cmd.issue, body);
-  } catch (e) {
-    if (id) seen.delete(id);
-    throw e;
-  }
+  const result = await executeNormalizedAction({
+    eventId: id,
+    cmd,
+    repo: secrets.github_repo,
+    seen,
+    postComment,
+  });
+  if (result.deduped) return json(200, { ok: true, deduped: true });
 
   return json(200, {
     ok: true,
     issue: cmd.issue,
     verb: cmd.verb,
-    comment_url: result.url,
+    comment_url: result.comment.url,
     toast: { type: 'success', content: `已提交 /guardian ${cmd.verb}` },
   });
 }
