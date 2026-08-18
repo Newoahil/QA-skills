@@ -15,12 +15,29 @@
     3. tools/guardian/scheduler.config.json  { "target_repo": "..." }  (gitignored)
     4. current directory
 
+.PARAMETER Init
+  Create .qa/guardian/config.json for the target repo if it does not exist, then start. When the
+  config is missing and -Init is not given, the script offers to create it interactively.
+
+.PARAMETER CommandAuthors
+  Comma/space-separated GitHub logins allowed to drive /guardian commands (written into config on
+  init). Required for a non-interactive init.
+
+.PARAMETER BaseBranch
+  PR base branch written into config on init. Default: dev.
+
 .EXAMPLE
   ./tools/guardian/scheduler-start.ps1 -TargetRepo D:\tuantuanrent
+  ./tools/guardian/scheduler-start.ps1 -TargetRepo D:\tuantuanrent -Init -CommandAuthors goudaren0528
   $env:QA_GUARDIAN_REPO="D:\tuantuanrent"; ./tools/guardian/scheduler-start.ps1
 #>
 [CmdletBinding()]
-param([string]$TargetRepo = "")
+param(
+  [string]$TargetRepo = "",
+  [switch]$Init,
+  [string]$CommandAuthors = "",
+  [string]$BaseBranch = "dev"
+)
 
 $ErrorActionPreference = "Stop"
 $GuardianRepo = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
@@ -78,10 +95,32 @@ $gh = Get-Command gh -ErrorAction SilentlyContinue
 if (-not $gh) { Write-Host "    [warn] gh not on PATH — install + 'gh auth login' first." -ForegroundColor Yellow }
 else { & gh auth status *> $null; if ($LASTEXITCODE -ne 0) { Write-Host "    [warn] gh not authenticated — run 'gh auth login'." -ForegroundColor Yellow } }
 
-# config + command_authors (fail-closed security key) check.
+# config + command_authors (fail-closed security key). If it already exists, start directly.
+# If it is missing: create it via -Init (or an interactive prompt), then start.
 $configPath = Join-Path $TargetRepo ".qa\guardian\config.json"
 if (-not (Test-Path -LiteralPath $configPath)) {
-  throw "Missing $configPath. Create it with at least: { `"command_authors`": [`"<your-github-login>`"] }. See tools/guardian/DEPLOY.md."
+  $authors = $CommandAuthors
+  if (-not $Init -and -not $authors) {
+    Write-Host "    config not found: $configPath" -ForegroundColor Yellow
+    $ans = Read-Host "    Create it now? Enter trusted GitHub login(s) (comma/space separated), or blank to abort"
+    if (-not $ans) { throw "Aborted: no config and no command_authors provided. See tools/guardian/DEPLOY.md." }
+    $authors = $ans
+  }
+  if (-not $authors) {
+    throw "Missing $configPath and no -CommandAuthors given. Re-run with: -Init -CommandAuthors <login>. See tools/guardian/DEPLOY.md."
+  }
+  $list = @($authors -split '[,\s]+' | Where-Object { $_ })
+  $guardianDir = Join-Path $TargetRepo ".qa\guardian"
+  New-Item -ItemType Directory -Force -Path $guardianDir | Out-Null
+  $newCfg = [ordered]@{
+    command_authors  = $list
+    base_branch      = $BaseBranch
+    poll_interval_ms = 60000
+    lease_ms         = 1800000
+  }
+  # Write UTF-8 WITHOUT BOM — PowerShell 5.1 Set-Content -Encoding utf8 adds a BOM that breaks node JSON.parse.
+  [System.IO.File]::WriteAllText($configPath, (($newCfg | ConvertTo-Json) + "`n"), (New-Object System.Text.UTF8Encoding($false)))
+  Write-Host "    [ok] created $configPath (command_authors: $($list -join ', '))" -ForegroundColor Green
 }
 $cfg = Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json
 if (-not $cfg.command_authors -or @($cfg.command_authors).Count -eq 0) {

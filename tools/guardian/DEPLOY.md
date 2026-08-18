@@ -48,12 +48,23 @@
 
 ### 2. 启动（一键脚本，推荐）
 
-一键脚本会自动补 node/gh/git 到 PATH、校验 config + `command_authors`，再启动 scheduler：
+一键脚本会自动补 node/gh/git 到 PATH、校验 config + `command_authors`，再启动 scheduler。
+**config 已存在 → 直接启动；不存在 → 用 `-Init` 一步创建再启动（或交互提示创建）。**
 
 ```powershell
-# Windows
+# Windows（config 已存在，直接启动）
 .\tools\guardian\scheduler-start.ps1 -TargetRepo D:\你的项目
+
+# Windows（首次：一步创建 config 再启动）
+.\tools\guardian\scheduler-start.ps1 -TargetRepo D:\你的项目 -Init -CommandAuthors goudaren0528
 ```
+
+**双击启动（Windows，免手敲执行策略）**：用 `scheduler-start.bat`
+```bat
+scheduler-start.bat D:\你的项目                 :: config 已存在则直接启动
+scheduler-start.bat D:\你的项目 goudaren0528     :: 首次：创建 config 再启动
+```
+直接双击 `scheduler-start.bat`（无参）则按 env `QA_GUARDIAN_REPO` / 旁置 `scheduler.config.json` 解析目标，缺 config 时交互提示创建。
 
 ```bash
 # Linux/macOS
