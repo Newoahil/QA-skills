@@ -8,14 +8,16 @@ import { loadSecrets, requireSecrets, SECRET_ENV } from '../../tools/guardian/se
 test('env values are resolved by canonical key', () => {
   const env = {
     FEISHU_APP_ID: 'cli_x',
+    FEISHU_APP_SECRET: 'app_secret_x',
     GITHUB_TOKEN: 'ghp_x',
     GITHUB_REPO: 'o/r',
   };
   const s = loadSecrets({ env, repoDir: 'D:/does-not-exist-xyz' });
   assert.equal(s.feishu_app_id, 'cli_x');
+  assert.equal(s.feishu_app_secret, 'app_secret_x');
   assert.equal(s.github_token, 'ghp_x');
   assert.equal(s.github_repo, 'o/r');
-  assert.equal(s.feishu_app_secret, undefined);
+  assert.equal(s.feishu_verification_token, undefined);
 });
 
 test('empty env values are treated as absent', () => {

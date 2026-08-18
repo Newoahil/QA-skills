@@ -1,0 +1,12 @@
+{
+  "name": "qa-guardian-tools",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test:guardian": "node --test tests/guardian/*.test.mjs",
+    "guardian:start": "node tools/guardian/guardian-runtime.mjs"
+  },
+  "dependencies": {
+    "@larksuiteoapi/node-sdk": "1.73.0"
+  }
+}
