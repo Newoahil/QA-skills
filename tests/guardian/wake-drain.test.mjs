@@ -10,7 +10,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { planWakeTargets, guardTransition } from '../../tools/guardian/wake-drain.mjs';
+import { planWakeTargets, guardTransition, unionWakeCandidates } from '../../tools/guardian/wake-drain.mjs';
 import { transitionToken, recordApplied } from '../../tools/guardian/ledger.mjs';
 import { routeIssue } from '../../tools/guardian/state-router.mjs';
 import { selectCommand } from '../../tools/guardian/commands.mjs';
@@ -119,4 +119,35 @@ test('routeIssue still returns a single pure decision (seam unchanged by Phase 4
   const decision = routeIssue(rec, { closed: false, comments: [] }, { leaseMs: 1000, trustedAuthors: ['m'] });
   assert.equal(decision.action, 'SKIP');
   assert.equal(decision.reason, 'gate1-waiting');
+});
+
+// unionWakeCandidates is the ONLY local seam the scheduler needs to consume webhook wakes.
+test('unionWakeCandidates: no wake records → candidate list returned UNCHANGED (zero behavior change)', () => {
+  const candidates = [
+    { issue: 5, claim_source: 'labeled', updatedAt: 'x' },
+    { issue: 7, claim_source: 'new-open' },
+  ];
+  const out = unionWakeCandidates({ candidates, wakeRecords: [] });
+  assert.deepEqual(out, candidates, 'a scheduler with no relay wired behaves exactly as today');
+});
+
+test('unionWakeCandidates: a wake for an issue already in compensation keeps the compensation entry', () => {
+  const candidates = [{ issue: 5, claim_source: 'labeled', updatedAt: 'x' }];
+  const out = unionWakeCandidates({ candidates, wakeRecords: [{ delivery_id: 'd1', issue_number: 5 }] });
+  assert.equal(out.length, 1);
+  assert.equal(out[0].claim_source, 'labeled', 'compensation entry wins; not overwritten by wake');
+});
+
+test('unionWakeCandidates: a wake-only issue is appended once as webhook-wake; nulls dropped', () => {
+  const candidates = [{ issue: 5, claim_source: 'labeled' }];
+  const out = unionWakeCandidates({
+    candidates,
+    wakeRecords: [
+      { delivery_id: 'd1', issue_number: 9 },
+      { delivery_id: 'd2', issue_number: 9 },   // duplicate wake-only issue → appended once
+      { delivery_id: 'd3', issue_number: null }, // pull_request/push → no issue wake
+    ],
+  });
+  assert.deepEqual(out.map((c) => c.issue), [5, 9]);
+  assert.equal(out[1].claim_source, 'webhook-wake');
 });

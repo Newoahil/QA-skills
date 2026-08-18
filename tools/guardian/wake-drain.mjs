@@ -65,3 +65,32 @@ export function guardTransition(args) {
     action: decision?.action ?? null,
   };
 }
+
+/**
+ * Merge relay wake targets into the scheduler's existing candidate list shape (as produced by
+ * listCandidates: objects carrying at least { issue, claim_source }). This is the ONLY local seam
+ * needed to let the scheduler consume webhook wakes: wake-only issues that are NOT already in the
+ * compensation list are appended with claim_source 'webhook-wake'; issues already present keep their
+ * original candidate (compensation entry wins, preserving its labels/updatedAt/ordering). When there
+ * are no wake records this returns the compensation list UNCHANGED — so a scheduler with no relay
+ * wired behaves exactly as today (zero behavior change). Pure; the scheduler still reads fresh gh
+ * facts and routes each candidate through the existing pure seams.
+ *
+ * @param {object} args
+ *   candidates: Array<{ issue:number, claim_source?:string, ... }>  from listCandidates
+ *   wakeRecords: Array<{ delivery_id, issue_number:number|null }>    drained from the relay
+ * @returns {Array<object>} the unioned candidate list (compensation entries preserved as-is)
+ */
+export function unionWakeCandidates({ candidates = [], wakeRecords = [] }) {
+  const present = new Set(candidates.map((c) => Number(c.issue)));
+  const extra = [];
+  const seen = new Set();
+  for (const rec of wakeRecords) {
+    const n = Number(rec?.issue_number);
+    if (!Number.isInteger(n) || n <= 0) continue; // pull_request/push carry no issue wake
+    if (present.has(n) || seen.has(n)) continue;   // compensation entry wins; dedupe wake-only
+    seen.add(n);
+    extra.push({ issue: n, claim_source: 'webhook-wake' });
+  }
+  return [...candidates, ...extra];
+}
