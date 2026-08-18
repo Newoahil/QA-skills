@@ -8,8 +8,7 @@ This file summarizes all project changes, decisions, requirements, and bug recor
 
 <!-- One-line core conclusion per record. Format: [id] #topic1 #topic2 — description (date) -->
 <!-- add new conclusions here -->
-
----
+- [change-5abf095ac5524443a5d7a9038a01a1e8] #qa-guardian #security #concurrency — 修复 review-work 发现的阻塞项——命令作者授权 fail-closed、N=1 原子锁+心跳续租、spawn 去 shell、回调 timestamp/去重/体积硬化，消除“任意评论可批准 HIGH 方案”授权漏洞与租约竞态，121/121 测试通过。 (2026-08-18)
 
 ## Archived Conclusions
 
@@ -40,8 +39,7 @@ This file summarizes all project changes, decisions, requirements, and bug recor
 | ID | Date | Title | Status | Link |
 |----|------|-------|--------|------|
 <!-- add new records here -->
-
----
+| change-5abf095ac5524443a5d7a9038a01a1e8 | 2026-08-18 | QA Guardian 安全+并发修复第一批（授权/锁/去 shell/回调硬化） | done | [link](changes/2026-08-18-change-5abf095ac5524443a5d7a9038a01a1e8-guardian-security-concurrency-batch1.md) |
 
 ## Technical Decisions
 
@@ -49,23 +47,17 @@ This file summarizes all project changes, decisions, requirements, and bug recor
 |----|------|-------|--------|------|
 <!-- add new records here -->
 
----
-
 ## Requirements / Discussions
 
 | ID | Date | Title | Source | Priority | Link |
 |----|------|-------|--------|----------|------|
 <!-- add new records here -->
 
----
-
 ## Bug Fix Records
 
 | ID | Date | Title | Severity | Link |
 |----|------|-------|----------|------|
 <!-- add new records here -->
-
----
 
 ## Usage
 
@@ -82,4 +74,6 @@ This file summarizes all project changes, decisions, requirements, and bug recor
 ## Topic Index
 
 <!-- Auto-maintained: maps topic tags to record IDs for fast lookup -->
-<!-- Optional suffix: [active] [low] [deprecated → <new-topic>] -->
+- concurrency: change-5abf095ac5524443a5d7a9038a01a1e8
+- qa-guardian: change-5abf095ac5524443a5d7a9038a01a1e8
+- security: change-5abf095ac5524443a5d7a9038a01a1e8
