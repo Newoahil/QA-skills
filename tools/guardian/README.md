@@ -11,8 +11,10 @@ It does **not** modify `qa` / `qa-facet` / `SKILL.md` / `references/*` — it di
 
 > **Two ways to run.** Either drive one issue by hand (§15.2, below) or run the always-on resident
 > scheduler (§15.1) that polls, enforces N=1, runs the agent, and delivers notifications. The
-> Feishu interactive-card notification + card-button callback service (button → `/guardian` comment)
-> ship too. Deployment for the scheduler and the cloud callback service is in
+> Feishu interactive-card notification + **local WebSocket card-button callback** (button →
+> `/guardian` comment) ship too. The one-click launcher starts exactly one combined process
+> (scheduler + one Feishu WS client); the HTTP callback remains an optional legacy transport.
+> Deployment and local setup are in
 > [`DEPLOY.md`](./DEPLOY.md).
 
 ## What's here
@@ -50,6 +52,9 @@ The write-capable agent itself is [`qa-skill/agents/qa-guardian.md`](../../qa-sk
 3. **Authenticate `gh`.** All GitHub reads/writes go through the `gh` CLI (the guardian never reaches
    the network directly). Verify before running: `gh auth status`. Without it, the guardian is
    `BLOCKED` and hands back.
+3a. **Install the official Feishu SDK for the combined runtime.** From the QA-skills root run
+    `npm install`. Set `FEISHU_APP_ID` + `FEISHU_APP_SECRET` to enable the local WebSocket; set
+    `FEISHU_WS_ENABLED=false` for scheduler-only mode.
 4. **Bootstrap `.qa/`.** Watch mode requires `.qa/` to exist (state persistence depends on it — an
    explicit opt-in, matching the "never silently create `.qa/`" rule). Create it once:
    ```bash
@@ -118,19 +123,22 @@ Because each run is a one-shot process, you resume by leaving a comment the next
 | `/guardian rework <opinion>` | (gate 2) send the PR back for another fix round |
 | `/guardian retry` | (handed-back) re-enter the pipeline from scratch |
 
-## Run the resident scheduler (§15.1, unattended)
+## Run the combined resident runtime (§15.1, unattended)
 
 Instead of driving one issue by hand, run the always-on scheduler on a machine that has
 `opencode`, an authenticated `gh`, `git`, and the target repo checked out:
 
 ```bash
-node tools/guardian/scheduler.mjs --repo <repo>
+npm install
+node tools/guardian/guardian-runtime.mjs --repo <repo>
 ```
 
 Each tick it lists open `qa-guardian` issues, polls each, picks a single runnable issue under an
 **atomic N=1 lock** (heartbeat-renewed for the whole run so a long run is never mistaken for dead),
 runs the guardian agent, and **delivers notifications** for gate/STALLED/HANDED_BACK events
-(idempotent per state). Full deployment — including the cloud Feishu callback service — is in
+(idempotent per state). The same process also maintains one Feishu WebSocket connection when
+`FEISHU_APP_ID` + `FEISHU_APP_SECRET` are present. Full setup — including the optional legacy
+HTTP callback service — is in
 [`DEPLOY.md`](./DEPLOY.md).
 
 ## Poll routing (what the scheduler calls)

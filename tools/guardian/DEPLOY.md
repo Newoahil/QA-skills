@@ -41,6 +41,9 @@
 | `lease_ms` | N=1 锁租约（毫秒），运行中每 30s 心跳续租 | 1800000（30 分钟） |
 | `base_branch` | PR 目标分支 | dev |
 | `command_authors` | **可信命令作者白名单（安全必填）**。只有名单内 GitHub 登录名发的 `/guardian` 命令才生效；**未配置则任何命令都不生效（fail-closed）** | 无 |
+| `FEISHU_APP_ID` | 本机 WebSocket 模式的飞书自建应用 App ID | 无（无则 scheduler-only） |
+| `FEISHU_APP_SECRET` | 本机 WebSocket 模式的飞书自建应用 App Secret（只放环境变量/本地 secrets） | 无（无则 scheduler-only） |
+| `FEISHU_WS_ENABLED` | `true`/`false`，显式关闭可只跑 scheduler | credentials 存在时启用 |
 | `notify_webhook` | 通知 webhook 地址（飞书自定义机器人或通用 webhook） | 无（降级为只发 issue 评论） |
 | `notify_channel` | `generic`（原始 JSON）或 `feishu`（交互卡片） | generic |
 
@@ -48,7 +51,23 @@
 
 ### 2. 启动（一键脚本，推荐）
 
-一键脚本会自动补 node/gh/git 到 PATH、校验 config + `command_authors`，再启动 scheduler。
+首次启用本机长连接前，在 QA-skills 根目录安装官方 SDK：
+
+```powershell
+npm install
+```
+
+启动脚本现在启动的是**单进程组合 runtime**：一个 scheduler + 一个 Feishu WebSocket；不会再分别启动两个 scheduler。未设置 `FEISHU_APP_ID`/`FEISHU_APP_SECRET` 时退化为 scheduler-only。
+
+首次启用本机长连接前，在 QA-skills 根目录安装官方 SDK：
+
+```powershell
+npm install
+```
+
+启动脚本现在启动的是**单进程组合 runtime**：一个 scheduler + 一个 Feishu WebSocket；不会再分别启动两个 scheduler。若不设置 `FEISHU_APP_ID`/`FEISHU_APP_SECRET`，会退化为 scheduler-only。
+
+一键脚本会自动补 node/gh/git 到 PATH、校验 config + `command_authors`，再启动 scheduler + Feishu WS。
 **config 已存在 → 直接启动；不存在 → 用 `-Init` 一步创建再启动（或交互提示创建）。**
 
 ```powershell

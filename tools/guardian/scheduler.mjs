@@ -145,20 +145,12 @@ export function resolveRepoDir(argv = process.argv, env = process.env) {
   return process.cwd();
 }
 
-async function main() {
-  const repoDir = resolveRepoDir();
-  const config = readConfig(repoDir);
+export async function runScheduler({ repoDir, config = readConfig(repoDir), signal } = {}) {
+  if (!repoDir) throw new Error('scheduler requires repoDir');
   const interval = Number(config.poll_interval_ms ?? DEFAULT_INTERVAL_MS);
 
   process.stdout.write(`[scheduler] watching ${repoDir} every ${interval}ms (N=1)\n`);
-
-  // On signal, stop the loop and exit. An in-flight run's lock is released by tick()'s finally;
-  // if the process is killed mid-run, the lock is lease-bounded and reclaimed after it expires.
-  let stopped = false;
-  const stop = () => { stopped = true; process.exit(0); };
-  for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, stop);
-
-  while (!stopped) {
+  while (!signal?.aborted) {
     try {
       await tick(repoDir, config);
     } catch (e) {
@@ -166,8 +158,21 @@ async function main() {
       const msg = e instanceof Error ? e.message : 'unknown';
       process.stderr.write(`[scheduler] tick error: ${msg}\n`);
     }
-    await new Promise((r) => setTimeout(r, interval));
+    await new Promise((resolve) => {
+      const timer = setTimeout(resolve, interval);
+      if (signal) signal.addEventListener('abort', () => {
+        clearTimeout(timer);
+        resolve();
+      }, { once: true });
+    });
   }
+}
+
+async function main() {
+  const controller = new AbortController();
+  const stop = () => controller.abort();
+  for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, stop);
+  await runScheduler({ repoDir: resolveRepoDir(), signal: controller.signal });
 }
 
 if (process.argv[1] && process.argv[1].endsWith('scheduler.mjs')) {

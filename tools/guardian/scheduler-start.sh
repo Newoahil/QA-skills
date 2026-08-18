@@ -32,6 +32,10 @@ echo "    node        : $(command -v node)"
 echo "    guardian src: $GUARDIAN_REPO"
 echo "    target repo : $TARGET_REPO"
 
+if [ -f "$GUARDIAN_REPO/package.json" ] && [ ! -d "$GUARDIAN_REPO/node_modules/@larksuiteoapi/node-sdk" ]; then
+  echo "    [warn] Feishu SDK not installed — run npm install in $GUARDIAN_REPO before enabling WS."
+fi
+
 [ -d "$TARGET_REPO" ] || { echo "TargetRepo does not exist: $TARGET_REPO"; exit 1; }
 
 if command -v gh >/dev/null 2>&1; then
@@ -51,5 +55,5 @@ if [ "$AUTHORS_OK" = "no" ]; then
   echo "    [warn] config.command_authors is empty — NO /guardian command will be honored (fail-closed)."
 fi
 
-echo "==> starting scheduler (Ctrl-C to stop)"
-exec node "$GUARDIAN_REPO/tools/guardian/scheduler.mjs" --repo "$TARGET_REPO"
+echo "==> starting guardian runtime (scheduler + Feishu WS; Ctrl-C to stop)"
+exec node "$GUARDIAN_REPO/tools/guardian/guardian-runtime.mjs" --repo "$TARGET_REPO"

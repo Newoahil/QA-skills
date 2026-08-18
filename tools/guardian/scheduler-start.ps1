@@ -88,6 +88,12 @@ Write-Host "    node        : $nodeExe"
 Write-Host "    guardian src: $GuardianRepo"
 Write-Host "    target repo : $TargetRepo"
 
+$packageRoot = Join-Path $GuardianRepo "package.json"
+$sdkPath = Join-Path $GuardianRepo "node_modules\@larksuiteoapi\node-sdk"
+if ((Test-Path $packageRoot) -and -not (Test-Path $sdkPath)) {
+  Write-Host "    [warn] Feishu SDK not installed — run npm install in $GuardianRepo before enabling WS." -ForegroundColor Yellow
+}
+
 if (-not (Test-Path -LiteralPath $TargetRepo)) { throw "TargetRepo does not exist: $TargetRepo" }
 
 # gh must be authenticated (the scheduler runs gh under the hood).
@@ -129,5 +135,5 @@ if (-not $cfg.command_authors -or @($cfg.command_authors).Count -eq 0) {
   Write-Host "    command_authors: $($cfg.command_authors -join ', ')" -ForegroundColor Green
 }
 
-Write-Host "==> starting scheduler (Ctrl-C to stop)" -ForegroundColor Cyan
-& $nodeExe (Join-Path $GuardianRepo "tools\guardian\scheduler.mjs") --repo $TargetRepo
+Write-Host "==> starting guardian runtime (scheduler + Feishu WS; Ctrl-C to stop)" -ForegroundColor Cyan
+& $nodeExe (Join-Path $GuardianRepo "tools\guardian\guardian-runtime.mjs") --repo $TargetRepo
