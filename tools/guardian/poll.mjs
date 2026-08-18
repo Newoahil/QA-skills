@@ -89,6 +89,7 @@ export function defaultGhReader(repoDir) {
     }
     const data = JSON.parse(res.stdout);
     return {
+      title: data.title ?? null,
       closed: String(data.state).toUpperCase() === 'CLOSED',
       comments: (data.comments ?? []).map((c) => ({
         id: c.id ?? c.url ?? c.createdAt,
@@ -152,6 +153,7 @@ export function pollIssue(guardianDir, issueNumber, ghReader, opts = {}) {
   const decision = routeIssue(record, gh, { leaseMs, now, trustedAuthors });
   return {
     issue: Number(issueNumber),
+    issueTitle: gh.title ?? null,
     ...decision,
     invoke: invocationFor(opts.repoDir ?? '.', issueNumber, decision),
     invokeArgv: invocationArgvFor(opts.repoDir ?? '.', issueNumber, decision),
