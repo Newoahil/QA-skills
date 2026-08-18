@@ -1,6 +1,9 @@
 @echo off
 setlocal
+chcp 65001 >nul
 set "PS1=%~dp0scheduler-start.ps1"
+set "ROOT=%~dp0..\.."
+pushd "%ROOT%" >nul
 
 if "%~1"=="" goto start_default
 if "%~2"=="" goto start_target
@@ -20,6 +23,7 @@ goto done
 
 :done
 echo.
-echo Scheduler exited. Press any key to close.
+echo Guardian exited. Press any key to close.
 pause >nul
+popd
 endlocal
