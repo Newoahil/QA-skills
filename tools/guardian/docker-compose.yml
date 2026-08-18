@@ -1,0 +1,25 @@
+# QA Guardian — Feishu callback service (Dokploy compose)
+#
+# Deploy this on your Dokploy cloud server. Dokploy assigns a public HTTPS domain; set the
+# Feishu event callback URL to https://<domain>/feishu/callback.
+#
+# Secrets are provided via Dokploy environment variables (NOT committed):
+#   FEISHU_VERIFICATION_TOKEN, FEISHU_ENCRYPT_KEY, GITHUB_TOKEN, GITHUB_REPO
+# GITHUB_TOKEN must be a fine-grained PAT scoped to GITHUB_REPO with issues: read+write only.
+
+services:
+  qa-guardian-callback:
+    build:
+      # Build context is the repo root so the image can COPY tools/guardian/.
+      context: ../..
+      dockerfile: tools/guardian/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "8787:8787"
+    environment:
+      PORT: "8787"
+      CALLBACK_PATH: "/feishu/callback"
+      FEISHU_VERIFICATION_TOKEN: "${FEISHU_VERIFICATION_TOKEN}"
+      FEISHU_ENCRYPT_KEY: "${FEISHU_ENCRYPT_KEY}"
+      GITHUB_TOKEN: "${GITHUB_TOKEN}"
+      GITHUB_REPO: "${GITHUB_REPO}"
