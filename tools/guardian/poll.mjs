@@ -20,6 +20,37 @@ import { routeIssue } from './state-router.mjs';
 
 export const DEFAULT_LEASE_MS = 30 * 60 * 1000; // 30 min (§11B.4), configurable
 
+export const RUNTIME_GUARDRAILS = [
+  {
+    id: 'github-prose-language=zh',
+    text: 'GitHub-facing prose (issue comments, PR title, PR body, Gate traces) must be written in Chinese; keep code, paths, commands, JSON fields, and error codes in their original spelling.',
+  },
+  {
+    id: 'pr-base=config-or-dev',
+    text: 'Read .qa/guardian/config.json and use its base_branch for PR creation; if absent, default to dev. Do not infer the base from the repository default branch.',
+  },
+  {
+    id: 'git-history=no-force-push',
+    text: 'Never force-push or rewrite the remote PR branch history. Resolve conflicts by adding ordinary commits only.',
+  },
+  {
+    id: 'conflict-policy=preserve-base',
+    text: 'When resolving conflicts or retargeting a PR, preserve the target base branch existing tree; the final PR diff must not delete or overwrite base-owned files unrelated to the issue.',
+  },
+  {
+    id: 'github-body=utf8-body-file',
+    text: 'On Windows/PowerShell, write Chinese GitHub comments and PR bodies through UTF-8 markdown files plus --body-file, not inline --body strings.',
+  },
+  {
+    id: 'investigation=codegraph+context7-readonly',
+    text: 'You may use the read-only codegraph and context7 MCPs plus explore to investigate; they never edit, never verify, and never widen scope. The PASS/FAIL verdict comes only from the independent read-only qa agent.',
+  },
+];
+
+const runtimeGuardrailText = RUNTIME_GUARDRAILS
+  .map(({ id, text }) => `[${id}] ${text}`)
+  .join(' ');
+
 // --- GitHub access (injectable for tests) -------------------------------------------------
 
 // Default gh-backed reader: fetches the issue's closed flag + comments.
@@ -61,7 +92,7 @@ export function invocationFor(repoDir, issueNumber, decision) {
   return (
     `opencode run --agent qa-guardian --dir ${repoDir} ` +
     `"Resume QA Guardian for issue #${issueNumber} at state ${to}${dataNote}. ` +
-    `Follow the qa-guardian agent contract."`
+    `Follow the qa-guardian agent contract. ${runtimeGuardrailText}"`
   );
 }
 
