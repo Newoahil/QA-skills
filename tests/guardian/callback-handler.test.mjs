@@ -90,3 +90,25 @@ test('malformed json returns 400', async () => {
   const res = await handleCallback({ rawBody: 'not-json', headers: {}, secrets: SECRETS, postComment, now: NOW });
   assert.equal(res.status, 400);
 });
+
+test('failed post un-reserves the event id so a retry can succeed (atomic reserve)', async () => {
+  const rawBody = JSON.stringify({ header: { event_id: 'retry-me' }, action: { value: { issue: 7, verb: 'approve' } } });
+  const headers = sign(rawBody);
+  const seen = new Set();
+  let attempts = 0;
+  const flaky = async (repo, issue, body) => {
+    attempts += 1;
+    if (attempts === 1) throw new Error('transient github failure');
+    return { id: 1, url: 'u' };
+  };
+  // First attempt: post throws → handler rethrows, and event id must NOT remain reserved.
+  await assert.rejects(() =>
+    handleCallback({ rawBody, headers, secrets: SECRETS, postComment: flaky, seen, now: NOW }),
+  );
+  assert.equal(seen.has('retry-me'), false);
+  // Retry: succeeds and posts exactly once more.
+  const res = await handleCallback({ rawBody, headers, secrets: SECRETS, postComment: flaky, seen, now: NOW });
+  assert.equal(res.status, 200);
+  assert.equal(attempts, 2);
+  assert.equal(seen.has('retry-me'), true);
+});

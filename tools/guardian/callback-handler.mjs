@@ -78,9 +78,17 @@ export async function handleCallback(args) {
     throw e;
   }
 
-  const body = commandToCommentBody(cmd);
-  const result = await postComment(secrets.github_repo, cmd.issue, body);
+  // Reserve the event id BEFORE posting so a concurrent duplicate callback cannot both post.
+  // If the post then fails, un-reserve so a legitimate retry can succeed.
   if (id) seen.add(id);
+  const body = commandToCommentBody(cmd);
+  let result;
+  try {
+    result = await postComment(secrets.github_repo, cmd.issue, body);
+  } catch (e) {
+    if (id) seen.delete(id);
+    throw e;
+  }
 
   return json(200, {
     ok: true,

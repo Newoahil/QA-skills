@@ -15,6 +15,11 @@ import { postIssueComment } from './github-comment.mjs';
 
 const PORT = Number(process.env.PORT ?? 8787);
 const CALLBACK_PATH = process.env.CALLBACK_PATH ?? '/feishu/callback';
+// Cap the request body BEFORE buffering/parsing so an unauthenticated caller cannot exhaust
+// memory ahead of signature verification. Feishu card callbacks are small (a few KB).
+const MAX_BODY_BYTES = Number(process.env.MAX_BODY_BYTES ?? 64 * 1024);
+
+class BodyTooLargeError extends Error {}
 
 function lowerHeaders(raw) {
   const out = {};
@@ -27,7 +32,19 @@ function lowerHeaders(raw) {
 function readBody(req) {
   return new Promise((resolve, reject) => {
     const chunks = [];
-    req.on('data', (c) => chunks.push(c));
+    let size = 0;
+    let aborted = false;
+    req.on('data', (c) => {
+      if (aborted) return;
+      size += c.length;
+      if (size > MAX_BODY_BYTES) {
+        aborted = true;
+        req.pause();
+        reject(new BodyTooLargeError('request body too large'));
+        return;
+      }
+      chunks.push(c);
+    });
     req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
     req.on('error', reject);
   });
@@ -64,9 +81,14 @@ export function createServer() {
       res.end(result.body);
     } catch (e) {
       // no-excuse-ok: catch — top-level HTTP boundary, must never leak stack or crash the loop
-      const message = e instanceof Error ? e.message : 'internal-error';
+      if (e instanceof BodyTooLargeError) {
+        res.writeHead(413, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'payload-too-large' }));
+        req.destroy();
+        return;
+      }
       res.writeHead(500, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'internal', detail: message.slice(0, 200) }));
+      res.end(JSON.stringify({ error: 'internal' }));
     }
   });
 }

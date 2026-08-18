@@ -58,6 +58,27 @@ test('verifySignature rejects a wrong encrypt key', () => {
   );
 });
 
+test('verifySignature rejects a malformed (non-integer/NaN) timestamp before skew check', () => {
+  const rawBody = '{"a":1}';
+  const nonce = 'n';
+  const bad = 'not-a-number';
+  const signature = computeSignature({ timestamp: bad, nonce, encryptKey: ENCRYPT_KEY, rawBody });
+  assert.throws(
+    () => verifySignature({ timestamp: bad, nonce, signature, encryptKey: ENCRYPT_KEY, rawBody, now: NOW }),
+    (e) => e instanceof CallbackError && e.code === 'malformed',
+  );
+});
+
+test('verifySignature rejects a non-positive timestamp', () => {
+  const rawBody = '{"a":1}';
+  const nonce = 'n';
+  const signature = computeSignature({ timestamp: '0', nonce, encryptKey: ENCRYPT_KEY, rawBody });
+  assert.throws(
+    () => verifySignature({ timestamp: '0', nonce, signature, encryptKey: ENCRYPT_KEY, rawBody, now: NOW }),
+    (e) => e instanceof CallbackError && e.code === 'malformed',
+  );
+});
+
 test('parseCardAction accepts an allowed plain verb', () => {
   const event = { action: { value: { issue: 191, verb: 'approve' } } };
   assert.deepEqual(parseCardAction(event), { issue: 191, verb: 'approve', text: '' });

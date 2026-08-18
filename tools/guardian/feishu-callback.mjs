@@ -58,8 +58,15 @@ export function verifySignature(args) {
     throw new CallbackError('malformed', 'missing signature material');
   }
 
-  const tsMs = Number(timestamp) * (String(timestamp).length <= 10 ? 1000 : 1);
-  if (!Number.isFinite(tsMs) || Math.abs(now - tsMs) > MAX_SKEW_MS) {
+  // Require a finite, non-negative integer epoch (seconds or millis). A malformed timestamp
+  // (NaN, fractional, negative, non-numeric) must be rejected BEFORE the skew check, otherwise
+  // NaN comparisons silently pass the window and let a malformed request reach signature compare.
+  const tsRaw = Number(timestamp);
+  if (!Number.isInteger(tsRaw) || tsRaw <= 0) {
+    throw new CallbackError('malformed', 'callback timestamp is not a positive integer');
+  }
+  const tsMs = tsRaw * (String(timestamp).trim().length <= 10 ? 1000 : 1);
+  if (Math.abs(now - tsMs) > MAX_SKEW_MS) {
     throw new CallbackError('stale', 'callback timestamp outside allowed window');
   }
 
