@@ -20,6 +20,7 @@ This file summarizes all project changes, decisions, requirements, and bug recor
 - [change-5abf095ac5524443a5d7a9038a01a1e8] #qa-guardian #security #concurrency — 修复 review-work 发现的阻塞项——命令作者授权 fail-closed、N=1 原子锁+心跳续租、spawn 去 shell、回调 timestamp/去重/体积硬化，消除“任意评论可批准 HIGH 方案”授权漏洞与租约竞态，121/121 测试通过。 (2026-08-18)
 - [change-66dd4c4f08114b48899480c39d8052a7] #qa-guardian #watch-mode #followup — 增加 watch_mode=new-open 自动发现值守启动后新建 issue、scheduler 领取标签投影和 /guardian followup 新验收轮次；DONE/GATE_2_WAIT 不再静默重复处理，146/146 测试通过。 (2026-08-18)
 - [change-6ff6c658477b423eae1d6e18a33f92b9] #qa-guardian #observability #windows — 新增 runtime-io 统一 BOM-safe JSON 读取、stderr JSONL 结构化日志和 DEVer banner，runtime/scheduler/WS/HTTP server 接入阶段/错误事件且不泄露密钥；PowerShell 生成的 BOM config 现在可加载，测试 139/139 通过。 (2026-08-18)
+- [change-ab75b9ee58354673b48b9c875f91a889] #qa-guardian #investigation #orchestration — 新增 investigation-coordinator 纯核心，按 issue complexity 选择正交只读 specialist，生成实际 capability-aware prompt，合并 hypotheses/evidence/unresolved facts 为 dossier 并计算 decision readiness，175/175 测试通过。 (2026-08-18)
 - [change-c4f7796c3fa940589c4c90921c26455c] #qa-guardian #notification #deployment — 修复 review-work 阻塞项——新增 notify-io.mjs 把通知投递（gh 评论+curl webhook，幂等持久化 last_notified_state）真正接进 scheduler tick 满足 FR-21，并补 DEPLOY.md + bootstrap 指引让常驻 scheduler 与飞书回调可被新用户部署，128/128 测试通过。 (2026-08-18)
 - [change-c783251f5b134af9b8bd7e15628fc7c6] #qa-guardian #deployment #usability — 新增 scheduler-start.ps1/.sh 一键启动（自动补 PATH/解析 node/校验 command_authors），目标仓库支持三级注入（CLI --repo > env QA_GUARDIAN_REPO > 旁置 scheduler.config.json > cwd，scheduler.mjs 抽出可测的 resolveRepoDir），并补 .env.example + DEPLOY 回调部署清单（本地 compose 自测 + Dokploy），129/129 测试通过。 (2026-08-18)
 - [change-c79535dd171745ee98a74bae8ca3c2ba] #qa-guardian #review #followup — 将 DONE followup、Gate 通知和跨轮次 DONE 幂等的 focused injected regression 纳入正式测试，完整 Guardian suite 达到 153/153 pass，避免审查证据依赖未跟踪临时文件。 (2026-08-18)
@@ -63,6 +64,7 @@ This file summarizes all project changes, decisions, requirements, and bug recor
 | change-5abf095ac5524443a5d7a9038a01a1e8 | 2026-08-18 | QA Guardian 安全+并发修复第一批（授权/锁/去 shell/回调硬化） | done | [link](changes/2026-08-18-change-5abf095ac5524443a5d7a9038a01a1e8-guardian-security-concurrency-batch1.md) |
 | change-66dd4c4f08114b48899480c39d8052a7 | 2026-08-18 | QA Guardian new-open 自动发现与 followup 多轮验收 | done | [link](changes/2026-08-18-change-66dd4c4f08114b48899480c39d8052a7-new-open-followup.md) |
 | change-6ff6c658477b423eae1d6e18a33f92b9 | 2026-08-18 | QA Guardian BOM 兼容、结构化日志与 DEVer 启动体验 | done | [link](changes/2026-08-18-change-6ff6c658477b423eae1d6e18a33f92b9-runtime-logging.md) |
+| change-ab75b9ee58354673b48b9c875f91a889 | 2026-08-18 | 强化 Guardian Phase 6：调查 specialist coordinator | done | [link](changes/2026-08-18-change-ab75b9ee58354673b48b9c875f91a889-investigation-coordinator.md) |
 | change-c4f7796c3fa940589c4c90921c26455c | 2026-08-18 | QA Guardian 运维就绪第二批（通知投递接线 + DEPLOY + bootstrap 指引） | done | [link](changes/2026-08-18-change-c4f7796c3fa940589c4c90921c26455c-guardian-notify-wiring-deploy-batch2.md) |
 | change-c783251f5b134af9b8bd7e15628fc7c6 | 2026-08-18 | QA Guardian scheduler 一键启动脚本 + 目标仓库可注入 + 回调部署清单 | done | [link](changes/2026-08-18-change-c783251f5b134af9b8bd7e15628fc7c6-guardian-oneclick-start-target-injection.md) |
 | change-c79535dd171745ee98a74bae8ca3c2ba | 2026-08-18 | DONE followup/Gate 通知 review 回归测试正式纳入 | done | [link](changes/2026-08-18-change-c79535dd171745ee98a74bae8ca3c2ba-followup-review-regression.md) |
@@ -116,11 +118,13 @@ This file summarizes all project changes, decisions, requirements, and bug recor
 - evidence: change-559f7f25f2834bb2b50e4b7bcf9a3bfb
 - feishu: change-c9452e10a1264645a06915267c49e44d
 - followup: change-66dd4c4f08114b48899480c39d8052a7, change-c79535dd171745ee98a74bae8ca3c2ba, change-c9452e10a1264645a06915267c49e44d
+- investigation: change-ab75b9ee58354673b48b9c875f91a889
 - launcher: bug-9df5a75c67504f4fac0d315dd7cef2dd
 - notification: change-c4f7796c3fa940589c4c90921c26455c
 - observability: change-6ff6c658477b423eae1d6e18a33f92b9
+- orchestration: change-ab75b9ee58354673b48b9c875f91a889
 - planning: change-494b8d8a5ef14682bd96aeefdd945693
-- qa-guardian: bug-1a88afaf58fe4f13859d209b49b49027, bug-541a9d6211594221a5ceb08950e80881, bug-9df5a75c67504f4fac0d315dd7cef2dd, bug-addaeb3484574da4898bc2d0d5a022d6, change-0fcf1b08d1784c49b5e6ec1c2d6c527f, change-39d97b0a4c854e3893e13ba9e9a5859d, change-47dc8b8da91e4b6fa99315f0e3712686, change-494b8d8a5ef14682bd96aeefdd945693, change-559f7f25f2834bb2b50e4b7bcf9a3bfb, change-5abf095ac5524443a5d7a9038a01a1e8, change-66dd4c4f08114b48899480c39d8052a7, change-6ff6c658477b423eae1d6e18a33f92b9, change-c4f7796c3fa940589c4c90921c26455c, change-c783251f5b134af9b8bd7e15628fc7c6, change-c79535dd171745ee98a74bae8ca3c2ba, change-c9452e10a1264645a06915267c49e44d, change-d4732a411e254c618517828d62e5ed70
+- qa-guardian: bug-1a88afaf58fe4f13859d209b49b49027, bug-541a9d6211594221a5ceb08950e80881, bug-9df5a75c67504f4fac0d315dd7cef2dd, bug-addaeb3484574da4898bc2d0d5a022d6, change-0fcf1b08d1784c49b5e6ec1c2d6c527f, change-39d97b0a4c854e3893e13ba9e9a5859d, change-47dc8b8da91e4b6fa99315f0e3712686, change-494b8d8a5ef14682bd96aeefdd945693, change-559f7f25f2834bb2b50e4b7bcf9a3bfb, change-5abf095ac5524443a5d7a9038a01a1e8, change-66dd4c4f08114b48899480c39d8052a7, change-6ff6c658477b423eae1d6e18a33f92b9, change-ab75b9ee58354673b48b9c875f91a889, change-c4f7796c3fa940589c4c90921c26455c, change-c783251f5b134af9b8bd7e15628fc7c6, change-c79535dd171745ee98a74bae8ca3c2ba, change-c9452e10a1264645a06915267c49e44d, change-d4732a411e254c618517828d62e5ed70
 - read-only: change-47dc8b8da91e4b6fa99315f0e3712686
 - review: change-c79535dd171745ee98a74bae8ca3c2ba
 - safety-gate: change-494b8d8a5ef14682bd96aeefdd945693
