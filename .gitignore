@@ -17,6 +17,8 @@ playwright-report/
 # QA Guardian machine-local secrets (Feishu app secret, GitHub PAT, etc.)
 .qa/guardian/secrets.json
 tools/guardian/secrets.json
+# QA Guardian machine-local launcher config (contains a local target repo path)
+tools/guardian/scheduler.config.json
 *.key
 *.pem
 *.p12
