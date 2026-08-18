@@ -12,6 +12,27 @@ evaluator. The existing scheduler remains the **sole consumer and sole writer**:
 records, acquires the existing N=1 lease, rereads GitHub, and runs the existing pure `state-router`
 and `commands` seams. Truth always comes from GitHub, never from the webhook payload.
 
+## 0A. Trigger modes (deployment choice)
+
+The system supports two trigger modes; they share the SAME reconcile path (§2) and the SAME
+single-writer/idempotency guarantees. Only *how a reconcile is triggered* differs.
+
+- **Polling (supported default, chosen).** The resident scheduler's interval poll IS the trigger.
+  It lists open `qa-guardian` issues each `poll_interval_ms` and reconciles them. This needs **no
+  extra wiring, no public endpoint, no relay, no cloud inbox** — it is exactly what the scheduler
+  does today. Latency is bounded by the poll interval (e.g. 60s). This is the recommended mode for
+  a single local workspace: zero new attack surface, nothing to deploy.
+- **Webhook (built, optional, deferred).** For lower latency, a GitHub webhook can be the *primary*
+  trigger with the poll demoted to a compensation backstop. The pure/local pieces are already built
+  and tested (`webhook-ingest.mjs`, `ledger.mjs`, `wake-drain.mjs`, `unionWakeCandidates`). Enabling
+  it additionally requires a cloud durable inbox (e.g. Dokploy container with a persistent
+  store) + the local scheduler pulling `/guardian/wakes` (§6). It is OFF unless a wake source is
+  configured; `unionWakeCandidates` returns the poll candidate list unchanged when no wake exists,
+  so turning webhook on/off never changes correctness — only latency.
+
+**Current deployment decision: POLLING.** The webhook layer stays as dormant, tested capability;
+the cloud-inbox relay is deferred until/if lower latency is needed.
+
 ## 1. Locked decisions (do not reopen)
 
 1. **Webhook never applies a transition and never authorizes.** It cannot: it has neither exclusive
