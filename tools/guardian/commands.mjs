@@ -65,14 +65,28 @@ export function parseCommand(body) {
 // (GitHub comment ids), then ISO createdAt, and finally list position as a last resort.
 //
 // Returns { verb, data, commentId, target } or null.
-export function selectCommand(comments, currentState, lastConsumedCommentId = null, trustedAuthors = []) {
+//
+// opts.botAuthors (Phase 3, §5A decisions 1+5): a denylist of machine/App logins that may NEVER
+// authorize, even if one were mistakenly also present in trustedAuthors. This is the code-structural
+// guarantee that a bot_fact_writer / bot_executor can never reach the authorization path — the
+// human-authorizer class is enforced by SUBTRACTING known bots before the trust check, so the
+// denylist wins over the whitelist (fail-safe toward "no bot authorization").
+export function selectCommand(comments, currentState, lastConsumedCommentId = null, trustedAuthors = [], opts = {}) {
   if (!Array.isArray(comments)) return null;
 
-  // Fail-closed: an empty/absent whitelist means no comment is authorized to command.
+  const botAuthors = new Set(
+    (Array.isArray(opts.botAuthors) ? opts.botAuthors : [])
+      .filter((a) => typeof a === 'string' && a.length > 0)
+      .map((a) => a.toLowerCase()),
+  );
+
+  // Fail-closed: an empty/absent whitelist means no comment is authorized to command. Bots are
+  // subtracted so a mis-added bot login can never become a trusted authorizer.
   const trusted = new Set(
     (Array.isArray(trustedAuthors) ? trustedAuthors : [])
       .filter((a) => typeof a === 'string' && a.length > 0)
-      .map((a) => a.toLowerCase()),
+      .map((a) => a.toLowerCase())
+      .filter((a) => !botAuthors.has(a)),
   );
   if (trusted.size === 0) return null;
 

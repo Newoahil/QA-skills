@@ -158,3 +158,38 @@ test('followup parses required DATA and empty followup is ignored', () => {
   assert.deepEqual(parseCommand('/guardian followup 新的验收问题'), { verb: 'followup', data: '新的验收问题' });
   assert.equal(parseCommand('/guardian followup'), null);
 });
+
+// §5A decisions 1+5: a bot/App login can NEVER authorize, even if mistakenly whitelisted.
+test('BOT DENYLIST: a bot login in botAuthors can never authorize even if also in trustedAuthors', () => {
+  const comments = [comment(1, '/guardian approve', 'qa-app[bot]')];
+  // Mistakenly whitelist the bot too — the denylist must still win (fail-safe toward no-bot-auth).
+  const chosen = selectCommand(comments, STATES.GATE_1_WAIT, null, ['maintainer', 'qa-app[bot]'], {
+    botAuthors: ['qa-app[bot]', 'fixer-app[bot]'],
+  });
+  assert.equal(chosen, null, 'bot /guardian approve must be ignored');
+});
+
+test('BOT DENYLIST: a human command still applies once alongside a denied bot comment', () => {
+  const comments = [
+    comment(1, '/guardian approve', 'qa-app[bot]'),
+    comment(2, '/guardian approve', 'maintainer'),
+  ];
+  const chosen = selectCommand(comments, STATES.GATE_1_WAIT, null, ['maintainer'], {
+    botAuthors: ['qa-app[bot]'],
+  });
+  assert.equal(chosen?.verb, 'approve');
+  assert.equal(chosen.commentId, 2, 'only the human comment is honored');
+});
+
+test('BOT DENYLIST: bot denylist is case-insensitive', () => {
+  const comments = [comment(1, '/guardian approve', 'QA-App[Bot]')];
+  const chosen = selectCommand(comments, STATES.GATE_1_WAIT, null, ['qa-app[bot]'], {
+    botAuthors: ['qa-app[bot]'],
+  });
+  assert.equal(chosen, null);
+});
+
+test('empty whitelist still authorizes nothing regardless of botAuthors (fail-closed preserved)', () => {
+  const comments = [comment(1, '/guardian approve', 'maintainer')];
+  assert.equal(selectCommand(comments, STATES.GATE_1_WAIT, null, [], { botAuthors: [] }), null);
+});

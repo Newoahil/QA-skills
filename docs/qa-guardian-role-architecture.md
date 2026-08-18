@@ -175,6 +175,45 @@ These are load-bearing runtime facts. Phase 1 changes **none** of them.
 
 ---
 
+## 5A. Phase 3 locked decisions (normative)
+
+Five decisions were locked before any Phase 3 code. They bound the actor/identity design and the
+authorization model. See the audited seams in
+[`qa-guardian-actor-effect-matrix.md`](./qa-guardian-actor-effect-matrix.md).
+
+1. **`trustedAuthors` is human-only, always.** No machine identity — not the QA App, not the Fixer
+   App, not the Supervisor, not any bot login — may ever be a member of the `command_authors` /
+   `trustedAuthors` whitelist. A bot comment that reads `/guardian approve` is IGNORED exactly like
+   any untrusted commenter. This is enforced structurally (see decision 5), not just by convention.
+
+2. **Phase 3 is policy/actor-routing scaffolding, not a per-App-token transport cutover.** GitHub
+   side-effects keep flowing through the existing single-PAT `gh`/REST transport for now. Phase 3
+   adds a reversible actor-routing layer that assigns each side-effect to an intended actor and
+   forbids out-of-role effects at the routing boundary (e.g. the QA-App actor route has no
+   PR-create capability). Real per-identity App tokens are a later, separately-shipped step.
+
+3. **Identity is asserted twice, independently.** For any actor-bound effect we distinguish (a) the
+   credential/route actually used and (b) the GitHub actor visible on the resulting artifact. Code
+   must not trust an internal policy label alone. Phase 3's routing asserts (a); (b) is verified
+   where a resulting artifact's author is observable.
+
+4. **PR comments never authorize.** The `/guardian` authorization channel is fed ONLY by **issue**
+   comments authored by a human on `trustedAuthors`. PR comments (from any actor) are facts/traces,
+   never authorization inputs. `selectCommand` is only ever given the issue-comment stream.
+
+5. **The fact channel and the authorization channel are structurally distinct.** An explicit actor
+   taxonomy — `human_authorizer` / `bot_fact_writer` / `bot_executor` — decides which channel an
+   actor may enter. Authorization eligibility requires the `human_authorizer` class; a
+   `bot_fact_writer` / `bot_executor` can write facts and perform its allowed effects but can never
+   reach the authorization path, even if its login were mistakenly added to a whitelist. This is a
+   code-structural guarantee, not a string-matching one.
+
+**Frozen by these decisions:** the fail-closed empty-whitelist rule (§2 / `selectCommand`), the
+Supervisor-sole-writer verdict rule (§3), and the marker-is-never-a-command grammar (§3A.3) all
+remain exactly as-is; Phase 3 strengthens them with an explicit actor class, never weakens them.
+
+---
+
 ## 6. Operational note
 
 Agent markdown lives in the repo under [`qa-skill/agents/`](../qa-skill/agents/) and must be
