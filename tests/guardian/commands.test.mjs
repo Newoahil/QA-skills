@@ -153,3 +153,8 @@ test('a trusted author overrides an earlier untrusted approve', () => {
   assert.equal(chosen.verb, 'reject');
   assert.equal(chosen.commentId, 2);
 });
+
+test('followup parses required DATA and empty followup is ignored', () => {
+  assert.deepEqual(parseCommand('/guardian followup 新的验收问题'), { verb: 'followup', data: '新的验收问题' });
+  assert.equal(parseCommand('/guardian followup'), null);
+});

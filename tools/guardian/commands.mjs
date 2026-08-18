@@ -17,6 +17,7 @@ export const COMMANDS = Object.freeze({
   reject: { validIn: [STATES.GATE_1_WAIT], target: STATES.HANDED_BACK },
   rework: { validIn: [STATES.GATE_2_WAIT], target: STATES.FIXING },
   retry: { validIn: [STATES.HANDED_BACK], target: STATES.INVESTIGATING },
+  followup: { validIn: [STATES.DONE, STATES.GATE_2_WAIT], target: STATES.INVESTIGATING },
 });
 
 const VERBS = Object.keys(COMMANDS);
@@ -31,7 +32,10 @@ export function parseCommand(body) {
   for (const line of body.split(/\r?\n/)) {
     const m = LINE_RE.exec(line);
     if (m) {
-      return { verb: m[1].toLowerCase(), data: (m[2] ?? '').trim() };
+      const verb = m[1].toLowerCase();
+      const data = (m[2] ?? '').trim();
+      if ((verb === 'followup' || verb === 'revise' || verb === 'rework') && !data) return null;
+      return { verb, data };
     }
   }
   return null;

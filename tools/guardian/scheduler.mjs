@@ -10,15 +10,18 @@
 // notify_channel? }.
 
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { readJsonFile } from './runtime-io.mjs';
 
 import { pollIssue, defaultGhReader, DEFAULT_LEASE_MS } from './poll.mjs';
+import { readState, startFollowupRound, writeState } from './state.mjs';
 import { planTick } from './scheduler-core.mjs';
 import { acquireLock, renewLock, releaseLock } from './lock.mjs';
 import { deliverNotifications, defaultGhComment, defaultCurlPost } from './notify-io.mjs';
 import { createLogger } from './runtime-io.mjs';
+import { projectLabels } from './label-io.mjs';
 
 const DEFAULT_INTERVAL_MS = 60 * 1000;
 // Heartbeat cadence: renew the lock well within the lease so a live long run never looks stale.
@@ -30,16 +33,56 @@ function readConfig(repoDir) {
   return readJsonFile(file);
 }
 
-function listOpenIssues(repoDir) {
-  const res = spawnSync('gh', ['issue', 'list', '--label', 'qa-guardian', '--state', 'open', '--json', 'number,updatedAt'], {
+function ghIssueList(repoDir, args) {
+  const res = spawnSync('gh', ['issue', 'list', ...args], {
     cwd: repoDir, encoding: 'utf8', shell: false, windowsHide: true,
   });
   if (res.status !== 0) throw new Error(`gh issue list failed: ${res.stderr || 'unknown'}`);
   const arr = JSON.parse(res.stdout || '[]');
   // Deterministic order: oldest updatedAt first (fairest single pick under N=1).
   return arr
-    .map((x) => ({ issue: Number(x.number), updatedAt: x.updatedAt }))
+    .map((x) => ({ issue: Number(x.number), createdAt: x.createdAt, updatedAt: x.updatedAt, labels: x.labels ?? [] }))
     .sort((a, b) => String(a.updatedAt).localeCompare(String(b.updatedAt)));
+}
+
+function watchStatePath(repoDir) { return path.join(repoDir, '.qa', 'guardian', 'watch-state.json'); }
+function readWatchState(repoDir) {
+  const file = watchStatePath(repoDir);
+  if (!existsSync(file)) return null;
+  return readJsonFile(file);
+}
+function writeWatchState(repoDir, state) {
+  mkdirSync(path.dirname(watchStatePath(repoDir)), { recursive: true });
+  writeFileSync(watchStatePath(repoDir), `${JSON.stringify(state, null, 2)}\n`, 'utf8');
+}
+
+function listCandidates(repoDir, config, now = new Date()) {
+  const fields = ['number,createdAt,updatedAt,labels'];
+  const labeled = ghIssueList(repoDir, ['--state', 'open', '--label', 'qa-guardian', '--limit', '1000', '--json', fields[0]])
+    .map((x) => ({ ...x, claim_source: 'labeled' }));
+  const followups = readdirSync(path.join(repoDir, '.qa', 'guardian'), { withFileTypes: true })
+    .filter((entry) => entry.isFile() && /^\d+\.json$/.test(entry.name))
+    .map((entry) => readJsonFile(path.join(repoDir, '.qa', 'guardian', entry.name)))
+    .filter((record) => record.state === 'DONE' || record.state === 'GATE_2_WAIT')
+    .map((record) => ({ issue: Number(record.issue), updatedAt: record.updated_at, claim_source: 'followup' }));
+  if (config.watch_mode !== 'new-open') return [...new Map(labeled.concat(followups).map((x) => [x.issue, x])).values()];
+
+  const current = now.toISOString();
+  const state = readWatchState(repoDir) ?? {
+    schema_version: 1,
+    watch_mode: 'new-open',
+    baseline_created_at: current,
+    next_created_at: current,
+    last_successful_scan_at: null,
+  };
+  const created = ghIssueList(repoDir, [
+    '--state', 'open', '--search', `is:issue is:open created:>=${state.next_created_at}`,
+    '--limit', '1000', '--json', fields[0],
+  ]).filter((x) => typeof x.createdAt === 'string' && x.createdAt >= state.next_created_at)
+    .map((x) => ({ ...x, claim_source: 'new-open' }));
+  writeWatchState(repoDir, { ...state, watch_mode: 'new-open', next_created_at: current, last_successful_scan_at: current });
+  const merged = new Map(labeled.concat(created, followups).map((x) => [x.issue, x]));
+  return [...merged.values()].sort((a, b) => String(a.updatedAt).localeCompare(String(b.updatedAt)));
 }
 
 function lockPath(repoDir) {
@@ -75,14 +118,23 @@ function runInvocation(repoDir, invokeArgv, lockFile, handle, leaseMs) {
 async function tick(repoDir, config, logger) {
   const leaseMs = Number(config.lease_ms ?? DEFAULT_LEASE_MS);
   const now = Date.now();
-  const issues = listOpenIssues(repoDir);
+  const issues = listCandidates(repoDir, config, new Date(now));
 
   const trustedAuthors = config.command_authors ?? [];
-  const decisions = issues.map(({ issue }) =>
-    pollIssue(path.join(repoDir, '.qa', 'guardian'), issue, defaultGhReader(repoDir), {
+  const decisions = issues.map(({ issue, claim_source }) => ({
+    ...pollIssue(path.join(repoDir, '.qa', 'guardian'), issue, defaultGhReader(repoDir), {
       leaseMs, repoDir, trustedAuthors,
     }),
-  );
+    claim_source,
+  }));
+
+  // Labels are best-effort visible projection; state JSON remains authoritative.
+  for (const decision of decisions) {
+    const record = readState(guardianDirOf(repoDir), decision.issue);
+    if (!record) continue;
+    const projection = projectLabels(repoDir, decision.issue, record);
+    if (projection.errors.length > 0) logger.warn('labels.projection_failed', { issue: decision.issue, errors: projection.errors.length });
+  }
 
   // planTick selects the single runnable candidate (pure). Actual N=1 exclusion is enforced by
   // the ATOMIC lock acquire below — planTick's lock arg is null here so it only picks a candidate.
@@ -122,6 +174,30 @@ async function tick(repoDir, config, logger) {
   if (!handle) {
     logger.info('run.deferred_lock_live', { issue, action, to_state: toState });
     return;
+  }
+
+  if (plan.toRun.claim_source === 'new-open') {
+    const claimId = randomUUID();
+    const labelCreate = spawnSync('gh', ['label', 'create', 'qa-guardian-claimed', '--color', '5319e7', '--description', 'Issue claimed by QA Guardian', '--force'], {
+      cwd: repoDir, encoding: 'utf8', shell: false, windowsHide: true,
+    });
+    const labelRes = spawnSync('gh', ['issue', 'edit', String(issue), '--add-label', 'qa-guardian', '--add-label', 'qa-guardian-claimed'], {
+      cwd: repoDir, encoding: 'utf8', shell: false, windowsHide: true,
+    });
+    if (labelCreate.status !== 0 || labelRes.status !== 0) {
+      releaseLock(lockFile, handle);
+      logger.error('claim.failed', { issue, error_message: labelRes.stderr || labelCreate.stderr || 'gh label/issue edit failed' });
+      return;
+    }
+    writeState(guardianDirOf(repoDir), {
+      issue, state: 'DISCOVERED', claim_id: claimId, claimed_at: new Date(now).toISOString(), claim_source: 'new-open',
+    }, { touch: false });
+    logger.info('claim.accepted', { issue, claim_source: 'new-open' });
+  }
+  if (plan.toRun.newRound && plan.toRun.command) {
+    const current = readState(guardianDirOf(repoDir), issue);
+    if (current) writeState(guardianDirOf(repoDir), startFollowupRound(current, plan.toRun.command), { touch: false });
+    logger.info('followup.round_started', { issue, round: (current?.processing_round ?? 1) + 1 });
   }
 
   logger.info('run.begin', { issue, action, to_state: toState });

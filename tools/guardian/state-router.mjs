@@ -42,6 +42,8 @@ export function routeIssue(record, gh, opts) {
 
   // 2. Terminal DONE → nothing to do.
   if (state === STATES.DONE) {
+    const cmd = selectCommand(comments, STATES.DONE, record.last_consumed_comment_id, trustedAuthors);
+    if (cmd?.verb === 'followup') return { action: 'RESUME', reason: 'followup', toState: STATES.INVESTIGATING, command: cmd, newRound: true };
     return { action: 'SKIP', reason: 'done' };
   }
 
@@ -80,6 +82,10 @@ export function routeIssue(record, gh, opts) {
   // 5. GATE_2_WAIT (all issues) → if the human merged, issue is closed → DONE; else consume
   //    a /guardian rework to send back to FIXING; else keep waiting.
   if (state === STATES.GATE_2_WAIT) {
+    const followup = selectCommand(comments, STATES.GATE_2_WAIT, record.last_consumed_comment_id, trustedAuthors);
+    if (followup?.verb === 'followup') {
+      return { action: 'RESUME', reason: 'followup', toState: STATES.INVESTIGATING, command: followup, newRound: true };
+    }
     if (gh?.closed) {
       return { action: 'DONE', reason: 'merged-closed' };
     }

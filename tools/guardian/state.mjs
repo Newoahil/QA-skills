@@ -65,6 +65,7 @@ export function isTerminalState(state) {
 // A fresh state record for a newly discovered issue.
 export function newState(issueNumber, now = new Date().toISOString()) {
   return {
+    schema_version: 2,
     issue: Number(issueNumber),
     state: STATES.DISCOVERED,
     risk: null, // LOW | HIGH once assessed
@@ -76,6 +77,15 @@ export function newState(issueNumber, now = new Date().toISOString()) {
     last_consumed_comment_id: null, // idempotent command consumption (§11.2)
     last_notified_state: null, // idempotent notify (§11B.5)
     handed_back_reason: null, // one of HANDED_BACK_REASONS
+    issue_class: null, // bug | request
+    processing_round: 1,
+    round_started_at: null,
+    round_history: [],
+    last_followup_comment_id: null,
+    last_followup_data: null,
+    claim_id: null,
+    claimed_at: null,
+    claim_source: null, // labeled | new-open | followup
   };
 }
 
@@ -84,6 +94,36 @@ export function newState(issueNumber, now = new Date().toISOString()) {
 export function normalizeState(record, issueNumber) {
   const base = newState(issueNumber ?? record.issue, record.updated_at);
   return { ...base, ...record, issue: Number(issueNumber ?? record.issue) };
+}
+
+export function startFollowupRound(record, command, now = new Date().toISOString()) {
+  const previous = normalizeState(record, record.issue);
+  const history = [...(previous.round_history ?? [])];
+  history.push({
+    round: previous.processing_round ?? 1,
+    branch: previous.branch,
+    pr_url: previous.pr_url,
+    completed_at: previous.updated_at,
+  });
+  return {
+    ...previous,
+    schema_version: 2,
+    state: STATES.INVESTIGATING,
+    risk: null,
+    branch: null,
+    pr_url: null,
+    fix_rounds: 0,
+    stall_retries: 0,
+    updated_at: now,
+    round_started_at: now,
+    processing_round: (previous.processing_round ?? 1) + 1,
+    round_history: history,
+    last_followup_comment_id: command.commentId,
+    last_followup_data: command.data,
+    last_consumed_comment_id: command.commentId,
+    handed_back_reason: null,
+    claim_source: 'followup',
+  };
 }
 
 function statePath(guardianDir, issueNumber) {

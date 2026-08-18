@@ -192,3 +192,26 @@ test('GATE_1_WAIT + approve but no trustedAuthors configured → SKIP (fail-clos
   assert.equal(d.action, 'SKIP');
   assert.equal(d.reason, 'gate1-waiting');
 });
+
+test('DONE + trusted /guardian followup → RESUME new INVESTIGATING round', () => {
+  const d = routeIssue(
+    rec({ state: STATES.DONE }),
+    gh({ comments: [comment(10, '/guardian followup new acceptance failure')] }),
+    OPTS,
+  );
+  assert.equal(d.action, 'RESUME');
+  assert.equal(d.toState, STATES.INVESTIGATING);
+  assert.equal(d.newRound, true);
+  assert.equal(d.command.data, 'new acceptance failure');
+});
+
+test('closed GATE_2_WAIT + followup wins over DONE transition', () => {
+  const d = routeIssue(
+    rec({ state: STATES.GATE_2_WAIT }),
+    gh({ closed: true, comments: [comment(10, '/guardian followup post-merge issue')] }),
+    OPTS,
+  );
+  assert.equal(d.action, 'RESUME');
+  assert.equal(d.reason, 'followup');
+  assert.equal(d.newRound, true);
+});
