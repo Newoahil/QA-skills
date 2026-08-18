@@ -8,6 +8,7 @@ This file summarizes all project changes, decisions, requirements, and bug recor
 
 <!-- One-line core conclusion per record. Format: [id] #topic1 #topic2 — description (date) -->
 <!-- add new conclusions here -->
+- [change-39d97b0a4c854e3893e13ba9e9a5859d] #qa-guardian #documentation #deployment — 修复 review-work 文档缺口——README 更正 scheduler 已交付状态+补运行段+config 键表+作者授权安全项，验收用例新增 UC-H..UC-K（授权/N=1/通知/飞书回调）并把测试数更新到 128，设计文档 §11B.5-a 补记飞书通道/回调/command_authors/FR-21 接线为已交付范围，文档与代码对齐。 (2026-08-18)
 - [change-5abf095ac5524443a5d7a9038a01a1e8] #qa-guardian #security #concurrency — 修复 review-work 发现的阻塞项——命令作者授权 fail-closed、N=1 原子锁+心跳续租、spawn 去 shell、回调 timestamp/去重/体积硬化，消除“任意评论可批准 HIGH 方案”授权漏洞与租约竞态，121/121 测试通过。 (2026-08-18)
 - [change-c4f7796c3fa940589c4c90921c26455c] #qa-guardian #notification #deployment — 修复 review-work 阻塞项——新增 notify-io.mjs 把通知投递（gh 评论+curl webhook，幂等持久化 last_notified_state）真正接进 scheduler tick 满足 FR-21，并补 DEPLOY.md + bootstrap 指引让常驻 scheduler 与飞书回调可被新用户部署，128/128 测试通过。 (2026-08-18)
 
@@ -40,6 +41,7 @@ This file summarizes all project changes, decisions, requirements, and bug recor
 | ID | Date | Title | Status | Link |
 |----|------|-------|--------|------|
 <!-- add new records here -->
+| change-39d97b0a4c854e3893e13ba9e9a5859d | 2026-08-18 | QA Guardian 文档收尾第三批（README/验收用例/设计文档对齐） | done | [link](changes/2026-08-18-change-39d97b0a4c854e3893e13ba9e9a5859d-guardian-docs-batch3.md) |
 | change-5abf095ac5524443a5d7a9038a01a1e8 | 2026-08-18 | QA Guardian 安全+并发修复第一批（授权/锁/去 shell/回调硬化） | done | [link](changes/2026-08-18-change-5abf095ac5524443a5d7a9038a01a1e8-guardian-security-concurrency-batch1.md) |
 | change-c4f7796c3fa940589c4c90921c26455c | 2026-08-18 | QA Guardian 运维就绪第二批（通知投递接线 + DEPLOY + bootstrap 指引） | done | [link](changes/2026-08-18-change-c4f7796c3fa940589c4c90921c26455c-guardian-notify-wiring-deploy-batch2.md) |
 
@@ -77,7 +79,8 @@ This file summarizes all project changes, decisions, requirements, and bug recor
 
 <!-- Auto-maintained: maps topic tags to record IDs for fast lookup -->
 - concurrency: change-5abf095ac5524443a5d7a9038a01a1e8
-- deployment: change-c4f7796c3fa940589c4c90921c26455c
+- deployment: change-39d97b0a4c854e3893e13ba9e9a5859d, change-c4f7796c3fa940589c4c90921c26455c
+- documentation: change-39d97b0a4c854e3893e13ba9e9a5859d
 - notification: change-c4f7796c3fa940589c4c90921c26455c
-- qa-guardian: change-5abf095ac5524443a5d7a9038a01a1e8, change-c4f7796c3fa940589c4c90921c26455c
+- qa-guardian: change-39d97b0a4c854e3893e13ba9e9a5859d, change-5abf095ac5524443a5d7a9038a01a1e8, change-c4f7796c3fa940589c4c90921c26455c
 - security: change-5abf095ac5524443a5d7a9038a01a1e8
