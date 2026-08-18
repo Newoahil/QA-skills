@@ -11,6 +11,22 @@
 // last_notified_state), and (b) the exact, minimal body (issue# + stage + link only — never
 // code/secrets). The actual `gh`/`curl` execution is injected so it is fully unit-testable.
 
+import { buildFeishuCard } from './notify-feishu.mjs';
+
+// Format the webhook body for a channel. `generic` (default) sends the raw safe payload —
+// preserving existing behavior; `feishu` wraps it into an interactive card. This is the ONLY
+// place channel formatting lives, so notify()'s decision logic stays channel-agnostic.
+export function buildChannelBody(payload, channel = 'generic') {
+  switch (channel) {
+    case 'feishu':
+      return buildFeishuCard(payload);
+    case 'generic':
+      return payload;
+    default:
+      return payload;
+  }
+}
+
 // States that warrant a proactive notification (§11B.5): gate stops, stalled recovery,
 // and hand-backs. Progress-only active states do not notify.
 export const NOTIFY_STATES = Object.freeze([
@@ -80,10 +96,12 @@ export function notify(record, args, config, io) {
   io.comment(payload);
 
   // Channel 2: webhook — only when configured; else degrade to comment-only, never block.
+  // The webhook body is channel-formatted (generic by default, feishu card when configured).
   let webhookPushed = false;
   const url = config?.notify_webhook;
   if (typeof url === 'string' && url.length > 0) {
-    io.webhook(url, payload);
+    const channel = config?.notify_channel ?? 'generic';
+    io.webhook(url, buildChannelBody(payload, channel));
     webhookPushed = true;
   }
 
