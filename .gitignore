@@ -14,6 +14,9 @@ playwright-report/
 .env
 .env.*
 !.env.example
+# QA Guardian machine-local secrets (Feishu app secret, GitHub PAT, etc.)
+.qa/guardian/secrets.json
+tools/guardian/secrets.json
 *.key
 *.pem
 *.p12
