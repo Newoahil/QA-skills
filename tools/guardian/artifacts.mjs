@@ -19,14 +19,14 @@ function atomicWriteJson(file, value) {
 }
 
 export function writeArtifact(guardianDir, issue, name, value) {
-  if (!['dossier', 'plan'].includes(name)) throw new Error(`unsupported artifact: ${name}`);
+  if (!['dossier', 'plan', 'qa-verdict'].includes(name)) throw new Error(`unsupported artifact: ${name}`);
   const file = path.join(artifactDir(guardianDir, issue), `${name}.json`);
   atomicWriteJson(file, value);
   return file;
 }
 
 export function readArtifact(guardianDir, issue, name) {
-  if (!['dossier', 'plan'].includes(name)) throw new Error(`unsupported artifact: ${name}`);
+  if (!['dossier', 'plan', 'qa-verdict'].includes(name)) throw new Error(`unsupported artifact: ${name}`);
   const file = path.join(artifactDir(guardianDir, issue), `${name}.json`);
   if (!existsSync(file)) return null;
   return readJsonFile(file);

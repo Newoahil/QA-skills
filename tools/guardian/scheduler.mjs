@@ -25,8 +25,9 @@ import { projectLabels } from './label-io.mjs';
 import { prepareInvestigation } from './investigation-runtime.mjs';
 import { processPlanBuilder, processSpecialistRunner } from './investigation-process.mjs';
 import { discoverCapabilities } from './capabilities.mjs';
-import { quarantineArtifacts, readArtifactPair } from './artifacts.mjs';
+import { quarantineArtifacts, readArtifact, readArtifactPair } from './artifacts.mjs';
 import { assessFixingEntry } from './plan-gate.mjs';
+import { auditQaVerdict } from './qa-verdict.mjs';
 
 const DEFAULT_INTERVAL_MS = 60 * 1000;
 // Heartbeat cadence: renew the lock well within the lease so a live long run never looks stale.
@@ -309,6 +310,23 @@ async function tick(repoDir, config, logger) {
   logger.info('run.begin', { issue, action, to_state: toState });
   try {
     const code = await runInvocation(repoDir, invokeArgv, lockFile, handle, leaseMs, Number(config.child_timeout_ms ?? 20 * 60 * 1000));
+    const qaVerdict = readArtifact(guardianDirOf(repoDir), issue, 'qa-verdict');
+    const qaAudit = auditQaVerdict(qaVerdict, {
+      issue,
+      branch: readState(guardianDirOf(repoDir), issue)?.branch ?? undefined,
+    });
+    const afterRun = readState(guardianDirOf(repoDir), issue) ?? { issue };
+    writeState(guardianDirOf(repoDir), {
+      ...afterRun,
+      qa_verdict_path: qaVerdict ? path.join(String(issue), 'qa-verdict.json') : null,
+      qa_verdict_status: qaVerdict?.status ?? null,
+      qa_verdict_hash: qaVerdict?.report_hash ?? null,
+      last_child_exit_code: code,
+      last_error_class: qaAudit.approved ? afterRun.last_error_class : qaAudit.reason,
+      last_phase: qaAudit.approved ? 'qa-passed' : 'qa-unapproved',
+    }, { touch: false });
+    if (!qaAudit.approved) logger.warn('qa.verdict_unapproved', { issue, reason: qaAudit.reason, exit_code: code });
+    else logger.info('qa.verdict_passed', { issue, exit_code: code });
     logger.info('run.exit', { issue, exit_code: code });
   }
   catch (error) {

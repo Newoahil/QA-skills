@@ -109,6 +109,9 @@ export function newState(issueNumber, now = new Date().toISOString()) {
     last_phase: null,
     last_error_class: null,
     last_child_exit_code: null,
+    qa_verdict_path: null,
+    qa_verdict_status: null,
+    qa_verdict_hash: null,
   };
 }
 
