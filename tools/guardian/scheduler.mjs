@@ -10,13 +10,16 @@
 // notify_channel? }.
 
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { pollIssue, defaultGhReader, DEFAULT_LEASE_MS } from './poll.mjs';
 import { planTick } from './scheduler-core.mjs';
+import { acquireLock, renewLock, releaseLock } from './lock.mjs';
 
 const DEFAULT_INTERVAL_MS = 60 * 1000;
+// Heartbeat cadence: renew the lock well within the lease so a live long run never looks stale.
+const HEARTBEAT_MS = 30 * 1000;
 
 function readConfig(repoDir) {
   const file = path.join(repoDir, '.qa', 'guardian', 'config.json');
@@ -40,31 +43,29 @@ function lockPath(repoDir) {
   return path.join(repoDir, '.qa', 'guardian', '.scheduler.lock');
 }
 
-function readLock(repoDir) {
-  const file = lockPath(repoDir);
-  if (!existsSync(file)) return null;
-  const parsed = JSON.parse(readFileSync(file, 'utf8'));
-  return { pid: Number(parsed.pid), acquired_at: Number(parsed.acquired_at) };
+function guardianDirOf(repoDir) {
+  return path.join(repoDir, '.qa', 'guardian');
 }
 
-function writeLock(repoDir, pid) {
-  const dir = path.join(repoDir, '.qa', 'guardian');
-  mkdirSync(dir, { recursive: true });
-  writeFileSync(lockPath(repoDir), JSON.stringify({ pid, acquired_at: Date.now() }) + '\n');
-}
-
-function clearLock(repoDir) {
-  const file = lockPath(repoDir);
-  if (existsSync(file)) rmSync(file);
-}
-
-// Run one issue's guardian invocation to completion, holding the N=1 lock for its duration.
-function runInvocation(repoDir, invoke) {
+// Run one issue's guardian invocation to completion, holding + heartbeating the N=1 lock for
+// its whole duration. Spawns WITHOUT a shell (argv array), so issue-derived prompt text can
+// never be interpreted by a shell. Returns the child's exit code.
+function runInvocation(repoDir, invokeArgv, lockFile, handle, leaseMs) {
   return new Promise((resolve) => {
-    // invoke is the full `opencode run --agent qa-guardian ...` string produced by poll.mjs.
-    const child = spawn(invoke, { cwd: repoDir, shell: true, stdio: 'inherit', windowsHide: true });
-    child.on('exit', (code) => resolve(code ?? 0));
-    child.on('error', () => resolve(1));
+    const child = spawn(invokeArgv.cmd, invokeArgv.args, {
+      cwd: repoDir, shell: false, stdio: 'inherit', windowsHide: true,
+    });
+    // Heartbeat: keep the lease fresh while the run is alive so N=1 holds for long runs.
+    const beat = setInterval(() => {
+      renewLock(lockFile, handle, { leaseMs });
+    }, HEARTBEAT_MS);
+    if (typeof beat.unref === 'function') beat.unref();
+    const done = (code) => {
+      clearInterval(beat);
+      resolve(code);
+    };
+    child.on('exit', (code) => done(code ?? 0));
+    child.on('error', () => done(1));
   });
 }
 
@@ -73,36 +74,44 @@ async function tick(repoDir, config) {
   const now = Date.now();
   const issues = listOpenIssues(repoDir);
 
+  const trustedAuthors = config.command_authors ?? [];
   const decisions = issues.map(({ issue }) =>
     pollIssue(path.join(repoDir, '.qa', 'guardian'), issue, defaultGhReader(repoDir), {
-      leaseMs, repoDir,
+      leaseMs, repoDir, trustedAuthors,
     }),
   );
 
-  const plan = planTick({ decisions, lock: readLock(repoDir), leaseMs, now });
+  // planTick selects the single runnable candidate (pure). Actual N=1 exclusion is enforced by
+  // the ATOMIC lock acquire below — planTick's lock arg is null here so it only picks a candidate.
+  const plan = planTick({ decisions, lock: null, leaseMs, now });
 
-  if (plan.lockBusy) {
-    process.stdout.write(`[scheduler] lock busy; ${decisions.length} issue(s) polled, none started\n`);
-    return;
-  }
   if (!plan.toRun) {
     process.stdout.write(`[scheduler] nothing runnable this tick (${decisions.length} polled)\n`);
     return;
   }
 
-  const { issue, invoke, action, toState } = plan.toRun;
-  if (!invoke) {
+  const { issue, invokeArgv, action, toState } = plan.toRun;
+  if (!invokeArgv) {
     process.stdout.write(`[scheduler] issue #${issue} ${action}→${toState} has no invocation; skipping\n`);
     return;
   }
 
-  writeLock(repoDir, process.pid);
+  // Atomic acquire: if another scheduler holds a LIVE lock, we get null → skip (true N=1).
+  const lockFile = lockPath(repoDir);
+  const handle = acquireLock(lockFile, {
+    pid: process.pid, leaseMs, now, dir: guardianDirOf(repoDir),
+  });
+  if (!handle) {
+    process.stdout.write(`[scheduler] lock held by a live run; issue #${issue} deferred\n`);
+    return;
+  }
+
   process.stdout.write(`[scheduler] running issue #${issue} (${action}→${toState})\n`);
   try {
-    const code = await runInvocation(repoDir, invoke);
+    const code = await runInvocation(repoDir, invokeArgv, lockFile, handle, leaseMs);
     process.stdout.write(`[scheduler] issue #${issue} run exited ${code}\n`);
   } finally {
-    clearLock(repoDir);
+    releaseLock(lockFile, handle);
   }
 }
 
@@ -115,8 +124,10 @@ async function main() {
 
   process.stdout.write(`[scheduler] watching ${repoDir} every ${interval}ms (N=1)\n`);
 
+  // On signal, stop the loop and exit. An in-flight run's lock is released by tick()'s finally;
+  // if the process is killed mid-run, the lock is lease-bounded and reclaimed after it expires.
   let stopped = false;
-  const stop = () => { stopped = true; clearLock(repoDir); process.exit(0); };
+  const stop = () => { stopped = true; process.exit(0); };
   for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, stop);
 
   while (!stopped) {
