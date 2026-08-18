@@ -9,6 +9,16 @@ It does **not** modify `qa` / `qa-facet` / `SKILL.md` / `references/*` — it di
 `qa` agent as an independent judge (the guardian never grades its own fix). Full design:
 [`docs/qa-guardian-requirements-and-design.md`](../../docs/qa-guardian-requirements-and-design.md).
 
+> **Role vocabulary (see [`docs/qa-guardian-role-architecture.md`](../../docs/qa-guardian-role-architecture.md), normative).**
+> The system is described as three roles: the **QA Agent** (the read-only `qa` agent — discovers
+> defects and verifies fixes, never writes GitHub), the **Fixer Agent** (the write-capable
+> `qa-guardian` agent — fixes and opens a PR, never grades its own fix, never merges/closes), and
+> the **Guardian Supervisor** (the `scheduler`/`state-router`/`commands` decision layer — owns
+> events, state, N=1, the human command gate, the machine QA gate, and PR creation; it is the sole
+> writer of the QA verification comment). These are **role names only**: the runtime agent is still
+> `qa-guardian`, the discovery label is still `qa-guardian`, and the state machine is unchanged.
+> After editing any `qa-skill/agents/*.md`, re-sync to `~/.config/opencode/agents/`.
+
 > **Two ways to run.** Either drive one issue by hand (§15.2, below) or run the always-on resident
 > scheduler (§15.1) that polls, enforces N=1, runs the agent, and delivers notifications. The
 > Feishu interactive-card notification + **local WebSocket card-button callback** (button →
