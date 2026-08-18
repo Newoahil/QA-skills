@@ -22,6 +22,8 @@ import { acquireLock, renewLock, releaseLock } from './lock.mjs';
 import { deliverNotifications, defaultGhComment, defaultCurlPost } from './notify-io.mjs';
 import { createLogger } from './runtime-io.mjs';
 import { projectLabels } from './label-io.mjs';
+import { readArtifact } from './artifacts.mjs';
+import { assessFixingEntry } from './plan-gate.mjs';
 
 const DEFAULT_INTERVAL_MS = 60 * 1000;
 // Heartbeat cadence: renew the lock well within the lease so a live long run never looks stale.
@@ -174,6 +176,20 @@ async function tick(repoDir, config, logger) {
   if (!handle) {
     logger.info('run.deferred_lock_live', { issue, action, to_state: toState });
     return;
+  }
+
+  const investigationMode = config.investigation_mode ?? 'legacy';
+  if (investigationMode !== 'legacy') {
+    const guardianDir = guardianDirOf(repoDir);
+    const dossier = readArtifact(guardianDir, issue, 'dossier');
+    const planArtifact = readArtifact(guardianDir, issue, 'plan');
+    const gate = assessFixingEntry({ plan: planArtifact, dossier, investigationMode });
+    if (!gate.allowed || gate.shadow === true) {
+      releaseLock(lockFile, handle);
+      logger.warn('run.blocked_plan_gate', { issue, mode: investigationMode, reason: gate.reason ?? 'shadow-mode' });
+      return;
+    }
+    logger.info('run.plan_gate_passed', { issue, mode: investigationMode });
   }
 
   if (plan.toRun.claim_source === 'new-open') {
