@@ -60,10 +60,11 @@ The write-capable agent itself is [`qa-skill/agents/qa-guardian.md`](../../qa-sk
    ```bash
    mkdir -p .qa/guardian
    ```
-   Configure `.qa/guardian/config.json`:
-   ```json
-   {
-     "command_authors": ["your-github-login"],
+    Configure `.qa/guardian/config.json`:
+    ```json
+    {
+      "watch_mode": "new-open",
+      "command_authors": ["your-github-login"],
      "poll_interval_ms": 60000,
      "lease_ms": 1800000,
      "base_branch": "dev",
@@ -72,8 +73,9 @@ The write-capable agent itself is [`qa-skill/agents/qa-guardian.md`](../../qa-sk
    }
    ```
 
-   | key | meaning | default |
-   |---|---|---|
+    | key | meaning | default |
+    |---|---|---|
+    | `watch_mode` | `labeled` or `new-open` (discover issues created after watch baseline) | labeled |
    | `command_authors` | **trusted `/guardian` command authors (security, required).** Only these GitHub logins can drive commands; **unset = every command is ignored (fail-closed)** | none |
    | `poll_interval_ms` | resident scheduler poll interval | 60000 |
    | `lease_ms` | N=1 lock lease (heartbeat-renewed while a run is live) | 1800000 |
@@ -82,7 +84,9 @@ The write-capable agent itself is [`qa-skill/agents/qa-guardian.md`](../../qa-sk
    | `notify_channel` | `generic` (raw JSON) or `feishu` (interactive card) | generic |
 
    > Set `command_authors` or **nothing will be approvable** — this is the deliberate fail-closed
-   > guard against an arbitrary or forged comment approving a HIGH-risk plan.
+    > guard against an arbitrary or forged comment approving a HIGH-risk plan.
+    In `new-open` mode, historical unlabeled issues are not claimed. Newly claimed issues receive
+    `qa-guardian` and `qa-guardian-claimed`; `.qa/guardian/<n>.json` remains authoritative.
 5. **Label an issue.** Put the `qa-guardian` label on the GitHub issue you want handled (one-time
    human authorization).
 
@@ -122,6 +126,10 @@ Because each run is a one-shot process, you resume by leaving a comment the next
 | `/guardian reject` | (gate 1) stop; issue is handed back (terminal) |
 | `/guardian rework <opinion>` | (gate 2) send the PR back for another fix round |
 | `/guardian retry` | (handed-back) re-enter the pipeline from scratch |
+| `/guardian followup <problem>` | (DONE/GATE_2_WAIT) start a new acceptance round; text is DATA |
+
+`rework` repairs the current Gate 2 PR. `followup` starts a new round, preserves the previous
+branch/PR in `round_history`, uses a fresh branch, and never force-pushes the previous PR.
 
 ## Run the combined resident runtime (§15.1, unattended)
 

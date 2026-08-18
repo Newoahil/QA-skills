@@ -26,6 +26,7 @@
 
 ```json
 {
+  "watch_mode": "new-open",
   "poll_interval_ms": 60000,
   "lease_ms": 1800000,
   "base_branch": "dev",
@@ -38,6 +39,7 @@
 | 键 | 含义 | 默认 |
 |---|---|---|
 | `poll_interval_ms` | 轮询间隔（毫秒） | 60000 |
+| `watch_mode` | `labeled` 或 `new-open`；后者只自动发现值守启动后新建的 Open issue | labeled |
 | `lease_ms` | N=1 锁租约（毫秒），运行中每 30s 心跳续租 | 1800000（30 分钟） |
 | `base_branch` | PR 目标分支 | dev |
 | `command_authors` | **可信命令作者白名单（安全必填）**。只有名单内 GitHub 登录名发的 `/guardian` 命令才生效；**未配置则任何命令都不生效（fail-closed）** | 无 |
@@ -48,6 +50,18 @@
 | `notify_channel` | `generic`（原始 JSON）或 `feishu`（交互卡片） | generic |
 
 > ⚠️ **`command_authors` 不配 = 所有 `/guardian` 命令失效**。这是有意的安全默认，防止任意评论（含伪造回调）批准 HIGH 风险方案。至少填入你自己的 GitHub 登录名。
+
+`new-open` 首次启动建立 baseline，不会接管启动前的历史未标记 issue。已带 `qa-guardian`
+的 issue 仍兼容处理；新 issue 会由 scheduler 添加 `qa-guardian` 和 `qa-guardian-claimed`。
+
+已处理 issue 的新验收问题使用可信作者评论：
+
+```text
+/guardian followup 预发验收仍发现新的问题，请重新调查 XXX
+```
+
+`followup` 仅在 `DONE` 或 `GATE_2_WAIT` 生效，开启新的 `processing_round`，保存旧分支/PR
+历史并使用新分支；不自动 reopen 已关闭 issue，也不 force-push 旧 PR。`rework` 仍表示打回当前 PR。
 
 ### 2. 启动（一键脚本，推荐）
 

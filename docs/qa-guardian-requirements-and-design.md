@@ -658,6 +658,14 @@ Guardian 走到任一闸门时，**不允许靠 agent"自觉停对地方"**，�
 - **命令作者授权（`command_authors`，fail-closed）**：poller 只采纳白名单内 GitHub 登录名发出的 `/guardian` 命令;**未配置则任何命令都不生效**。这消除「任意/伪造评论批准 HIGH 方案」的授权漏洞——即使飞书回调写了评论，其 GitHub 身份也必须在白名单内才被采纳（双重授权）。
 - **投递接线（FR-21）**：常驻 scheduler 每 tick 通过 `notify-io.mjs`（`gh` 评论 + `curl` webhook）真实投递 gate/STALLED/HANDED_BACK 通知，幂等持久化 `last_notified_state`、best-effort per issue。
 
+#### 11B.5-b 新 issue 自动发现与后续验收轮次
+
+- **`watch_mode: "labeled"`**：只处理已有 `qa-guardian` 标签的 open issue，保持显式授权兼容行为。
+- **`watch_mode: "new-open"`**：scheduler 首次启动建立 `watch-state.json` creation baseline，只自动发现 baseline 之后创建的 open issue；历史未标记 issue 不会被静默接管。已有 `qa-guardian` 标签的 issue 仍兼容处理。
+- 新 issue 被 scheduler 领取后添加 `qa-guardian` 与 `qa-guardian-claimed` 可见标签；标签是投影，`.qa/guardian/<n>.json` 是权威状态。标签失败不改变核心路由，领取标签失败则不启动 agent。
+- 已完成或 Gate 2 等待的 issue 不会因再次轮询自动重跑。可信作者提交 `/guardian followup <problem>` 后，issue 进入新的 `INVESTIGATING` round；上一轮 branch/PR 写入 `round_history`，新轮次使用新 branch，不自动 reopen 已关闭 issue、不 force-push 旧 PR。
+- `/guardian rework <opinion>` 仍表示当前 Gate 2 PR 打回；`followup` 表示新的验收问题/新处理轮次。两者均把尾部作为 DATA，不作为指令执行。
+
 ### 11B.6 铁律：Guardian 永不"傻停等对话"
 
 把"不可见卡死"强制转成"可见等待"的核心纪律，写进 agent 定义并作为验收项：
