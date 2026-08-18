@@ -29,6 +29,12 @@ test('GATE_2_WAIT card offers only rework', () => {
   assert.deepEqual(verbsIn(card), ['rework']);
 });
 
+test('DONE card offers followup input for a new acceptance round', () => {
+  const card = buildFeishuCard({ issue: 191, stage: 'DONE' });
+  assert.deepEqual(verbsIn(card), ['followup']);
+  assert.equal(JSON.stringify(card).includes('guardian_followup'), true);
+});
+
 test('STALLED and HANDED_BACK offer retry', () => {
   assert.deepEqual(verbsIn(buildFeishuCard({ issue: 1, stage: 'STALLED' })), ['retry']);
   assert.deepEqual(verbsIn(buildFeishuCard({ issue: 1, stage: 'HANDED_BACK' })), ['retry']);

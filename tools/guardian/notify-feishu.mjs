@@ -20,6 +20,9 @@ export const CARD_ACTIONS = Object.freeze({
   GATE_2_WAIT: [
     { verb: 'rework', label: '打回重修', type: 'default', input: true },
   ],
+  DONE: [
+    { verb: 'followup', label: '提交新验收问题', type: 'primary', input: true },
+  ],
   STALLED: [
     { verb: 'retry', label: '重试', type: 'primary', input: false },
   ],
@@ -31,6 +34,7 @@ export const CARD_ACTIONS = Object.freeze({
 const STATE_TITLE = Object.freeze({
   GATE_1_WAIT: 'QA Guardian · 闸门 1 · 需人工确认方案',
   GATE_2_WAIT: 'QA Guardian · 闸门 2 · PR 待人工评审',
+  DONE: 'QA Guardian · 已完成 · 可提交新验收问题',
   STALLED: 'QA Guardian · 处理停滞 · 需关注',
   HANDED_BACK: 'QA Guardian · 已交回 · 等待人工',
 });
@@ -38,6 +42,7 @@ const STATE_TITLE = Object.freeze({
 const STATE_HEADER_TEMPLATE = Object.freeze({
   GATE_1_WAIT: 'orange',
   GATE_2_WAIT: 'blue',
+  DONE: 'green',
   STALLED: 'yellow',
   HANDED_BACK: 'grey',
 });

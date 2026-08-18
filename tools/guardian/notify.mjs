@@ -34,6 +34,7 @@ export const NOTIFY_STATES = Object.freeze([
   'GATE_2_WAIT',
   'STALLED',
   'HANDED_BACK',
+  'DONE',
 ]);
 
 // Build the minimal, safe notification payload. NO code, NO secrets — only issue number,
