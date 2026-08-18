@@ -1,0 +1,8 @@
+schema_version: 1
+project_id: e0bcbfd9-b2ee-41ac-baa8-b8cf575ba026
+slug: QA-skills
+name: QA-skills
+repository:
+  remote: https://github.com/Newoahil/QA-skills.git
+  default_branch: main
+created_at: 2026-08-18T05:01:18Z

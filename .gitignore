@@ -43,3 +43,10 @@ desktop.ini
 *.swp
 *.swo
 *~
+
+# >>> SyberMem >>>
+# Machine-local runtime and scripts (do not share); records/digests/analysis/templates/INDEX.md/project.yaml stay committable.
+/.sybermem/hooks/
+/.sybermem/.*
+/.claude/settings.json
+# <<< SyberMem <<<
