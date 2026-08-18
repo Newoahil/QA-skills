@@ -9,6 +9,7 @@ This file summarizes all project changes, decisions, requirements, and bug recor
 <!-- One-line core conclusion per record. Format: [id] #topic1 #topic2 — description (date) -->
 <!-- add new conclusions here -->
 - [bug-1a88afaf58fe4f13859d209b49b49027] #qa-guardian #deployment #docker — docker-compose.yml 用 ports 8787:8787 硬绑宿主端口，在共享 Dokploy 主机上 8787 已被占用导致 "port is already allocated" 启动失败；改为仅 expose 8787、由 Dokploy Domain 反代路由到容器端口，部署不再抢宿主端口。 (2026-08-18)
+- [bug-541a9d6211594221a5ceb08950e80881] #qa-guardian #windows #encoding — Windows bat 的分支 fall-through 会重复调用 PowerShell 并产生大量命令未找到错误；无 BOM UTF-8 的 PowerShell 中文脚本在 PS5.1 解析失败，纯 BOM/控制台编码不一致又导致中文乱码；改为显式 goto 分支、PowerShell 脚本 UTF-8 BOM、bat chcp 65001，cmd 冒烟只执行一次且中文引导可读。 (2026-08-18)
 - [bug-9df5a75c67504f4fac0d315dd7cef2dd] #qa-guardian #windows #launcher — scheduler-start.bat 的 if 分支执行 PowerShell 后没有 goto done，cmd 继续落入后续 start_target/start_init 标签，重复启动脚本并将参数/文本当命令，导致大量“不是内部或外部命令”错误；改为显式 goto 分支收尾后 cmd 冒烟只执行一次。 (2026-08-18)
 - [change-39d97b0a4c854e3893e13ba9e9a5859d] #qa-guardian #documentation #deployment — 修复 review-work 文档缺口——README 更正 scheduler 已交付状态+补运行段+config 键表+作者授权安全项，验收用例新增 UC-H..UC-K（授权/N=1/通知/飞书回调）并把测试数更新到 128，设计文档 §11B.5-a 补记飞书通道/回调/command_authors/FR-21 接线为已交付范围，文档与代码对齐。 (2026-08-18)
 - [change-5abf095ac5524443a5d7a9038a01a1e8] #qa-guardian #security #concurrency — 修复 review-work 发现的阻塞项——命令作者授权 fail-closed、N=1 原子锁+心跳续租、spawn 去 shell、回调 timestamp/去重/体积硬化，消除“任意评论可批准 HIGH 方案”授权漏洞与租约竞态，121/121 测试通过。 (2026-08-18)
@@ -69,6 +70,7 @@ This file summarizes all project changes, decisions, requirements, and bug recor
 |----|------|-------|----------|------|
 <!-- add new records here -->
 | bug-1a88afaf58fe4f13859d209b49b49027 | 2026-08-18 | 飞书回调服务 Dokploy 部署失败——compose 硬绑宿主端口 8787 冲突 | high | [link](bugs/2026-08-18-bug-1a88afaf58fe4f13859d209b49b49027-dokploy-port-collision.md) |
+| bug-541a9d6211594221a5ceb08950e80881 | 2026-08-18 | Windows bat/PowerShell 启动引导乱码与分支重复执行 | medium | [link](bugs/2026-08-18-bug-541a9d6211594221-bat-chinese-output.md) |
 | bug-9df5a75c67504f4fac0d315dd7cef2dd | 2026-08-18 | Windows scheduler-start.bat fall-through 重复执行导致大量命令未找到错误 | high | [link](bugs/2026-08-18-bug-9df5a75c67504f4fac0d315dd7cef2dd-bat-fallthrough.md) |
 
 ## Usage
@@ -90,9 +92,10 @@ This file summarizes all project changes, decisions, requirements, and bug recor
 - deployment: bug-1a88afaf58fe4f13859d209b49b49027, change-39d97b0a4c854e3893e13ba9e9a5859d, change-c4f7796c3fa940589c4c90921c26455c, change-c783251f5b134af9b8bd7e15628fc7c6, change-d4732a411e254c618517828d62e5ed70
 - docker: bug-1a88afaf58fe4f13859d209b49b49027
 - documentation: change-39d97b0a4c854e3893e13ba9e9a5859d
+- encoding: bug-541a9d6211594221a5ceb08950e80881
 - launcher: bug-9df5a75c67504f4fac0d315dd7cef2dd
 - notification: change-c4f7796c3fa940589c4c90921c26455c
-- qa-guardian: bug-1a88afaf58fe4f13859d209b49b49027, bug-9df5a75c67504f4fac0d315dd7cef2dd, change-39d97b0a4c854e3893e13ba9e9a5859d, change-5abf095ac5524443a5d7a9038a01a1e8, change-c4f7796c3fa940589c4c90921c26455c, change-c783251f5b134af9b8bd7e15628fc7c6, change-d4732a411e254c618517828d62e5ed70
+- qa-guardian: bug-1a88afaf58fe4f13859d209b49b49027, bug-541a9d6211594221a5ceb08950e80881, bug-9df5a75c67504f4fac0d315dd7cef2dd, change-39d97b0a4c854e3893e13ba9e9a5859d, change-5abf095ac5524443a5d7a9038a01a1e8, change-c4f7796c3fa940589c4c90921c26455c, change-c783251f5b134af9b8bd7e15628fc7c6, change-d4732a411e254c618517828d62e5ed70
 - security: change-5abf095ac5524443a5d7a9038a01a1e8
 - usability: change-c783251f5b134af9b8bd7e15628fc7c6, change-d4732a411e254c618517828d62e5ed70
-- windows: bug-9df5a75c67504f4fac0d315dd7cef2dd
+- windows: bug-541a9d6211594221a5ceb08950e80881, bug-9df5a75c67504f4fac0d315dd7cef2dd
