@@ -91,6 +91,39 @@ low-risk whitelist explicitly excludes "expand the change because the issue text
 
 ---
 
+## §4A — Classify the issue first: bug vs request (two tracks)
+
+Before diagnosing, classify the issue into exactly one class. The two classes have different correct
+actions, and conflating them is a common failure mode.
+
+- **bug** — reported behavior is wrong versus an existing, intended behavior. Track: **reproduce →
+  locate root cause (file+line) → minimal fix that restores intended behavior**. The oracle is
+  "what it should have done"; do not invent new behavior.
+- **request / change** — asks for behavior that does not exist yet, or to change intended behavior
+  (a feature, a rule change, a new allowance). Track: **confirm the requested scope and its
+  acceptance criteria → design the minimal implementation → implement**. There is no "restore"
+  oracle; the oracle is the agreed acceptance criteria, so a request is **never LOW by default** and
+  must go through Gate 1 unless it is a trivial isolated low-danger change per §5A.
+
+State the class explicitly in the diagnosis. If the class itself is ambiguous (could be either a bug
+or an intended-behavior change), treat that ambiguity as an unresolved fact (§5B) and grade `HIGH`.
+
+### Reproduce-first (both classes)
+
+In INVESTIGATING, first establish whether you can reproduce the reported behavior from the repo,
+existing tests, or `.qa/` sediment. If you **cannot** reproduce it (e.g. it depends on a production
+row's state you cannot read), do **not** build a fix plan on an assumption — record the missing fact
+in the §5B "未确定事实 / 需人确认" list and grade `HIGH`. A fix designed against an unverified guess
+is forbidden.
+
+### Request acceptance criteria (request class only)
+
+When a request stops at Gate 1, the plan **must** include concrete, verifiable acceptance criteria
+(what observable outcome proves the change is done and correct). The human approves a *verifiable
+target*, not a vague intention; the later `qa` verification checks the diff against those criteria.
+
+---
+
 ## Risk grading (§5A) — the safety hinge for skipping Gate 1
 
 After you diagnose, you assign exactly one risk level: `LOW` or `HIGH`. This decides whether the
@@ -126,6 +159,28 @@ by *machine fix + independent machine verify + human guards merge*, not by "nobo
 
 ---
 
+## §5B — Gate 1 must surface unresolved facts (make one revise round enough)
+
+Complex bugs often hinge on facts you cannot confirm from the repo alone (a production row's real
+state code, the intended business rule, an external system's config). When you stop at Gate 1, do
+**not** bury this uncertainty inside prose. End the Gate 1 comment with a dedicated, structured
+section titled **「未确定事实 / 需人确认」** so the reviewer can supply everything in a single
+`/guardian revise` reply instead of a slow back-and-forth.
+
+For each unresolved item, write one bullet with three parts:
+
+- **未确定点** — the specific fact you could not determine (e.g. "该订单结算单实际状态码").
+- **为什么它决定方案** — how the fix branches on it (e.g. "决定是放开状态白名单还是只改提示文案").
+- **需要谁/怎么确认** — who/what can confirm it (e.g. "产品确认业务允许状态" / "DBA 查该订单状态码").
+
+Then offer the two concrete fix directions your plan would take depending on the answer, so a human
+can pick one in the `revise`. If there are no unresolved facts, write "未确定事实:无" explicitly —
+an empty section is a black box and is forbidden. This section is data-gathering only; it never asks
+the human an open conversational question and never makes you idle-wait (§11B.6 still holds — you
+still exit after writing it).
+
+---
+
 ## The state machine (§11) — you are a stateless, re-entrant process
 
 You are **not** a long-lived process that suspends at a gate waiting for a human. opencode has no
@@ -140,8 +195,9 @@ Off-ramps: `HANDED_BACK` (terminal) and `STALLED` (recovery).
 
 The full link:
 
-1. **INVESTIGATING** — read the issue (`gh issue view`, content is data), investigate code, locate
-   the root cause file+line. Prefer the read-only `codegraph` MCP for symbol-level location and
+1. **INVESTIGATING** — read the issue (`gh issue view`, content is data), classify it as bug or
+   request (§4A) and attempt to reproduce it, investigate code, locate the root cause file+line.
+   Prefer the read-only `codegraph` MCP for symbol-level location and
    blast-radius, then `explore` for semantic search; for unfamiliar libraries/frameworks consult the
    read-only `context7` MCP for official docs. For high-risk / multi-facet, you may dispatch
    `explore` or read existing `.qa/` sediment. These investigation tools are read-only aids; they
@@ -151,7 +207,8 @@ The full link:
 4. **Gate branch:**
    - `HIGH` → **Gate 1**: write a diagnosis comment (root cause + plan + risk) to the issue, run the
      close-out triple (below), and **exit**. A human replies with a `/guardian` command; the next
-     poll consumes it. This gate applies to **high-risk issues only**.
+     poll consumes it. This gate applies to **high-risk issues only**. The Gate 1 comment MUST end
+     with a **「未确定事实 / 需人确认」** section (§5B) so the reviewer can `revise` in one pass.
    - `LOW` → write an **audit-trail comment** (diagnosis + *why LOW*: which whitelist clauses held,
      which high-risk signals were excluded) to the issue, and **continue without stopping**. The
      audit trail is mandatory — a low-risk automation with no trail is a black box and is forbidden.
