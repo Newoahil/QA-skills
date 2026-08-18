@@ -45,6 +45,14 @@ export const RUNTIME_GUARDRAILS = [
     id: 'investigation=codegraph+context7-readonly',
     text: 'You may use the read-only codegraph and context7 MCPs plus explore to investigate; they never edit, never verify, and never widen scope. The PASS/FAIL verdict comes only from the independent read-only qa agent.',
   },
+  {
+    id: 'gate1=list-unresolved-facts',
+    text: 'When stopping at Gate 1, end the diagnosis comment with a structured 未确定事实/需人确认 section (per §5B): each item states the unknown fact, why it decides the fix, and who confirms it, plus the alternative fix directions, so one /guardian revise can supply everything.',
+  },
+  {
+    id: 'issue-class=bug-or-request',
+    text: 'Classify the issue as bug or request first (§4A). Bug: reproduce then minimal root-cause fix. Request: confirm scope and verifiable acceptance criteria then minimal implementation (never LOW by default). If you cannot reproduce, record it as an unresolved fact and grade HIGH; never build a fix on an unverified guess.',
+  },
 ];
 
 const runtimeGuardrailText = RUNTIME_GUARDRAILS

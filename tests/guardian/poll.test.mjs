@@ -16,6 +16,8 @@ test('RUNTIME_GUARDRAILS expose stable scheduler constraint ids', () => {
       'conflict-policy=preserve-base',
       'github-body=utf8-body-file',
       'investigation=codegraph+context7-readonly',
+      'gate1=list-unresolved-facts',
+      'issue-class=bug-or-request',
     ],
   );
 });
