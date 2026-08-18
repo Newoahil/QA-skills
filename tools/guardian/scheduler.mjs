@@ -16,6 +16,7 @@ import path from 'node:path';
 import { pollIssue, defaultGhReader, DEFAULT_LEASE_MS } from './poll.mjs';
 import { planTick } from './scheduler-core.mjs';
 import { acquireLock, renewLock, releaseLock } from './lock.mjs';
+import { deliverNotifications, defaultGhComment, defaultCurlPost } from './notify-io.mjs';
 
 const DEFAULT_INTERVAL_MS = 60 * 1000;
 // Heartbeat cadence: renew the lock well within the lease so a live long run never looks stale.
@@ -84,6 +85,21 @@ async function tick(repoDir, config) {
   // planTick selects the single runnable candidate (pure). Actual N=1 exclusion is enforced by
   // the ATOMIC lock acquire below — planTick's lock arg is null here so it only picks a candidate.
   const plan = planTick({ decisions, lock: null, leaseMs, now });
+
+  // Deliver notifications (FR-21 / §11B.5) for gate-stop/STALLED/HANDED_BACK decisions BEFORE
+  // handling the run. Idempotent per last_notified_state; independent of the N=1 run lock, so a
+  // stopped issue is announced even while another issue is running. Best-effort per issue.
+  if (plan.notify.length > 0) {
+    const guardianDir = guardianDirOf(repoDir);
+    const results = deliverNotifications({
+      decisions: plan.notify,
+      guardianDir,
+      config,
+      io: { ghComment: defaultGhComment(repoDir), curlPost: defaultCurlPost() },
+    });
+    const delivered = results.filter((r) => r.delivered).length;
+    process.stdout.write(`[scheduler] notifications: ${delivered}/${plan.notify.length} delivered\n`);
+  }
 
   if (!plan.toRun) {
     process.stdout.write(`[scheduler] nothing runnable this tick (${decisions.length} polled)\n`);
