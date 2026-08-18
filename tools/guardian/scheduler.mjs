@@ -28,6 +28,8 @@ import { discoverCapabilities } from './capabilities.mjs';
 import { quarantineArtifacts, readArtifact, readArtifactPair } from './artifacts.mjs';
 import { assessFixingEntry } from './plan-gate.mjs';
 import { auditQaVerdict } from './qa-verdict.mjs';
+import { canCreatePr } from './qa-gate.mjs';
+import { createPullRequest } from './pr-io.mjs';
 
 const DEFAULT_INTERVAL_MS = 60 * 1000;
 // Heartbeat cadence: renew the lock well within the lease so a live long run never looks stale.
@@ -280,6 +282,7 @@ async function tick(repoDir, config, logger) {
     invokeArgv = invocationArgvFor(repoDir, issue, plan.toRun, {
       dossierPath: path.join(guardianDirOf(repoDir), String(issue), 'dossier.json'),
       planPath: path.join(guardianDirOf(repoDir), String(issue), 'plan.json'),
+      runtimeMode: investigationMode,
     });
   }
 
@@ -327,6 +330,36 @@ async function tick(repoDir, config, logger) {
     }, { touch: false });
     if (!qaAudit.approved) logger.warn('qa.verdict_unapproved', { issue, reason: qaAudit.reason, exit_code: code });
     else logger.info('qa.verdict_passed', { issue, exit_code: code });
+
+    if (investigationMode === 'enforced' && qaAudit.approved) {
+      const currentBranch = afterRun.branch;
+      const qaGate = canCreatePr({
+        verdict: qaVerdict,
+        issue,
+        branch: currentBranch,
+        expectedPlanHash: afterRun.plan_hash ?? undefined,
+      });
+      if (!qaGate.allowed) {
+        logger.warn('pr.blocked_qa_gate', { issue, errors: qaGate.errors.length });
+      } else if (!currentBranch) {
+        logger.warn('pr.blocked_missing_branch', { issue });
+      } else {
+        const prUrl = createPullRequest({
+          repoDir,
+          head: currentBranch,
+          base: config.base_branch ?? 'dev',
+          title: plan.toRun.issueTitle ?? `修复 issue #${issue}`,
+          body: `## QA Guardian 自动验证\n\nIssue #${issue}\n\n独立 QA 结论：Overall Status: PASS\n\n请人工评审后合并。`,
+        });
+        writeState(guardianDirOf(repoDir), {
+          ...afterRun,
+          state: 'GATE_2_WAIT',
+          pr_url: prUrl,
+          last_phase: 'pr-opened',
+        }, { touch: false });
+        logger.info('pr.opened_gate2', { issue });
+      }
+    }
     logger.info('run.exit', { issue, exit_code: code });
   }
   catch (error) {

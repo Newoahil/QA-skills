@@ -235,6 +235,12 @@ The full link:
    summary + risk level). Then **dual-write the trace**: an issue comment (fix summary +
    `Overall Status:` + PR link + commit sha + risk level) and, when the project has `.qa/`,
    sediment the objective check case.
+
+   **Enforced runtime exception:** when the invocation includes `runtime_mode=enforced`, do not
+   run `gh pr create` yourself. Finish the fix and independent QA, write
+   `.qa/guardian/<n>/qa-verdict.json` with the exact `Overall Status`, issue, branch,
+   verification time, report hash, and evidence summary, then exit. The scheduler owns the
+   machine QA gate and PR creation.
 8. **Gate 2 (ALL issues, low-risk included)** — run the close-out triple and **exit**. A human
    reviews the PR. This is the mechanism proof that "there is no automatic path to trunk".
    - Normal path: the human merges the PR; `fixes #<n>` auto-closes the issue; next poll sees the
