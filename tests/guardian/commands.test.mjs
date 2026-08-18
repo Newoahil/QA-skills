@@ -8,8 +8,9 @@ import test from 'node:test';
 import { parseCommand, selectCommand, COMMANDS } from '../../tools/guardian/commands.mjs';
 import { STATES } from '../../tools/guardian/state.mjs';
 
-function comment(id, body) {
-  return { id, body };
+const TRUSTED = ['maintainer'];
+function comment(id, body, author = 'maintainer') {
+  return { id, body, author };
 }
 
 test('parseCommand matches a whole-line /guardian verb', () => {
@@ -44,7 +45,7 @@ test('parseCommand ignores an inline (non-line-start) mention', () => {
 test('selectCommand: wrong-state command is ignored (acceptance 23)', () => {
   const comments = [comment(1, '/guardian rework foo')];
   // rework only valid in GATE_2_WAIT; in GATE_1_WAIT it must be ignored
-  assert.equal(selectCommand(comments, STATES.GATE_1_WAIT), null);
+  assert.equal(selectCommand(comments, STATES.GATE_1_WAIT, null, TRUSTED), null);
 });
 
 test('selectCommand: latest eligible command wins', () => {
@@ -52,7 +53,7 @@ test('selectCommand: latest eligible command wins', () => {
     comment(1, '/guardian revise plan A'),
     comment(2, '/guardian approve'),
   ];
-  const chosen = selectCommand(comments, STATES.GATE_1_WAIT);
+  const chosen = selectCommand(comments, STATES.GATE_1_WAIT, null, TRUSTED);
   assert.equal(chosen.verb, 'approve');
   assert.equal(chosen.commentId, 2);
 });
@@ -63,7 +64,7 @@ test('selectCommand: idempotent — a consumed comment (and older) is not re-fir
     comment(2, 'ok thanks'),
   ];
   // comment 1 already consumed → nothing new to act on
-  assert.equal(selectCommand(comments, STATES.GATE_1_WAIT, 1), null);
+  assert.equal(selectCommand(comments, STATES.GATE_1_WAIT, 1, TRUSTED), null);
 });
 
 test('selectCommand: a NEW command after the consumed one is picked up', () => {
@@ -71,14 +72,14 @@ test('selectCommand: a NEW command after the consumed one is picked up', () => {
     comment(1, '/guardian approve'), // consumed
     comment(2, '/guardian reject'), // newer, eligible
   ];
-  const chosen = selectCommand(comments, STATES.GATE_1_WAIT, 1);
+  const chosen = selectCommand(comments, STATES.GATE_1_WAIT, 1, TRUSTED);
   assert.equal(chosen.verb, 'reject');
   assert.equal(chosen.commentId, 2);
 });
 
 test('selectCommand: data tail is never executed — returned as opaque string', () => {
   const comments = [comment(1, '/guardian revise `$(rm -rf /)` and <script>alert(1)</script>')];
-  const chosen = selectCommand(comments, STATES.GATE_1_WAIT);
+  const chosen = selectCommand(comments, STATES.GATE_1_WAIT, null, TRUSTED);
   assert.equal(chosen.verb, 'revise');
   // the malicious-looking text is preserved verbatim as data, not interpreted
   assert.match(chosen.data, /rm -rf|<script>/);
@@ -97,7 +98,7 @@ test('idempotent even when the consumed comment is ABSENT from the list (deleted
   // Consumed comment id=10 is no longer in the returned list. The remaining older comment
   // must NOT be re-fired just because the anchor position is gone.
   const comments = [comment(5, '/guardian approve')];
-  assert.equal(selectCommand(comments, STATES.GATE_1_WAIT, 10), null);
+  assert.equal(selectCommand(comments, STATES.GATE_1_WAIT, 10, TRUSTED), null);
 });
 
 test('numeric ids: a strictly-newer command after the consumed one fires; older does not', () => {
@@ -105,7 +106,7 @@ test('numeric ids: a strictly-newer command after the consumed one fires; older 
     comment(5, '/guardian approve'), // older than consumed 5? equal → excluded
     comment(9, '/guardian reject'), // newer than 5 → eligible
   ];
-  const chosen = selectCommand(comments, STATES.GATE_1_WAIT, 5);
+  const chosen = selectCommand(comments, STATES.GATE_1_WAIT, 5, TRUSTED);
   assert.equal(chosen.verb, 'reject');
   assert.equal(chosen.commentId, 9);
 });
@@ -113,13 +114,42 @@ test('numeric ids: a strictly-newer command after the consumed one fires; older 
 test('numeric ids: only-older-than-consumed commands yield null (no re-fire)', () => {
   const comments = [comment(3, '/guardian approve')];
   // consumed marker is 7; comment 3 is older → must not fire
-  assert.equal(selectCommand(comments, STATES.GATE_1_WAIT, 7), null);
+  assert.equal(selectCommand(comments, STATES.GATE_1_WAIT, 7, TRUSTED), null);
 });
 
 test('createdAt fallback orders when ids are non-numeric', () => {
-  const older = { id: 'url-a', body: '/guardian approve', createdAt: '2026-08-18T10:00:00Z' };
-  const newer = { id: 'url-b', body: '/guardian reject', createdAt: '2026-08-18T11:00:00Z' };
+  const older = { id: 'url-a', body: '/guardian approve', createdAt: '2026-08-18T10:00:00Z', author: 'maintainer' };
+  const newer = { id: 'url-b', body: '/guardian reject', createdAt: '2026-08-18T11:00:00Z', author: 'maintainer' };
   // consumed = older (present in list), so only `newer` is eligible
-  const chosen = selectCommand([older, newer], STATES.GATE_1_WAIT, 'url-a');
+  const chosen = selectCommand([older, newer], STATES.GATE_1_WAIT, 'url-a', TRUSTED);
   assert.equal(chosen.verb, 'reject');
+});
+
+// --- authorization boundary (security) ------------------------------------------------------
+
+test('fail-closed: empty/absent trustedAuthors → no command is eligible', () => {
+  const comments = [comment(1, '/guardian approve')];
+  assert.equal(selectCommand(comments, STATES.GATE_1_WAIT, null, []), null);
+  assert.equal(selectCommand(comments, STATES.GATE_1_WAIT), null);
+});
+
+test('a command from an UNTRUSTED author is ignored (forged/arbitrary comment)', () => {
+  const comments = [comment(1, '/guardian approve', 'attacker')];
+  assert.equal(selectCommand(comments, STATES.GATE_1_WAIT, null, TRUSTED), null);
+});
+
+test('author match is case-insensitive', () => {
+  const comments = [comment(1, '/guardian approve', 'MaintaineR')];
+  const chosen = selectCommand(comments, STATES.GATE_1_WAIT, null, TRUSTED);
+  assert.equal(chosen.verb, 'approve');
+});
+
+test('a trusted author overrides an earlier untrusted approve', () => {
+  const comments = [
+    comment(1, '/guardian approve', 'attacker'),
+    comment(2, '/guardian reject', 'maintainer'),
+  ];
+  const chosen = selectCommand(comments, STATES.GATE_1_WAIT, null, TRUSTED);
+  assert.equal(chosen.verb, 'reject');
+  assert.equal(chosen.commentId, 2);
 });

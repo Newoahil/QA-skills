@@ -25,12 +25,12 @@ export const MAX_FIX_ROUNDS = 2;
 
 /**
  * @param {object|null} record  state record from readState(), or null if none on disk
- * @param {object} gh           { closed:boolean, comments:Array<{id,body,createdAt}> }
- * @param {object} opts         { leaseMs:number, now?:number }
+ * @param {object} gh           { closed:boolean, comments:Array<{id,body,createdAt,author}> }
+ * @param {object} opts         { leaseMs:number, now?:number, trustedAuthors?:string[] }
  * @returns {object} action descriptor
  */
 export function routeIssue(record, gh, opts) {
-  const { leaseMs, now = Date.now() } = opts;
+  const { leaseMs, now = Date.now(), trustedAuthors = [] } = opts;
   const comments = gh?.comments ?? [];
 
   // 1. No record / DISCOVERED → brand-new issue: start the pipeline.
@@ -48,7 +48,7 @@ export function routeIssue(record, gh, opts) {
   // 3. HANDED_BACK is terminal (§11.3): default permanent skip, UNLESS a /guardian retry
   //    command appears — then clear fix_rounds and re-enter from INVESTIGATING.
   if (state === STATES.HANDED_BACK) {
-    const cmd = selectCommand(comments, STATES.HANDED_BACK, record.last_consumed_comment_id);
+    const cmd = selectCommand(comments, STATES.HANDED_BACK, record.last_consumed_comment_id, trustedAuthors);
     if (cmd && cmd.verb === 'retry') {
       return {
         action: 'RESUME',
@@ -63,7 +63,7 @@ export function routeIssue(record, gh, opts) {
 
   // 4. GATE_1_WAIT (HIGH only) → consume approve/revise/reject; otherwise keep waiting.
   if (state === STATES.GATE_1_WAIT) {
-    const cmd = selectCommand(comments, STATES.GATE_1_WAIT, record.last_consumed_comment_id);
+    const cmd = selectCommand(comments, STATES.GATE_1_WAIT, record.last_consumed_comment_id, trustedAuthors);
     if (!cmd) return { action: 'SKIP', reason: 'gate1-waiting' };
     if (cmd.verb === 'reject') {
       return {
@@ -83,7 +83,7 @@ export function routeIssue(record, gh, opts) {
     if (gh?.closed) {
       return { action: 'DONE', reason: 'merged-closed' };
     }
-    const cmd = selectCommand(comments, STATES.GATE_2_WAIT, record.last_consumed_comment_id);
+    const cmd = selectCommand(comments, STATES.GATE_2_WAIT, record.last_consumed_comment_id, trustedAuthors);
     if (cmd && cmd.verb === 'rework') {
       // rework re-enters FIXING; fix_rounds keeps counting and may still exceed the cap later.
       return { action: 'RESUME', reason: 'rework', toState: STATES.FIXING, command: cmd };

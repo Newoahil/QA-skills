@@ -37,14 +37,22 @@ export function parseCommand(body) {
   return null;
 }
 
-// A comment record is expected as { id, body, createdAt } (mirrors `gh issue view --json
-// comments`). Order is preserved as given; callers pass them oldest→newest.
+// A comment record is expected as { id, body, createdAt, author } (mirrors `gh issue view
+// --json comments`, where author is the login string). Order is preserved as given; callers
+// pass them oldest→newest.
 //
 // selectCommand picks the command to act on THIS poll:
+//   - only commands from a TRUSTED author are eligible (authorization boundary, security);
 //   - only commands valid in `currentState` are eligible (wrong-state commands ignored, §11.2);
 //   - only the LATEST eligible command counts (later humans override earlier ones);
 //   - a comment already consumed — the last-consumed one, and anything not strictly newer —
 //     is never re-fired (idempotent, §11.2).
+//
+// AUTHORIZATION (fail-closed): `trustedAuthors` is the whitelist of GitHub logins allowed to
+// drive `/guardian` commands. A command from any other author — including a forged/replayed
+// Feishu callback comment or an arbitrary repo commenter — is IGNORED. If `trustedAuthors` is
+// empty or not provided, NO command is eligible (fail-closed): an unconfigured whitelist must
+// never let an untrusted comment approve a HIGH-risk plan. Author match is case-insensitive.
 //
 // Idempotency must survive a comment list where the consumed comment is NOT present at a
 // known position (pagination, reorder, or a deleted comment). We therefore do NOT rely on
@@ -53,8 +61,16 @@ export function parseCommand(body) {
 // (GitHub comment ids), then ISO createdAt, and finally list position as a last resort.
 //
 // Returns { verb, data, commentId, target } or null.
-export function selectCommand(comments, currentState, lastConsumedCommentId = null) {
+export function selectCommand(comments, currentState, lastConsumedCommentId = null, trustedAuthors = []) {
   if (!Array.isArray(comments)) return null;
+
+  // Fail-closed: an empty/absent whitelist means no comment is authorized to command.
+  const trusted = new Set(
+    (Array.isArray(trustedAuthors) ? trustedAuthors : [])
+      .filter((a) => typeof a === 'string' && a.length > 0)
+      .map((a) => a.toLowerCase()),
+  );
+  if (trusted.size === 0) return null;
 
   const consumedIdx =
     lastConsumedCommentId == null
@@ -64,6 +80,9 @@ export function selectCommand(comments, currentState, lastConsumedCommentId = nu
   let chosen = null;
   for (let i = 0; i < comments.length; i += 1) {
     const c = comments[i];
+    // Authorization: only trusted authors may command (case-insensitive login match).
+    const author = typeof c.author === 'string' ? c.author.toLowerCase() : '';
+    if (!trusted.has(author)) continue;
     // Never re-consume the exact comment we already acted on.
     if (lastConsumedCommentId != null && String(c.id) === String(lastConsumedCommentId)) continue;
     // Skip anything not strictly newer than the consumed marker (position-independent).

@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { invocationFor, RUNTIME_GUARDRAILS } from '../../tools/guardian/poll.mjs';
+import { invocationFor, invocationArgvFor, RUNTIME_GUARDRAILS } from '../../tools/guardian/poll.mjs';
 import { STATES } from '../../tools/guardian/state.mjs';
 
 test('RUNTIME_GUARDRAILS expose stable scheduler constraint ids', () => {
@@ -46,4 +46,17 @@ test('invocationFor preserves human gate command tail as data', () => {
 
 test('invocationFor returns null for non-runnable decisions', () => {
   assert.equal(invocationFor('D:\\repo', 191, { action: 'SKIP' }), null);
+});
+
+test('invocationArgvFor returns a shell-free argv array (no shell injection surface)', () => {
+  const argv = invocationArgvFor('D:\\repo', 191, { action: 'RESUME', toState: STATES.FIXING });
+  assert.equal(argv.cmd, 'opencode');
+  assert.deepEqual(argv.args.slice(0, 5), ['run', '--agent', 'qa-guardian', '--dir', 'D:\\repo']);
+  // The prompt is a single argv element — a shell can never re-tokenize it.
+  assert.equal(typeof argv.args[5], 'string');
+  assert.match(argv.args[5], /Resume QA Guardian for issue #191/);
+});
+
+test('invocationArgvFor returns null for non-runnable decisions', () => {
+  assert.equal(invocationArgvFor('D:\\repo', 191, { action: 'SKIP' }), null);
 });
