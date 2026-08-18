@@ -9,6 +9,7 @@ This file summarizes all project changes, decisions, requirements, and bug recor
 <!-- One-line core conclusion per record. Format: [id] #topic1 #topic2 — description (date) -->
 <!-- add new conclusions here -->
 - [bug-1a88afaf58fe4f13859d209b49b49027] #qa-guardian #deployment #docker — docker-compose.yml 用 ports 8787:8787 硬绑宿主端口，在共享 Dokploy 主机上 8787 已被占用导致 "port is already allocated" 启动失败；改为仅 expose 8787、由 Dokploy Domain 反代路由到容器端口，部署不再抢宿主端口。 (2026-08-18)
+- [bug-9df5a75c67504f4fac0d315dd7cef2dd] #qa-guardian #windows #launcher — scheduler-start.bat 的 if 分支执行 PowerShell 后没有 goto done，cmd 继续落入后续 start_target/start_init 标签，重复启动脚本并将参数/文本当命令，导致大量“不是内部或外部命令”错误；改为显式 goto 分支收尾后 cmd 冒烟只执行一次。 (2026-08-18)
 - [change-39d97b0a4c854e3893e13ba9e9a5859d] #qa-guardian #documentation #deployment — 修复 review-work 文档缺口——README 更正 scheduler 已交付状态+补运行段+config 键表+作者授权安全项，验收用例新增 UC-H..UC-K（授权/N=1/通知/飞书回调）并把测试数更新到 128，设计文档 §11B.5-a 补记飞书通道/回调/command_authors/FR-21 接线为已交付范围，文档与代码对齐。 (2026-08-18)
 - [change-5abf095ac5524443a5d7a9038a01a1e8] #qa-guardian #security #concurrency — 修复 review-work 发现的阻塞项——命令作者授权 fail-closed、N=1 原子锁+心跳续租、spawn 去 shell、回调 timestamp/去重/体积硬化，消除“任意评论可批准 HIGH 方案”授权漏洞与租约竞态，121/121 测试通过。 (2026-08-18)
 - [change-c4f7796c3fa940589c4c90921c26455c] #qa-guardian #notification #deployment — 修复 review-work 阻塞项——新增 notify-io.mjs 把通知投递（gh 评论+curl webhook，幂等持久化 last_notified_state）真正接进 scheduler tick 满足 FR-21，并补 DEPLOY.md + bootstrap 指引让常驻 scheduler 与飞书回调可被新用户部署，128/128 测试通过。 (2026-08-18)
@@ -68,6 +69,7 @@ This file summarizes all project changes, decisions, requirements, and bug recor
 |----|------|-------|----------|------|
 <!-- add new records here -->
 | bug-1a88afaf58fe4f13859d209b49b49027 | 2026-08-18 | 飞书回调服务 Dokploy 部署失败——compose 硬绑宿主端口 8787 冲突 | high | [link](bugs/2026-08-18-bug-1a88afaf58fe4f13859d209b49b49027-dokploy-port-collision.md) |
+| bug-9df5a75c67504f4fac0d315dd7cef2dd | 2026-08-18 | Windows scheduler-start.bat fall-through 重复执行导致大量命令未找到错误 | high | [link](bugs/2026-08-18-bug-9df5a75c67504f4fac0d315dd7cef2dd-bat-fallthrough.md) |
 
 ## Usage
 
@@ -88,7 +90,9 @@ This file summarizes all project changes, decisions, requirements, and bug recor
 - deployment: bug-1a88afaf58fe4f13859d209b49b49027, change-39d97b0a4c854e3893e13ba9e9a5859d, change-c4f7796c3fa940589c4c90921c26455c, change-c783251f5b134af9b8bd7e15628fc7c6, change-d4732a411e254c618517828d62e5ed70
 - docker: bug-1a88afaf58fe4f13859d209b49b49027
 - documentation: change-39d97b0a4c854e3893e13ba9e9a5859d
+- launcher: bug-9df5a75c67504f4fac0d315dd7cef2dd
 - notification: change-c4f7796c3fa940589c4c90921c26455c
-- qa-guardian: bug-1a88afaf58fe4f13859d209b49b49027, change-39d97b0a4c854e3893e13ba9e9a5859d, change-5abf095ac5524443a5d7a9038a01a1e8, change-c4f7796c3fa940589c4c90921c26455c, change-c783251f5b134af9b8bd7e15628fc7c6, change-d4732a411e254c618517828d62e5ed70
+- qa-guardian: bug-1a88afaf58fe4f13859d209b49b49027, bug-9df5a75c67504f4fac0d315dd7cef2dd, change-39d97b0a4c854e3893e13ba9e9a5859d, change-5abf095ac5524443a5d7a9038a01a1e8, change-c4f7796c3fa940589c4c90921c26455c, change-c783251f5b134af9b8bd7e15628fc7c6, change-d4732a411e254c618517828d62e5ed70
 - security: change-5abf095ac5524443a5d7a9038a01a1e8
 - usability: change-c783251f5b134af9b8bd7e15628fc7c6, change-d4732a411e254c618517828d62e5ed70
+- windows: bug-9df5a75c67504f4fac0d315dd7cef2dd
