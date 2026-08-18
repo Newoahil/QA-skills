@@ -58,6 +58,16 @@ test('invocationArgvFor returns a shell-free argv array (no shell injection surf
   assert.match(argv.args[5], /Resume QA Guardian for issue #191/);
 });
 
+test('validated dossier and plan paths are passed to the fixer prompt', () => {
+  const argv = invocationArgvFor('D:\\repo', 191, { action: 'RESUME', toState: STATES.FIXING }, {
+    dossierPath: 'D:\\repo\\.qa\\guardian\\191\\dossier.json',
+    planPath: 'D:\\repo\\.qa\\guardian\\191\\plan.json',
+  });
+  assert.match(argv.args[5], /validated dossier/);
+  assert.match(argv.args[5], /dossier\.json/);
+  assert.match(argv.args[5], /plan\.json/);
+});
+
 test('invocationArgvFor returns null for non-runnable decisions', () => {
   assert.equal(invocationArgvFor('D:\\repo', 191, { action: 'SKIP' }), null);
 });
