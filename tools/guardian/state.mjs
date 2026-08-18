@@ -7,6 +7,7 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import { readJsonFile } from './runtime-io.mjs';
 
 // Canonical state set (§11 state machine). "active" states carry a heartbeat and are
 // lease-checked for STALLED; "waiting"/"terminal" states do not occupy the concurrency
@@ -93,8 +94,7 @@ function statePath(guardianDir, issueNumber) {
 export function readState(guardianDir, issueNumber) {
   const file = statePath(guardianDir, issueNumber);
   if (!existsSync(file)) return null;
-  const raw = readFileSync(file, 'utf8');
-  return normalizeState(JSON.parse(raw), issueNumber);
+  return normalizeState(readJsonFile(file), issueNumber);
 }
 
 // Write a state record atomically-ish (write then rename would be ideal; kept simple for

@@ -1,7 +1,8 @@
 // QA Guardian combined local runtime: one scheduler loop + one Feishu WS client.
 
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import path from 'node:path';
+import { createLogger, printStartupBanner, readJsonFile } from './runtime-io.mjs';
 
 import { loadSecrets, requireSecrets } from './secrets.mjs';
 import { postIssueComment } from './github-comment.mjs';
@@ -11,7 +12,7 @@ import { resolveRepoDir, runScheduler } from './scheduler.mjs';
 function readConfig(repoDir) {
   const file = path.join(repoDir, '.qa', 'guardian', 'config.json');
   if (!existsSync(file)) throw new Error(`missing guardian config: ${file}`);
-  return JSON.parse(readFileSync(file, 'utf8'));
+  return readJsonFile(file);
 }
 
 function wsEnabled(env, secrets) {
@@ -23,12 +24,16 @@ function wsEnabled(env, secrets) {
 export async function startGuardianRuntime(options = {}) {
   const repoDir = options.repoDir ?? resolveRepoDir(options.argv, options.env);
   const env = options.env ?? process.env;
+  const logger = options.logger ?? createLogger({ component: 'runtime' });
   const config = options.config ?? readConfig(repoDir);
   const secrets = options.secrets ?? loadSecrets({ repoDir, env });
   const controller = options.controller ?? new AbortController();
   const seen = options.seen ?? new Set();
   const postComment = options.postComment ?? ((repo, issue, body) =>
     postIssueComment({ repo, issue, body, token: requireSecrets(secrets, ['github_token']).github_token }));
+
+  printStartupBanner({ env });
+  logger.info('startup.begin', { repo_dir: repoDir });
 
   let wsRuntime = null;
   if (wsEnabled(env, secrets)) {
@@ -42,18 +47,20 @@ export async function startGuardianRuntime(options = {}) {
       postComment,
     });
     wsRuntime.start();
-    process.stdout.write('[runtime] Feishu WebSocket started\n');
+    logger.info('ws.started', { enabled: true });
   } else {
-    process.stdout.write('[runtime] Feishu WebSocket disabled (set FEISHU_APP_ID + FEISHU_APP_SECRET to enable)\n');
+    logger.info('ws.disabled', { enabled: false });
   }
 
   const schedulerRunner = options.runScheduler ?? runScheduler;
   const schedulerPromise = schedulerRunner({ repoDir, config, signal: controller.signal });
+  logger.info('scheduler.starting', { repo_dir: repoDir });
   const shutdown = async () => {
     controller.abort();
     await wsRuntime?.close?.();
     await schedulerPromise;
   };
+  logger.info('startup.ready', { ws_enabled: Boolean(wsRuntime) });
   return { repoDir, controller, wsRuntime, schedulerPromise, shutdown };
 }
 
@@ -68,7 +75,7 @@ if (process.argv[1]?.endsWith('guardian-runtime.mjs')) {
   for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, stop);
   startGuardianRuntime({ controller }).then((started) => { runtime = started; }).catch((error) => {
     const message = error instanceof Error ? error.message : 'startup failed';
-    process.stderr.write(`[runtime] ${message}\n`);
+    createLogger({ component: 'runtime' }).error('startup.failed', { error_message: message });
     process.exit(1);
   });
 }

@@ -12,6 +12,7 @@ import http from 'node:http';
 import { loadSecrets, requireSecrets } from './secrets.mjs';
 import { handleCallback } from './callback-handler.mjs';
 import { postIssueComment } from './github-comment.mjs';
+import { createLogger } from './runtime-io.mjs';
 
 const PORT = Number(process.env.PORT ?? 8787);
 const CALLBACK_PATH = process.env.CALLBACK_PATH ?? '/feishu/callback';
@@ -51,6 +52,7 @@ function readBody(req) {
 }
 
 export function createServer() {
+  const logger = createLogger({ component: 'callback-server' });
   const secrets = requireSecrets(loadSecrets(), [
     'feishu_verification_token',
     'feishu_encrypt_key',
@@ -64,24 +66,29 @@ export function createServer() {
   return http.createServer(async (req, res) => {
     try {
       if (req.method === 'GET' && req.url === '/healthz') {
+        logger.info('request.healthz');
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ ok: true }));
         return;
       }
       if (req.method !== 'POST' || (req.url ?? '').split('?')[0] !== CALLBACK_PATH) {
+        logger.warn('request.not_found', { method: req.method, path: (req.url ?? '').split('?')[0] });
         res.writeHead(404, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'not-found' }));
         return;
       }
 
       const rawBody = await readBody(req);
+      logger.info('request.callback_received', { content_length: rawBody.length });
       const headers = lowerHeaders(req.headers);
       const result = await handleCallback({ rawBody, headers, secrets, postComment, seen });
       res.writeHead(result.status, result.headers);
       res.end(result.body);
+      logger.info('request.handled', { status: result.status });
     } catch (e) {
       // no-excuse-ok: catch — top-level HTTP boundary, must never leak stack or crash the loop
       if (e instanceof BodyTooLargeError) {
+        logger.warn('request.rejected_payload_too_large');
         res.writeHead(413, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'payload-too-large' }));
         req.destroy();
@@ -89,6 +96,7 @@ export function createServer() {
       }
       res.writeHead(500, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'internal' }));
+      logger.error('request.internal_error', { error_message: e instanceof Error ? e.message : 'unknown' });
     }
   });
 }
@@ -101,7 +109,7 @@ const HOST = process.env.HOST ?? '0.0.0.0';
 if (process.argv[1] && process.argv[1].endsWith('callback-server.mjs')) {
   const server = createServer();
   server.listen(PORT, HOST, () => {
-    process.stdout.write(`qa-guardian feishu callback listening on ${HOST}:${PORT}${CALLBACK_PATH}\n`);
+    createLogger({ component: 'callback-server' }).info('server.listening', { host: HOST, port: PORT, path: CALLBACK_PATH });
   });
   for (const sig of ['SIGINT', 'SIGTERM']) {
     process.on(sig, () => server.close(() => process.exit(0)));

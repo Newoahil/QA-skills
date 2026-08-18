@@ -13,8 +13,9 @@
 //   {"issue":42,"action":"START","toState":"INVESTIGATING","invoke":"opencode run --agent qa-guardian ..."}
 
 import path from 'node:path';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
+import { readJsonFile } from './runtime-io.mjs';
 
 import { readState, STATES } from './state.mjs';
 import { routeIssue } from './state-router.mjs';
@@ -23,7 +24,7 @@ import { routeIssue } from './state-router.mjs';
 export function readGuardianConfig(repoDir) {
   const file = path.join(repoDir, '.qa', 'guardian', 'config.json');
   if (!existsSync(file)) return {};
-  return JSON.parse(readFileSync(file, 'utf8'));
+  return readJsonFile(file);
 }
 
 export const DEFAULT_LEASE_MS = 30 * 60 * 1000; // 30 min (§11B.4), configurable

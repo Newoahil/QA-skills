@@ -4,6 +4,7 @@
 
 import { parseCardAction } from './feishu-callback.mjs';
 import { executeNormalizedAction } from './action-executor.mjs';
+import { createLogger } from './runtime-io.mjs';
 
 export const CARD_ACTION_EVENT = 'card.action.trigger';
 
@@ -23,7 +24,7 @@ function actionResultText(result) {
  */
 export async function createFeishuWsRuntime(args) {
   const sdk = args.sdk ?? await import('@larksuiteoapi/node-sdk');
-  const logger = args.logger ?? console;
+  const logger = { info() {}, error() {}, ...(args.logger ?? createLogger({ component: 'feishu-ws' })) };
   const wsClient = new sdk.WSClient({
     appId: args.appId,
     appSecret: args.appSecret,
@@ -35,6 +36,7 @@ export async function createFeishuWsRuntime(args) {
     [CARD_ACTION_EVENT]: async (data) => {
       try {
         const cmd = parseCardAction(data);
+        logger.info('action.received', { issue: Number(data?.action?.value?.issue), has_event_id: Boolean(eventIdOf(data)) });
         const result = await executeNormalizedAction({
           eventId: eventIdOf(data),
           cmd,
@@ -42,10 +44,11 @@ export async function createFeishuWsRuntime(args) {
           seen: args.seen,
           postComment: args.postComment,
         });
+        logger.info(result.deduped ? 'action.deduped' : 'action.accepted', { issue: cmd.issue, verb: cmd.verb });
         return { toast: { type: 'success', content: actionResultText(result) } };
       } catch (error) {
         const message = error instanceof Error ? error.message : '操作失败';
-        logger.error?.(`[feishu-ws] card action rejected: ${message}`);
+        logger.error?.('action.rejected', { error_message: message });
         return { toast: { type: 'fail', content: '操作未提交，请查看 scheduler 日志' } };
       }
     },

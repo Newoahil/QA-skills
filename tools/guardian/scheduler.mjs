@@ -10,13 +10,15 @@
 // notify_channel? }.
 
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import path from 'node:path';
+import { readJsonFile } from './runtime-io.mjs';
 
 import { pollIssue, defaultGhReader, DEFAULT_LEASE_MS } from './poll.mjs';
 import { planTick } from './scheduler-core.mjs';
 import { acquireLock, renewLock, releaseLock } from './lock.mjs';
 import { deliverNotifications, defaultGhComment, defaultCurlPost } from './notify-io.mjs';
+import { createLogger } from './runtime-io.mjs';
 
 const DEFAULT_INTERVAL_MS = 60 * 1000;
 // Heartbeat cadence: renew the lock well within the lease so a live long run never looks stale.
@@ -25,7 +27,7 @@ const HEARTBEAT_MS = 30 * 1000;
 function readConfig(repoDir) {
   const file = path.join(repoDir, '.qa', 'guardian', 'config.json');
   if (!existsSync(file)) return {};
-  return JSON.parse(readFileSync(file, 'utf8'));
+  return readJsonFile(file);
 }
 
 function listOpenIssues(repoDir) {
@@ -70,7 +72,7 @@ function runInvocation(repoDir, invokeArgv, lockFile, handle, leaseMs) {
   });
 }
 
-async function tick(repoDir, config) {
+async function tick(repoDir, config, logger) {
   const leaseMs = Number(config.lease_ms ?? DEFAULT_LEASE_MS);
   const now = Date.now();
   const issues = listOpenIssues(repoDir);
@@ -98,17 +100,17 @@ async function tick(repoDir, config) {
       io: { ghComment: defaultGhComment(repoDir), curlPost: defaultCurlPost() },
     });
     const delivered = results.filter((r) => r.delivered).length;
-    process.stdout.write(`[scheduler] notifications: ${delivered}/${plan.notify.length} delivered\n`);
+    logger.info('notify.summary', { attempted: plan.notify.length, delivered });
   }
 
   if (!plan.toRun) {
-    process.stdout.write(`[scheduler] nothing runnable this tick (${decisions.length} polled)\n`);
+    logger.info('tick.idle', { polled: decisions.length });
     return;
   }
 
   const { issue, invokeArgv, action, toState } = plan.toRun;
   if (!invokeArgv) {
-    process.stdout.write(`[scheduler] issue #${issue} ${action}→${toState} has no invocation; skipping\n`);
+    logger.warn('run.skipped_no_invocation', { issue, action, to_state: toState });
     return;
   }
 
@@ -118,14 +120,14 @@ async function tick(repoDir, config) {
     pid: process.pid, leaseMs, now, dir: guardianDirOf(repoDir),
   });
   if (!handle) {
-    process.stdout.write(`[scheduler] lock held by a live run; issue #${issue} deferred\n`);
+    logger.info('run.deferred_lock_live', { issue, action, to_state: toState });
     return;
   }
 
-  process.stdout.write(`[scheduler] running issue #${issue} (${action}→${toState})\n`);
+  logger.info('run.begin', { issue, action, to_state: toState });
   try {
     const code = await runInvocation(repoDir, invokeArgv, lockFile, handle, leaseMs);
-    process.stdout.write(`[scheduler] issue #${issue} run exited ${code}\n`);
+    logger.info('run.exit', { issue, exit_code: code });
   } finally {
     releaseLock(lockFile, handle);
   }
@@ -156,15 +158,17 @@ export function assertTargetRepoConfigured(repoDir) {
 export async function runScheduler({ repoDir, config = readConfig(repoDir), signal } = {}) {
   if (!repoDir) throw new Error('scheduler requires repoDir');
   const interval = Number(config.poll_interval_ms ?? DEFAULT_INTERVAL_MS);
+  const logger = createLogger({ component: 'scheduler' });
 
-  process.stdout.write(`[scheduler] watching ${repoDir} every ${interval}ms (N=1)\n`);
+  logger.info('watch.begin', { repo_dir: repoDir, interval_ms: interval, concurrency: 1 });
   while (!signal?.aborted) {
     try {
-      await tick(repoDir, config);
+      logger.info('tick.begin');
+      await tick(repoDir, config, logger);
     } catch (e) {
       // no-excuse-ok: catch — resident loop must survive a transient gh/network error and retry
       const msg = e instanceof Error ? e.message : 'unknown';
-      process.stderr.write(`[scheduler] tick error: ${msg}\n`);
+      logger.error('tick.error', { error_message: msg });
     }
     await new Promise((resolve) => {
       const timer = setTimeout(resolve, interval);

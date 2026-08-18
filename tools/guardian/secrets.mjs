@@ -8,9 +8,10 @@
 // The loader returns only the requested keys and never logs values. Callers decide which
 // secrets are required and fail fast (loud, no value echoed) when one is missing.
 
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { readJsonFile } from './runtime-io.mjs';
 
 // Canonical secret keys → their env var names. One name = one concept.
 export const SECRET_ENV = Object.freeze({
@@ -32,8 +33,7 @@ function readJsonFileSecrets(repoDir) {
 
   for (const file of candidates) {
     if (!existsSync(file)) continue;
-    const raw = readFileSync(file, 'utf8');
-    const parsed = JSON.parse(raw);
+    const parsed = readJsonFile(file);
     if (parsed && typeof parsed === 'object') return parsed;
   }
   return {};

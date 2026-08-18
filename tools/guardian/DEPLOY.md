@@ -59,6 +59,17 @@ npm install
 
 启动脚本现在启动的是**单进程组合 runtime**：一个 scheduler + 一个 Feishu WebSocket；不会再分别启动两个 scheduler。未设置 `FEISHU_APP_ID`/`FEISHU_APP_SECRET` 时退化为 scheduler-only。
 
+启动时会打印 DEVer 标识，并把过程日志按 JSONL 写到 stderr，便于 Dokploy/终端收集：
+
+```text
+<> QA Guardian / DEVer
+{"ts":"...","level":"info","component":"runtime","event":"startup.begin",...}
+{"ts":"...","level":"info","component":"runtime","event":"ws.started",...}
+{"ts":"...","level":"info","component":"scheduler","event":"watch.begin",...}
+```
+
+日志只打印阶段、issue、状态、耗时/计数和错误摘要，不打印 App Secret、PAT、签名、原始 issue body 或完整 revise/rework 文本。`poll.mjs` 的 stdout 仍保留单行 JSON 决策输出，避免破坏脚本管道。可用 `QA_GUARDIAN_BANNER_MODE=ascii|unicode` 控制 banner；Windows 默认 ASCII，避免控制台编码问题。
+
 首次启用本机长连接前，在 QA-skills 根目录安装官方 SDK：
 
 ```powershell
