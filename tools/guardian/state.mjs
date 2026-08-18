@@ -112,6 +112,7 @@ export function newState(issueNumber, now = new Date().toISOString()) {
     qa_verdict_path: null,
     qa_verdict_status: null,
     qa_verdict_hash: null,
+    last_verdict_comment_hash: null, // idempotent Supervisor verdict-comment (§3A.4)
   };
 }
 

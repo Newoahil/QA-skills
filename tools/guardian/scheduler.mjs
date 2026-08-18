@@ -30,6 +30,7 @@ import { assessFixingEntry } from './plan-gate.mjs';
 import { auditQaVerdict } from './qa-verdict.mjs';
 import { canCreatePr } from './qa-gate.mjs';
 import { createPullRequest } from './pr-io.mjs';
+import { buildVerdictComment, markerForApproval, hashVerdictComment } from './verdict-comment.mjs';
 
 const DEFAULT_INTERVAL_MS = 60 * 1000;
 // Heartbeat cadence: renew the lock well within the lease so a live long run never looks stale.
@@ -331,6 +332,20 @@ async function tick(repoDir, config, logger) {
     if (!qaAudit.approved) logger.warn('qa.verdict_unapproved', { issue, reason: qaAudit.reason, exit_code: code });
     else logger.info('qa.verdict_passed', { issue, exit_code: code });
 
+    // Supervisor writes the authoritative [QA_FAILED] comment ONLY when an actual verdict artifact
+    // exists and it did not approve (FAIL/BLOCKED/NHR). A missing verdict means the run stopped
+    // mid-pipeline (e.g. at a gate) and is NOT a QA failure — do not post then. Enforced mode only.
+    if (investigationMode === 'enforced' && qaVerdict && !qaAudit.approved) {
+      writeVerdictComment(guardianDirOf(repoDir), issue, {
+        approved: false,
+        status: qaVerdict?.status ?? null,
+        branch: afterRun.branch ?? null,
+        reason: qaAudit.reason,
+        reportHash: qaVerdict?.report_hash ?? null,
+        attempt: afterRun.fix_rounds ?? 1,
+      }, { ghComment: defaultGhComment(repoDir), logger });
+    }
+
     if (investigationMode === 'enforced' && qaAudit.approved) {
       const currentBranch = afterRun.branch;
       const qaGate = canCreatePr({
@@ -358,6 +373,15 @@ async function tick(repoDir, config, logger) {
           last_phase: 'pr-opened',
         }, { touch: false });
         logger.info('pr.opened_gate2', { issue });
+        // Supervisor writes the authoritative [QA_VERIFIED] verification comment (§3A).
+        writeVerdictComment(guardianDirOf(repoDir), issue, {
+          approved: true,
+          status: qaVerdict?.status ?? 'PASS',
+          branch: currentBranch,
+          prUrl,
+          reportHash: qaVerdict?.report_hash ?? null,
+          attempt: afterRun.fix_rounds ?? 1,
+        }, { ghComment: defaultGhComment(repoDir), logger });
       }
     }
     logger.info('run.exit', { issue, exit_code: code });
@@ -368,6 +392,46 @@ async function tick(repoDir, config, logger) {
   }
   } finally {
     releaseLock(lockFile, handle);
+  }
+}
+
+// Supervisor is the SOLE writer of the [QA_VERIFIED]/[QA_FAILED] verdict comment (§3, §3A).
+// Idempotent per last_verdict_comment_hash: the same comment is never posted twice. Best-effort —
+// a gh delivery failure is logged and swallowed so the resident loop survives (like notify-io).
+// Side effects (ghComment/readState/writeState) are injected so this is unit-testable without gh.
+export function writeVerdictComment(guardianDir, issue, params, deps) {
+  const rs = deps?.readState ?? readState;
+  const ws = deps?.writeState ?? writeState;
+  const ghComment = deps.ghComment;
+  const logger = deps.logger;
+  const marker = markerForApproval(params.approved);
+  const body = buildVerdictComment({
+    marker,
+    issue,
+    status: params.status ?? null,
+    branch: params.branch ?? null,
+    prUrl: params.prUrl ?? null,
+    runId: params.runId ?? null,
+    attempt: Number.isInteger(params.attempt) ? params.attempt : 1,
+    reportHash: params.reportHash ?? null,
+    reason: params.reason ?? null,
+    ...(params.verifiedAt ? { verifiedAt: params.verifiedAt } : {}),
+  });
+  const hash = hashVerdictComment(body);
+  const record = rs(guardianDir, issue);
+  if (record && record.last_verdict_comment_hash === hash) {
+    return { delivered: false, skipped: true, marker };
+  }
+  try {
+    ghComment(issue, body);
+    const fresh = rs(guardianDir, issue) ?? record ?? { issue };
+    ws(guardianDir, { ...fresh, last_verdict_comment_hash: hash }, { touch: false });
+    logger?.info('verdict.comment_posted', { issue, marker });
+    return { delivered: true, marker };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : 'unknown';
+    logger?.warn('verdict.comment_failed', { issue, marker, error_message: msg });
+    return { delivered: false, error: msg, marker };
   }
 }
 
