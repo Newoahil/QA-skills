@@ -8,6 +8,7 @@ This file summarizes all project changes, decisions, requirements, and bug recor
 
 <!-- One-line core conclusion per record. Format: [id] #topic1 #topic2 — description (date) -->
 <!-- add new conclusions here -->
+- [bug-19e5ffff30db46ccbca9f8ca73551ad1] #qa-guardian #security #runtime — Phase 11 发现生产镜像可能包含本地 secrets、unattended 默认 legacy 绕过 plan gate、stale lock takeover 非原子和 non-idempotent STALLED rerun 风险；本批已加 .dockerignore/env-only production loader、enforced 默认、原子 stale-lock takeover 和 stall guard，仍待 QA machine enforcement/timeout/state persistence。 ()
 - [bug-1a88afaf58fe4f13859d209b49b49027] #qa-guardian #deployment #docker — docker-compose.yml 用 ports 8787:8787 硬绑宿主端口，在共享 Dokploy 主机上 8787 已被占用导致 "port is already allocated" 启动失败；改为仅 expose 8787、由 Dokploy Domain 反代路由到容器端口，部署不再抢宿主端口。 (2026-08-18)
 - [bug-541a9d6211594221a5ceb08950e80881] #qa-guardian #windows #encoding — Windows bat 的分支 fall-through 会重复调用 PowerShell 并产生大量命令未找到错误；无 BOM UTF-8 的 PowerShell 中文脚本在 PS5.1 解析失败，纯 BOM/控制台编码不一致又导致中文乱码；改为显式 goto 分支、PowerShell 脚本 UTF-8 BOM、bat chcp 65001，cmd 冒烟只执行一次且中文引导可读。 (2026-08-18)
 - [bug-9df5a75c67504f4fac0d315dd7cef2dd] #qa-guardian #windows #launcher — scheduler-start.bat 的 if 分支执行 PowerShell 后没有 goto done，cmd 继续落入后续 start_target/start_init 标签，重复启动脚本并将参数/文本当命令，导致大量“不是内部或外部命令”错误；改为显式 goto 分支收尾后 cmd 冒烟只执行一次。 (2026-08-18)
@@ -104,6 +105,7 @@ This file summarizes all project changes, decisions, requirements, and bug recor
 | ID | Date | Title | Severity | Link |
 |----|------|-------|----------|------|
 <!-- add new records here -->
+| bug-19e5ffff30db46ccbca9f8ca73551ad1 |  |  | high | [link](bugs/2026-08-18-bug-19e5ffff30db46ccbca9f8ca73551ad1-security-review-blockers.md) |
 | bug-1a88afaf58fe4f13859d209b49b49027 | 2026-08-18 | 飞书回调服务 Dokploy 部署失败——compose 硬绑宿主端口 8787 冲突 | high | [link](bugs/2026-08-18-bug-1a88afaf58fe4f13859d209b49b49027-dokploy-port-collision.md) |
 | bug-541a9d6211594221a5ceb08950e80881 | 2026-08-18 | Windows bat/PowerShell 启动引导乱码与分支重复执行 | medium | [link](bugs/2026-08-18-bug-541a9d6211594221-bat-chinese-output.md) |
 | bug-9df5a75c67504f4fac0d315dd7cef2dd | 2026-08-18 | Windows scheduler-start.bat fall-through 重复执行导致大量命令未找到错误 | high | [link](bugs/2026-08-18-bug-9df5a75c67504f4fac0d315dd7cef2dd-bat-fallthrough.md) |
@@ -144,16 +146,16 @@ This file summarizes all project changes, decisions, requirements, and bug recor
 - orchestration: change-ab75b9ee58354673b48b9c875f91a889
 - plan-gate: change-0071a9a0e32c40c28601c3ff7d6ad8b6, change-cc34c0f387b04539bef2107012ba5deb, change-d9e9344cce4a4afbb937c6c637a7931c
 - planning: change-494b8d8a5ef14682bd96aeefdd945693
-- qa-guardian: bug-1a88afaf58fe4f13859d209b49b49027, bug-541a9d6211594221a5ceb08950e80881, bug-9df5a75c67504f4fac0d315dd7cef2dd, bug-addaeb3484574da4898bc2d0d5a022d6, change-0071a9a0e32c40c28601c3ff7d6ad8b6, change-0fcf1b08d1784c49b5e6ec1c2d6c527f, change-260993fcf6504e8eb9e54f84f0dd45f4, change-39d97b0a4c854e3893e13ba9e9a5859d, change-41675aeea2c446eea10506e55cbbd08d, change-47dc8b8da91e4b6fa99315f0e3712686, change-494b8d8a5ef14682bd96aeefdd945693, change-559f7f25f2834bb2b50e4b7bcf9a3bfb, change-5abf095ac5524443a5d7a9038a01a1e8, change-66dd4c4f08114b48899480c39d8052a7, change-6ff6c658477b423eae1d6e18a33f92b9, change-a1a8b1267e6946a098431b0dfbd102b6, change-a43b7803dba74e9bae48e0bed222011c, change-ab75b9ee58354673b48b9c875f91a889, change-c4f7796c3fa940589c4c90921c26455c, change-c783251f5b134af9b8bd7e15628fc7c6, change-c79535dd171745ee98a74bae8ca3c2ba, change-c9452e10a1264645a06915267c49e44d, change-cc34c0f387b04539bef2107012ba5deb, change-d4732a411e254c618517828d62e5ed70, change-d9e9344cce4a4afbb937c6c637a7931c, change-e34b035b981b4224a44621ba7457d5b2
+- qa-guardian: bug-19e5ffff30db46ccbca9f8ca73551ad1, bug-1a88afaf58fe4f13859d209b49b49027, bug-541a9d6211594221a5ceb08950e80881, bug-9df5a75c67504f4fac0d315dd7cef2dd, bug-addaeb3484574da4898bc2d0d5a022d6, change-0071a9a0e32c40c28601c3ff7d6ad8b6, change-0fcf1b08d1784c49b5e6ec1c2d6c527f, change-260993fcf6504e8eb9e54f84f0dd45f4, change-39d97b0a4c854e3893e13ba9e9a5859d, change-41675aeea2c446eea10506e55cbbd08d, change-47dc8b8da91e4b6fa99315f0e3712686, change-494b8d8a5ef14682bd96aeefdd945693, change-559f7f25f2834bb2b50e4b7bcf9a3bfb, change-5abf095ac5524443a5d7a9038a01a1e8, change-66dd4c4f08114b48899480c39d8052a7, change-6ff6c658477b423eae1d6e18a33f92b9, change-a1a8b1267e6946a098431b0dfbd102b6, change-a43b7803dba74e9bae48e0bed222011c, change-ab75b9ee58354673b48b9c875f91a889, change-c4f7796c3fa940589c4c90921c26455c, change-c783251f5b134af9b8bd7e15628fc7c6, change-c79535dd171745ee98a74bae8ca3c2ba, change-c9452e10a1264645a06915267c49e44d, change-cc34c0f387b04539bef2107012ba5deb, change-d4732a411e254c618517828d62e5ed70, change-d9e9344cce4a4afbb937c6c637a7931c, change-e34b035b981b4224a44621ba7457d5b2
 - read-only: change-47dc8b8da91e4b6fa99315f0e3712686
 - recovery: change-a43b7803dba74e9bae48e0bed222011c
 - reliability: change-a1a8b1267e6946a098431b0dfbd102b6, change-e34b035b981b4224a44621ba7457d5b2
 - review: change-c79535dd171745ee98a74bae8ca3c2ba
-- runtime: change-0071a9a0e32c40c28601c3ff7d6ad8b6
+- runtime: bug-19e5ffff30db46ccbca9f8ca73551ad1, change-0071a9a0e32c40c28601c3ff7d6ad8b6
 - runtime-integration: change-cc34c0f387b04539bef2107012ba5deb
 - safety: change-d9e9344cce4a4afbb937c6c637a7931c
 - safety-gate: change-494b8d8a5ef14682bd96aeefdd945693
-- security: change-5abf095ac5524443a5d7a9038a01a1e8, change-a1a8b1267e6946a098431b0dfbd102b6
+- security: bug-19e5ffff30db46ccbca9f8ca73551ad1, change-5abf095ac5524443a5d7a9038a01a1e8, change-a1a8b1267e6946a098431b0dfbd102b6
 - specialists: change-47dc8b8da91e4b6fa99315f0e3712686
 - state: change-0fcf1b08d1784c49b5e6ec1c2d6c527f
 - unattended-quality: change-559f7f25f2834bb2b50e4b7bcf9a3bfb
