@@ -135,6 +135,39 @@ test('processSpecialistRunner uses the SDK client to create and prompt a session
   assert.equal(result.specialist, 'guardian-code');
 });
 
+test('processPlanBuilder uses the SDK client instead of spawning an attach process', async () => {
+  // Given: an injected fake opencode client.
+  const created = [];
+  const prompted = [];
+  const client = {
+    createSession: async ({ title, agent, directory }) => { created.push({ title, agent, directory }); return 'ses_plan'; },
+    prompt: async ({ sessionId, agent, parts, format }) => {
+      prompted.push({ sessionId, agent, parts, format });
+      return { kind: 'ok', result: { text: '{"root_cause":"color","affected_files":["a"],"non_goals":["b"],"test_plan":["t"],"acceptance_criteria":["c"],"rollback_plan":"r","evidence_ids":[],"risk":"LOW"}' } };
+    },
+    abort: async () => {},
+    getSession: async () => ({ kind: 'ok', session: { id: 'ses_plan', agent: 'guardian-business' } }),
+  };
+
+  // When: a plan is built through the SDK path.
+  const { processPlanBuilder } = await import('../../tools/guardian/investigation-process.mjs');
+  const result = await processPlanBuilder({
+    issue: 211,
+    repoDir: 'D:/repo',
+    dossier: { root_cause: 'color' },
+    opencodeClient: client,
+  });
+
+  // Then: one session is created in the target dir and prompted with json_schema; no spawn.
+  assert.equal(created.length, 1);
+  assert.equal(created[0].agent, 'guardian-business');
+  assert.equal(created[0].directory, 'D:/repo');
+  assert.equal(prompted.length, 1);
+  assert.equal(prompted[0].agent, 'guardian-business');
+  assert.equal(prompted[0].format.type, 'json_schema');
+  assert.equal(result.root_cause, 'color');
+});
+
 test('runAgentJson reports malformed event lines without treating them as final output', async () => {
   // Given: one malformed progress line followed by a valid text result.
   const child = fakeChild();

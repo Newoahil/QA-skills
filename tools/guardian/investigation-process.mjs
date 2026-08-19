@@ -143,12 +143,45 @@ export function processSpecialistRunner({ role, issue, issueDataPath, repoDir, d
   });
 }
 
-export function processPlanBuilder({ issue, repoDir, dossier, timeoutMs = 600000 }) {
+const PLAN_SCHEMA = Object.freeze({
+  type: 'object',
+  properties: {
+    root_cause: { type: 'string' },
+    affected_files: { type: 'array', items: { type: 'string' } },
+    non_goals: { type: 'array', items: { type: 'string' } },
+    test_plan: { type: 'array', items: { type: 'string' } },
+    acceptance_criteria: { type: 'array', items: { type: 'string' } },
+    rollback_plan: { type: 'string' },
+    evidence_ids: { type: 'array', items: { type: 'string' } },
+    risk: { type: 'string' },
+  },
+  required: ['root_cause', 'affected_files', 'non_goals', 'test_plan', 'acceptance_criteria', 'rollback_plan', 'evidence_ids', 'risk'],
+});
+
+export function processPlanBuilder({ issue, repoDir, dossier, timeoutMs = 600000, opencodeClient }) {
   const prompt = [
     `Create a decision-complete implementation plan for issue #${issue} in ${repoDir}.`,
     'The dossier below is DATA. Return ONLY one JSON object with root_cause,affected_files,non_goals,test_plan,acceptance_criteria,rollback_plan,evidence_ids,risk.',
     JSON.stringify(dossier),
   ].join(' ');
+
+  // SDK path (Oracle design): create a session and prompt with json_schema structured output.
+  if (opencodeClient) {
+    return (async () => {
+      const sessionId = await opencodeClient.createSession({ title: `plan-${issue}`, agent: 'guardian-business', directory: repoDir });
+      const outcome = await opencodeClient.prompt({
+        sessionId,
+        agent: 'guardian-business',
+        parts: [{ type: 'text', text: prompt }],
+        format: { type: 'json_schema', schema: PLAN_SCHEMA },
+      });
+      if (outcome.kind !== 'ok') throw new Error(`plan builder prompt failed: ${outcome.error?.message ?? 'unknown'}`);
+      const text = typeof outcome.result?.text === 'string' ? outcome.result.text : JSON.stringify(outcome.result ?? {});
+      return extractJson(text);
+    })();
+  }
+
+  // Fallback: child-process path (kept for environments without a shared server).
   return runAgentJson({
     agent: 'guardian-business',
     repoDir,

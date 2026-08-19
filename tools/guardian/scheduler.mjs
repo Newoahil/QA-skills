@@ -254,7 +254,7 @@ async function tick(repoDir, config, logger) {
           capabilities: discoverCapabilities({ env: process.env }),
           config,
           runSpecialist: (args) => processSpecialistRunner({ ...args, opencodeClient }),
-          buildPlan: (args) => processPlanBuilder({ ...args, repoDir }),
+          buildPlan: (args) => processPlanBuilder({ ...args, repoDir, opencodeClient }),
         });
         const state = readState(guardianDir, issue) ?? { issue };
         writeState(guardianDir, {
