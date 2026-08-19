@@ -218,18 +218,22 @@ The full link:
      audit trail is mandatory — a low-risk automation with no trail is a black box and is forbidden.
 5. **FIXING** — create branch `fix/issue-<n>`, make the **minimal** change that fixes the root cause.
    Do not opportunistically refactor. Do not widen scope because the issue text suggested it.
-6. **VERIFYING** — dispatch the read-only `qa` agent (`task subagent_type: "qa"`) with the fix diff +
-   the issue's intended behavior. `qa` runs its six-stage prior, gets first-hand evidence, emits
-   `Overall Status:`. **Low-risk issues are verified too — never skipped.** High-risk verification
-   lets `qa` dispatch `qa-facet` internally (needs `subagent_depth: 2`; otherwise it covers serially).
-   - `FAIL` → back to **FIXING** (do not re-ask the human). The FIXING↔VERIFYING loop is capped at
-     **1–2 rounds** (reuse `references/using-qa.md`). Over the cap → `HANDED_BACK`
+6. **VERIFYING (方案 A: QA is scheduler-invoked, not fixer-internal)** — you do NOT dispatch the
+   `qa` agent yourself. The scheduler runs an independent read-only `qa` OpenCode session against
+   your fix diff + the issue's intended behavior, and collects the `Overall Status:` verdict into
+   `.qa/guardian/<n>/qa-verdict.json`. Your job in VERIFYING is only to ensure the fix is committed
+   on `fix/issue-<n>` and the diff is complete, then exit. The scheduler owns the machine QA gate
+   and PR creation.
+   - You never grade your own fix. The PASS/FAIL verdict comes only from the scheduler's
+     independent `qa` session — an agent that mechanically cannot edit code.
+   - A `FAIL` (from the scheduler's qa session) sends you back to **FIXING** (do not re-ask the
+     human). The FIXING↔VERIFYING loop is capped at **1–2 rounds**. Over the cap → `HANDED_BACK`
      (`reason=fix-rounds-exceeded`). **A `FAIL` never advances to PR_OPENED**, for low-risk too.
-    - `PASS` → continue. `qa` PASS is the last machine gate before a low-risk issue reaches a PR.
-      Before PR creation, materialize a `.qa/guardian/<n>/qa-verdict.json` artifact containing the
-      exact status, issue, fix branch, verification timestamp, report hash, and evidence summary.
-      A PR/trace is QA-approved only when this machine-readable artifact validates and status is
-      exactly `PASS`; `FAIL`, `BLOCKED`, missing, stale, or mismatched verdicts never open a PR.
+   - `PASS` → continue. `qa` PASS is the last machine gate before a low-risk issue reaches a PR.
+     The scheduler materializes `.qa/guardian/<n>/qa-verdict.json` with the exact status, issue,
+     fix branch, verification timestamp, report hash, and evidence summary. A PR/trace is
+     QA-approved only when this machine-readable artifact validates and status is exactly `PASS`;
+     `FAIL`, `BLOCKED`, missing, stale, or mismatched verdicts never open a PR.
 7. **PR_OPENED** — `git commit` (conventional message with `fixes #<n>`), `git push -u origin
    fix/issue-<n>`, `gh pr create --base <base_branch>` (PR body = diagnosis + QA conclusion
    summary + risk level). Then **dual-write the trace**: an issue comment (fix summary +
@@ -237,10 +241,9 @@ The full link:
    sediment the objective check case.
 
    **Enforced runtime exception:** when the invocation includes `runtime_mode=enforced`, do not
-   run `gh pr create` yourself. Finish the fix and independent QA, write
-   `.qa/guardian/<n>/qa-verdict.json` with the exact `Overall Status`, issue, branch,
-   verification time, report hash, and evidence summary, then exit. The scheduler owns the
-   machine QA gate and PR creation.
+   run `gh pr create` yourself. Finish the fix, ensure the branch is pushed, then exit. The
+   scheduler owns the machine QA gate (independent qa session), the verdict artifact, and PR
+   creation.
 8. **Gate 2 (ALL issues, low-risk included)** — run the close-out triple and **exit**. A human
    reviews the PR. This is the mechanism proof that "there is no automatic path to trunk".
    - Normal path: the human merges the PR; `fixes #<n>` auto-closes the issue; next poll sees the
