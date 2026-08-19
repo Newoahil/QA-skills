@@ -10,3 +10,11 @@ export function createPullRequest({ repoDir, head, base, title, body, run = spaw
   if (result.status !== 0) throw new Error(`gh pr create failed: ${result.stderr || 'unknown'}`);
   return String(result.stdout).trim();
 }
+
+export function currentBranch(repoDir, run = spawnSync) {
+  const result = run('git', ['branch', '--show-current'], {
+    cwd: repoDir, encoding: 'utf8', shell: false, windowsHide: true,
+  });
+  if (result.status !== 0) throw new Error(`git branch --show-current failed: ${result.stderr || 'unknown'}`);
+  return String(result.stdout).trim();
+}

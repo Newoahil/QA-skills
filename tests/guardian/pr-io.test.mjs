@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createPullRequest } from '../../tools/guardian/pr-io.mjs';
+import { createPullRequest, currentBranch } from '../../tools/guardian/pr-io.mjs';
 
 test('createPullRequest uses shell-free gh argv and returns URL', () => {
   let captured;
@@ -8,6 +8,18 @@ test('createPullRequest uses shell-free gh argv and returns URL', () => {
   assert.equal(url, 'https://github/pr/1');
   assert.equal(captured.opts.shell, false);
   assert.equal(captured.args.includes('fix/issue-1'), true);
+});
+
+test('currentBranch reads the checked-out branch without a shell', () => {
+  const calls = [];
+  const branch = currentBranch('D:/repo', (cmd, args, opts) => {
+    calls.push({ cmd, args, opts });
+    return { status: 0, stdout: 'fix/issue-211\n', stderr: '' };
+  });
+  assert.equal(branch, 'fix/issue-211');
+  assert.equal(calls[0].cmd, 'git');
+  assert.deepEqual(calls[0].args, ['branch', '--show-current']);
+  assert.equal(calls[0].opts.shell, false);
 });
 
 test('createPullRequest throws on gh failure', () => {

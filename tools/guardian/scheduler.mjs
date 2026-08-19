@@ -12,7 +12,7 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { readJsonFile } from './runtime-io.mjs';
 
 import { pollIssue, defaultGhReader, DEFAULT_LEASE_MS, invocationArgvFor } from './poll.mjs';
@@ -29,7 +29,7 @@ import { quarantineArtifacts, readArtifact, readArtifactPair } from './artifacts
 import { assessFixingEntry } from './plan-gate.mjs';
 import { auditQaVerdict } from './qa-verdict.mjs';
 import { canCreatePr } from './qa-gate.mjs';
-import { createPullRequest } from './pr-io.mjs';
+import { createPullRequest, currentBranch } from './pr-io.mjs';
 import { buildVerdictComment, markerForApproval, hashVerdictComment } from './verdict-comment.mjs';
 import { resolveOpencodeBin } from './opencode-bin.mjs';
 import { createOpencodeClient } from './opencode-client.mjs';
@@ -399,7 +399,8 @@ async function tick(repoDir, config, logger) {
         logger.warn('fixer.session_aborted', { issue });
         return;
       }
-      writeState(guardianDir, fixerRun.state, { touch: false });
+      const fixedBranch = currentBranch(repoDir);
+      writeState(guardianDir, { ...fixerRun.state, branch: fixedBranch }, { touch: false });
 
       // 方案 A: QA runs via an independent SDK session (scheduler-invoked, not fixer-internal).
       const afterFix = readState(guardianDir, issue) ?? { issue };
@@ -429,7 +430,7 @@ async function tick(repoDir, config, logger) {
           branch: afterFix.branch ?? null,
           status: qaRun.verdict,
           verified_at: new Date().toISOString(),
-          report_hash: `sha256:${crypto.createHash('sha256').update(qaRun.report ?? '', 'utf8').digest('hex')}`,
+          report_hash: `sha256:${createHash('sha256').update(qaRun.report ?? '', 'utf8').digest('hex')}`,
           evidence_summary: qaRun.report ?? null,
         };
         writeArtifact(guardianDir, issue, 'qa-verdict', qaVerdict);

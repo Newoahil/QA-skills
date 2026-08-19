@@ -77,6 +77,8 @@ test('passes dossier/plan paths and human note as untrusted data in the prompt',
   assert.equal(text.includes('HUMAN_NOTE'), true);
   assert.equal(text.includes('please also fix the color'), true);
   assert.equal(prompt.system, undefined, 'human note must never be injected into system');
+  assert.equal(text.includes('commit and push'), true);
+  assert.equal(text.includes('Do not create a PR'), true);
 });
 
 test('aborts the session on deadline instead of killing the serve', async () => {
