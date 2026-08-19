@@ -157,7 +157,7 @@ test('processPlanBuilder uses the SDK client instead of spawning an attach proce
   const result = await processPlanBuilder({
     issue: 211,
     repoDir: 'D:/repo',
-    dossier: { root_cause: 'color' },
+    dossier: { root_cause: 'color', evidence: [{ id: 'E1' }, { id: 'E2' }] },
     opencodeClient: client,
   });
 
@@ -169,6 +169,7 @@ test('processPlanBuilder uses the SDK client instead of spawning an attach proce
   assert.equal(prompted[0].agent, 'guardian-business');
   assert.equal(prompted[0].format.type, 'json_schema');
   assert.deepEqual(prompted[0].format.schema.properties.risk.enum, ['LOW', 'HIGH']);
+  assert.deepEqual(prompted[0].format.schema.properties.evidence_ids.items.enum, ['E1', 'E2']);
   assert.equal(result.root_cause, 'color');
 });
 

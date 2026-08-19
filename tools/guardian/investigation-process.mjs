@@ -181,6 +181,20 @@ const PLAN_SCHEMA = Object.freeze({
   required: ['root_cause', 'affected_files', 'non_goals', 'test_plan', 'acceptance_criteria', 'rollback_plan', 'evidence_ids', 'risk'],
 });
 
+function planSchemaFor(dossier) {
+  const evidenceIds = (dossier?.evidence ?? []).map((item) => item?.id).filter((id) => typeof id === 'string' && id.length > 0);
+  return {
+    ...PLAN_SCHEMA,
+    properties: {
+      ...PLAN_SCHEMA.properties,
+      evidence_ids: {
+        type: 'array',
+        items: evidenceIds.length > 0 ? { type: 'string', enum: evidenceIds } : { type: 'string' },
+      },
+    },
+  };
+}
+
 export function processPlanBuilder({ issue, repoDir, dossier, timeoutMs = 600000, opencodeClient }) {
   const prompt = [
     `Create a decision-complete implementation plan for issue #${issue} in ${repoDir}.`,
@@ -196,7 +210,7 @@ export function processPlanBuilder({ issue, repoDir, dossier, timeoutMs = 600000
         sessionId,
         agent: 'guardian-business',
         parts: [{ type: 'text', text: prompt }],
-        format: { type: 'json_schema', schema: PLAN_SCHEMA },
+        format: { type: 'json_schema', schema: planSchemaFor(dossier) },
       });
       if (outcome.kind !== 'ok') throw new Error(`plan builder prompt failed: ${outcome.error?.message ?? 'unknown'}`);
       if (outcome.result?.structured && typeof outcome.result.structured === 'object') return outcome.result.structured;
