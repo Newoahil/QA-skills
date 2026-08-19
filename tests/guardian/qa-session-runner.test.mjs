@@ -48,9 +48,20 @@ test('recovers a completed QA result from messages when the prompt HTTP request 
     calls.messages.push(id);
     reads += 1;
     if (reads === 1) return { kind: 'ok', messages: [] };
+    if (reads === 2) {
+      return {
+        kind: 'ok',
+        messages: [{
+          id: 'msg_tool_calls',
+          info: { role: 'assistant', finish: 'tool-calls', time: { created: 190, completed: 200 } },
+          parts: [{ type: 'text', text: 'Checking the diff.' }],
+        }],
+      };
+    }
     return {
       kind: 'ok',
       messages: [{
+        id: 'msg_final',
         info: { role: 'assistant', time: { created: 200, completed: 220 } },
         parts: [{ type: 'text', text: 'Overall Status: PASS' }],
       }],

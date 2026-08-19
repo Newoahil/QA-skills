@@ -105,6 +105,7 @@ async function promptOrCompletedMessage({ client, sessionId, prompt, baseline, p
       const completed = result.messages
         .filter(isCompletedAssistant)
         .filter((message) => !baseline.has(messageId(message)))
+        .filter((message) => parseOverallStatus(messageText(message)) !== null)
         .sort((left, right) => messageCreated(right) - messageCreated(left))[0];
       if (!completed) continue;
       return { kind: 'ok', result: { text: messageText(completed) } };

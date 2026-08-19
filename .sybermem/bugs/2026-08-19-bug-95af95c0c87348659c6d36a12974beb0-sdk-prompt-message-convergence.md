@@ -28,13 +28,15 @@ signal. OpenCode can finish and persist the assistant message while that transpo
 - QA runner records completed assistant-message IDs before each prompt.
 - Prompt completion now races the synchronous request against discovery of a new completed
   assistant message, extracting text from whichever finishes first.
+- Completed intermediate `tool-calls` messages are ignored; only a message containing a valid
+  `Overall Status:` verdict can complete the QA run.
 - Polling cancellation covers success and deadline-abort paths so no timer keeps Node alive.
 - SDK `{ kind: 'ok' }` results are normalized to runner `status: 'ok'`.
 
 ## Prevention Measures
 
 - Regression test reproduces a permanently hanging prompt request while messages reveal a new
-  completed `Overall Status: PASS` response.
+  completed intermediate tool-call response followed by `Overall Status: PASS`.
 - Deadline regression verifies the session is aborted and polling is released.
 
 ## Related Changes
