@@ -30,6 +30,8 @@ signal. OpenCode can finish and persist the assistant message while that transpo
   assistant message, extracting text from whichever finishes first.
 - Completed intermediate `tool-calls` messages are ignored; only a message containing a valid
   `Overall Status:` verdict can complete the QA run.
+- A synchronous prompt response without a valid verdict is also treated as intermediate and
+  defers to message convergence instead of ending the run with a null verdict.
 - Polling cancellation covers success and deadline-abort paths so no timer keeps Node alive.
 - SDK `{ kind: 'ok' }` results are normalized to runner `status: 'ok'`.
 
@@ -37,6 +39,8 @@ signal. OpenCode can finish and persist the assistant message while that transpo
 
 - Regression test reproduces a permanently hanging prompt request while messages reveal a new
   completed intermediate tool-call response followed by `Overall Status: PASS`.
+- A second regression covers a non-verdict synchronous prompt response followed by a final PASS
+  message.
 - Deadline regression verifies the session is aborted and polling is released.
 
 ## Related Changes

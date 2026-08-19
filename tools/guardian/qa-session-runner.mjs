@@ -89,12 +89,12 @@ async function completedAssistantMessageIds(client, sessionId) {
 
 async function promptOrCompletedMessage({ client, sessionId, prompt, baseline, pollIntervalMs, control }) {
   let settled = false;
-  const promptPromise = client.prompt({
+  const rawPromptPromise = client.prompt({
     sessionId,
     agent: 'qa',
     parts: [{ type: 'text', text: prompt }],
   });
-  if (typeof client.getMessages !== 'function') return promptPromise;
+  if (typeof client.getMessages !== 'function') return rawPromptPromise;
 
   const messagePromise = (async () => {
     while (!settled && !control.cancelled) {
@@ -110,6 +110,12 @@ async function promptOrCompletedMessage({ client, sessionId, prompt, baseline, p
       if (!completed) continue;
       return { kind: 'ok', result: { text: messageText(completed) } };
     }
+  })();
+
+  const promptPromise = (async () => {
+    const result = await rawPromptPromise;
+    if (parseOverallStatus(result?.result?.text) !== null) return result;
+    return messagePromise;
   })();
 
   try {

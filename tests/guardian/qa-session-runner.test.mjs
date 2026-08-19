@@ -85,6 +85,41 @@ test('recovers a completed QA result from messages when the prompt HTTP request 
   assert.ok(calls.messages.length >= 2);
 });
 
+test('ignores a non-verdict prompt response and waits for the final verdict message', async () => {
+  const { client, calls } = fakeClient();
+  const state = { opencode: { fixer: null, qa: { session_id: 'ses_qa', agent: 'qa' }, specialists: {}, inflight: null } };
+  client.prompt = async () => ({ kind: 'ok', result: { text: 'Checking the diff.' } });
+  let reads = 0;
+  client.getMessages = async (id) => {
+    calls.messages.push(id);
+    reads += 1;
+    if (reads < 3) return { kind: 'ok', messages: [] };
+    return {
+      kind: 'ok',
+      messages: [{
+        id: 'msg_final',
+        info: { role: 'assistant', time: { created: 200, completed: 220 } },
+        parts: [{ type: 'text', text: 'Overall Status: PASS' }],
+      }],
+    };
+  };
+  const result = await runQaSession({
+    client,
+    state,
+    issue: 211,
+    repoDir: 'D:/repo',
+    branch: 'fix/issue-211',
+    diffSummary: 'changed color to pink',
+    intendedBehavior: 'bad debt amount shows pink',
+    round: 1,
+    deadlineMs: 500,
+    pollIntervalMs: 5,
+  });
+  assert.equal(result.status, 'ok');
+  assert.equal(result.verdict, 'PASS');
+  assert.ok(calls.messages.length >= 3);
+});
+
 test('reuses an existing valid qa session across verification attempts', async () => {
   const { client, calls } = fakeClient();
   const state = { opencode: { fixer: null, qa: { session_id: 'ses_qa', agent: 'qa' }, specialists: {}, inflight: null } };
