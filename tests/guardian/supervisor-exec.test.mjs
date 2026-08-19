@@ -16,7 +16,7 @@ function fakeRun(calls, result = { status: 0, stdout: 'ok\n', stderr: '' }) {
 
 test('supervisor exposes only fixed direct-argv operations', () => {
   assert.deepEqual(SUPERVISOR_OPERATIONS, Object.freeze([
-    'current-branch', 'status-diff', 'staged-files', 'ensure-fix-branch', 'run-tests', 'stage-files', 'commit', 'push',
+    'current-branch', 'status-diff', 'staged-files', 'worktree-files', 'ensure-fix-branch', 'run-tests', 'stage-files', 'commit', 'push',
   ]));
   const calls = [];
   const executor = createSupervisorExecutor({ repoDir: 'D:/repo', run: fakeRun(calls) });
@@ -95,12 +95,12 @@ test('supervisor denies arbitrary operation names and constructs exact finalizat
   assert.equal(calls.every((call) => call.options.shell === false && call.options.windowsHide === true), true);
 });
 
-test('finalization skips prose-only test plans without executing npm or another fallback', async () => {
+test('finalization skips prose-only test plans in legacy mode without executing npm', async () => {
   const calls = [];
   const run = (file, argv, options) => {
     calls.push({ file, argv, options });
     if (argv[0] === 'branch') return { status: 0, stdout: 'fix/issue-211\n', stderr: '' };
-    if (argv[0] === 'status') return { status: 0, stdout: ' M tools/guardian/foo.mjs\n', stderr: '' };
+    if (argv[0] === 'status' && argv[1] === '--porcelain=v1') return { status: 0, stdout: ' M tools/guardian/foo.mjs\0', stderr: '' };
     if (argv[0] === 'diff' && argv[1] === '--cached') return { status: 0, stdout: calls.some((call) => call.argv[0] === 'add') ? 'tools/guardian/foo.mjs\n' : '', stderr: '' };
     if (argv[0] === 'diff') return { status: 0, stdout: 'diff --git a/tools/guardian/foo.mjs b/tools/guardian/foo.mjs\n', stderr: '' };
     if (argv[0] === 'add') return { status: 0, stdout: '', stderr: '' };
@@ -109,6 +109,7 @@ test('finalization skips prose-only test plans without executing npm or another 
   const executor = createSupervisorExecutor({ repoDir: 'D:/repo', run });
   const result = await executor.finalizeFix({
     issue: 211,
+    mode: 'legacy',
     plan: { affected_files: ['tools/guardian/foo.mjs'], test_plan: ['run focused checks'] },
   });
   assert.equal(result.tests.skipped, true);
@@ -116,16 +117,49 @@ test('finalization skips prose-only test plans without executing npm or another 
   assert.equal(calls.some((call) => call.file === 'node'), false);
 });
 
+test('enforced finalization requires executable test_commands', async () => {
+  const calls = [];
+  const run = (file, argv, options) => {
+    calls.push({ file, argv, options });
+    if (argv[0] === 'branch') return { status: 0, stdout: 'fix/issue-211\n', stderr: '' };
+    if (argv[0] === 'status' && argv[1] === '--porcelain=v1') return { status: 0, stdout: ' M tools/guardian/foo.mjs\0', stderr: '' };
+    return { status: 0, stdout: '', stderr: '' };
+  };
+  const executor = createSupervisorExecutor({ repoDir: 'D:/repo', run });
+  await assert.rejects(
+    () => executor.finalizeFix({ issue: 211, mode: 'enforced', plan: { affected_files: ['tools/guardian/foo.mjs'], test_plan: ['run focused checks'] } }),
+    /test_commands/i,
+  );
+  assert.equal(calls.some((call) => call.argv[0] === 'commit'), false);
+});
+
 test('rejects unrelated pre-staged files before finalization', async () => {
   const calls = [];
   const run = (file, argv, options) => {
     calls.push({ file, argv, options });
     if (argv[0] === 'branch') return { status: 0, stdout: 'fix/issue-211\n', stderr: '' };
-    if (argv[0] === 'status') return { status: 0, stdout: 'A  .codegraph/graph.json\n M tools/guardian/foo.mjs\n', stderr: '' };
+    if (argv[0] === 'status' && argv[1] === '--porcelain=v1') return { status: 0, stdout: 'A  .codegraph/graph.json\0 M tools/guardian/foo.mjs\0', stderr: '' };
+    if (argv[0] === 'diff' && argv[1] === '--cached') return { status: 0, stdout: 'A  .codegraph/graph.json\n', stderr: '' };
     return { status: 0, stdout: '', stderr: '' };
   };
   const executor = createSupervisorExecutor({ repoDir: 'D:/repo', run });
-  await assert.rejects(() => executor.finalizeFix({ issue: 211, plan: { affected_files: ['tools/guardian/foo.mjs'] } }), /staged|scope|codegraph/i);
+  await assert.rejects(() => executor.finalizeFix({ issue: 211, mode: 'enforced', plan: { affected_files: ['tools/guardian/foo.mjs'], test_commands: [['node', '--test', 'tests/guardian/foo.test.mjs']] } }), /staged|scope|codegraph|worktree/i);
+  assert.equal(calls.some((call) => call.argv[0] === 'commit'), false);
+});
+
+test('rejects unrelated unstaged worktree changes before finalization', async () => {
+  const calls = [];
+  const run = (file, argv, options) => {
+    calls.push({ file, argv, options });
+    if (argv[0] === 'branch') return { status: 0, stdout: 'fix/issue-211\n', stderr: '' };
+    if (argv[0] === 'status' && argv[1] === '--porcelain=v1') return { status: 0, stdout: ' M tools/guardian/foo.mjs\0 M unrelated/other.mjs\0', stderr: '' };
+    return { status: 0, stdout: '', stderr: '' };
+  };
+  const executor = createSupervisorExecutor({ repoDir: 'D:/repo', run });
+  await assert.rejects(
+    () => executor.finalizeFix({ issue: 211, mode: 'enforced', plan: { affected_files: ['tools/guardian/foo.mjs'], test_commands: [['node', '--test', 'tests/guardian/foo.test.mjs']] } }),
+    /worktree|scope/i,
+  );
   assert.equal(calls.some((call) => call.argv[0] === 'commit'), false);
 });
 
@@ -134,14 +168,14 @@ test('clean scoped finalization stages only the affected files and excludes code
   const run = (file, argv, options) => {
     calls.push({ file, argv, options });
     if (argv[0] === 'branch') return { status: 0, stdout: 'fix/issue-211\n', stderr: '' };
-    if (argv[0] === 'status') return { status: 0, stdout: ' M tools/guardian/foo.mjs\n', stderr: '' };
+    if (argv[0] === 'status' && argv[1] === '--porcelain=v1') return { status: 0, stdout: ' M tools/guardian/foo.mjs\0', stderr: '' };
     if (argv[0] === 'diff' && argv[1] === '--cached') return { status: 0, stdout: 'tools/guardian/foo.mjs\n', stderr: '' };
     if (argv[0] === 'diff') return { status: 0, stdout: 'diff\n', stderr: '' };
-    if (argv[0] === 'diff' && argv[1] === '--cached') return { status: 0, stdout: 'tools/guardian/foo.mjs\n', stderr: '' };
+    if (argv[0] === 'add') return { status: 0, stdout: '', stderr: '' };
     return { status: 0, stdout: '', stderr: '' };
   };
   const executor = createSupervisorExecutor({ repoDir: 'D:/repo', run });
-  const result = await executor.finalizeFix({ issue: 211, plan: { affected_files: ['tools/guardian/foo.mjs'] } });
+  const result = await executor.finalizeFix({ issue: 211, mode: 'enforced', plan: { affected_files: ['tools/guardian/foo.mjs'], test_commands: [['node', '--test', 'tests/guardian/foo.test.mjs']] } });
   assert.equal(result.branch, 'fix/issue-211');
   assert.deepEqual(calls.find((call) => call.argv[0] === 'add').argv, ['add', '--', 'tools/guardian/foo.mjs']);
   assert.equal(calls.some((call) => call.argv.includes('.codegraph')), false);

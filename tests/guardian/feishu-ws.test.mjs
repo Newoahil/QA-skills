@@ -92,3 +92,39 @@ test('Feishu WS deduplicates repeated event id through shared executor', async (
   await captured.routes[CARD_ACTION_EVENT](event);
   assert.equal(posts, 1);
 });
+
+test('Feishu WS rejects an unauthorized actor before posting', async () => {
+  const captured = {};
+  const calls = [];
+  await createFeishuWsRuntime({
+    appId: 'a', appSecret: 'b', repo: 'o/r', seen: new Set(), sdk: fakeSdk(captured),
+    postComment: async () => { calls.push(true); return { id: 1, url: 'u' }; },
+    authorize: () => ({ allowed: false, reason: 'unmapped-actor' }),
+    logger: { error() {} },
+  });
+  const response = await captured.routes[CARD_ACTION_EVENT]({
+    header: { event_id: 'e-unauth' },
+    operator: { open_id: 'ou_evil' },
+    action: { value: { issue: 191, verb: 'approve' } },
+  });
+  assert.equal(calls.length, 0);
+  assert.equal(response.toast.type, 'fail');
+});
+
+test('Feishu WS posts when the actor is authorized', async () => {
+  const captured = {};
+  const calls = [];
+  await createFeishuWsRuntime({
+    appId: 'a', appSecret: 'b', repo: 'o/r', seen: new Set(), sdk: fakeSdk(captured),
+    postComment: async (_repo, _issue, body) => { calls.push(body); return { id: 1, url: 'u' }; },
+    authorize: () => ({ allowed: true, githubLogin: 'goudaren0528' }),
+    logger: { error() {} },
+  });
+  const response = await captured.routes[CARD_ACTION_EVENT]({
+    header: { event_id: 'e-auth' },
+    operator: { open_id: 'ou_123' },
+    action: { value: { issue: 191, verb: 'approve' } },
+  });
+  assert.equal(calls[0], '/guardian approve');
+  assert.equal(response.toast.type, 'success');
+});

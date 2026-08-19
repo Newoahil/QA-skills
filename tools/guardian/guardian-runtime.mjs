@@ -7,6 +7,7 @@ import { createLogger, printStartupBanner, readJsonFile } from './runtime-io.mjs
 import { loadSecrets, requireSecrets } from './secrets.mjs';
 import { postIssueComment } from './github-comment.mjs';
 import { createFeishuWsRuntime } from './feishu-ws.mjs';
+import { createFeishuAuthorizer } from './feishu-identity.mjs';
 import { resolveRepoDir, runScheduler } from './scheduler.mjs';
 import { ACTORS, EFFECTS } from './actor-routing.mjs';
 
@@ -32,6 +33,10 @@ export async function startGuardianRuntime(options = {}) {
   const seen = options.seen ?? new Set();
   const postComment = options.postComment ?? ((repo, issue, body) =>
     postIssueComment({ actor: ACTORS.HUMAN_AUTHORIZER, effect: EFFECTS.AUTHORIZE, repo, issue, body, token: requireSecrets(secrets, ['github_token']).github_token }));
+  const authorize = options.authorize ?? createFeishuAuthorizer({
+    feishuAuthorizers: config.feishu_authorizers ?? null,
+    commandAuthors: config.command_authors ?? [],
+  });
 
   printStartupBanner({ env });
   logger.info('startup.begin', { repo_dir: repoDir });
@@ -46,6 +51,7 @@ export async function startGuardianRuntime(options = {}) {
       repo: wsSecrets.github_repo,
       seen,
       postComment,
+      authorize,
     });
     wsRuntime.start();
     logger.info('ws.started', { enabled: true });

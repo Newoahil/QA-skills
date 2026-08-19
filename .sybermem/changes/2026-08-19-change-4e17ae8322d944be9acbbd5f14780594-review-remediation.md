@@ -4,7 +4,7 @@ record_id: change-4e17ae8322d944be9acbbd5f14780594
 date: 2026-08-19
 title: Harden QA Guardian after independent review
 status: completed
-key_conclusion: Replaced child-agent shell authority with supervisor-owned direct argv operations, made SDK sessions and Gate 1 approvals context-bound and fail-closed, enforced actor capabilities at mutation seams, and hardened state/GitHub I/O; the Guardian suite passes 371/371.
+key_conclusion: Replaced child-agent shell authority with supervisor-owned direct argv operations, made SDK sessions and Gate 1 approvals context-bound and fail-closed, enforced actor capabilities at mutation seams, and hardened state/GitHub I/O; the Guardian suite passes 379/379.
 topics: [qa-guardian, opencode-sdk, security, review-remediation]
 related: [bug-95af95c0c87348659c6d36a12974beb0, bug-8a5db6c7aa0447189f0e23d02741516c]
 ---

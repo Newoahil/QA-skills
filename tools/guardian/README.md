@@ -94,7 +94,7 @@ The write-capable agent itself is [`qa-skill/agents/qa-guardian.md`](../../qa-sk
    | `base_branch` | PR target branch | dev |
    | `notify_webhook` | notification webhook URL (Feishu bot / generic) | none → comment-only |
     | `notify_channel` | `generic` (raw JSON) or `feishu` (interactive card) | generic |
-    | `investigation_mode` | `legacy`, `shadow`, or `enforced` dossier/plan migration mode | legacy |
+    | `investigation_mode` | `legacy`, `shadow`, or `enforced` dossier/plan migration mode | enforced |
 
    > Set `command_authors` or **nothing will be approvable** — this is the deliberate fail-closed
     > guard against an arbitrary or forged comment approving a HIGH-risk plan.

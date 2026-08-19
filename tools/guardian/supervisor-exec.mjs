@@ -5,10 +5,19 @@ import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 
 export const SUPERVISOR_OPERATIONS = Object.freeze([
-  'current-branch', 'status-diff', 'staged-files', 'ensure-fix-branch', 'run-tests', 'stage-files', 'commit', 'push',
+  'current-branch', 'status-diff', 'staged-files', 'worktree-files', 'ensure-fix-branch', 'run-tests', 'stage-files', 'commit', 'push',
 ]);
 
 const TEST_PATH = /^(?:tests|test|src)[\\/][^\\/].*\.(?:mjs|js|cjs|ts|tsx|jsx)$/;
+
+// Paths the Guardian runtime legitimately mutates outside the plan scope. These are never staged
+// into the product commit but must not block worktree isolation.
+const GUARDIAN_ALLOWLIST = Object.freeze([
+  /^\.qa\/guardian\//,
+  /^\.sybermem\//,
+  /^\.scheduler\.lock$/,
+  /^watch-state\.json$/,
+]);
 
 function canonicalRepoDir(repoDir) {
   if (typeof repoDir !== 'string' || repoDir.trim() === '') throw new TypeError('repoDir is required');
@@ -80,6 +89,7 @@ export function createSupervisorExecutor({ repoDir, run = spawnSync } = {}) {
         return { ...diff, stdout: `${status.stdout}${diff.stdout}` };
       }
       case 'staged-files': return git(['diff', '--cached', '--name-only']);
+      case 'worktree-files': return git(['status', '--porcelain=v1', '-z']);
       case 'ensure-fix-branch': {
         const branch = branchName(request.issue);
         const current = git(['branch', '--show-current']);
@@ -115,7 +125,31 @@ export function createSupervisorExecutor({ repoDir, run = spawnSync } = {}) {
     return exec({ operation: 'ensure-fix-branch', issue });
   }
 
-  async function finalizeFix({ issue, plan }) {
+  // Parse `git status --porcelain=v1 -z` into changed paths (both staged and unstaged/untracked).
+  function worktreeChangedPaths() {
+    const result = exec({ operation: 'worktree-files' });
+    if (result.status !== 0) throw new Error(`worktree inspection failed: ${result.stderr || 'unknown'}`);
+    const entries = result.stdout.split('\0').filter(Boolean);
+    const paths = [];
+    for (let i = 0; i < entries.length; i += 1) {
+      const line = entries[i];
+      // porcelain v1 -z: "XY path" (path may contain spaces; no quoting in -z mode).
+      const path = line.slice(3).trim().replaceAll('\\', '/');
+      if (path) paths.push(path);
+    }
+    return paths;
+  }
+
+  function assertWorktreeIsolated(plan) {
+    const affected = new Set(Array.isArray(plan?.affected_files) ? plan.affected_files.map((f) => f.replaceAll('\\', '/')) : []);
+    const changed = worktreeChangedPaths();
+    const outOfScope = changed.filter((path) => !affected.has(path) && !GUARDIAN_ALLOWLIST.some((re) => re.test(path)));
+    if (outOfScope.length > 0) {
+      throw new Error(`worktree has changes outside plan scope: ${outOfScope.join(', ')}`);
+    }
+  }
+
+  async function finalizeFix({ issue, plan, mode = 'enforced' }) {
     const affectedFiles = Array.isArray(plan?.affected_files) ? plan.affected_files.map((file) => repoRelativePath(file, 'affected file')) : [];
     if (affectedFiles.length === 0) throw new Error('affected files are required');
     const expected = new Set(affectedFiles);
@@ -134,6 +168,11 @@ export function createSupervisorExecutor({ repoDir, run = spawnSync } = {}) {
     if (current.status !== 0 || current.stdout.trim() !== branch) {
       throw new Error(`finalization requires current branch ${branch}`);
     }
+    // Enforced mode must run executable scoped tests before commit/push.
+    if (mode === 'enforced' && (!Array.isArray(testCommands) || testCommands.length === 0)) {
+      throw new Error('enforced finalization requires executable test_commands');
+    }
+    assertWorktreeIsolated(plan);
     const evidence = exec({ operation: 'status-diff' });
     if (evidence.status !== 0) throw new Error(`status/diff failed: ${evidence.stderr || 'unknown'}`);
     const tests = Array.isArray(testCommands) && testCommands.length > 0

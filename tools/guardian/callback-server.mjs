@@ -13,6 +13,7 @@ import { loadSecrets, requireSecrets } from './secrets.mjs';
 import { handleCallback } from './callback-handler.mjs';
 import { postIssueComment } from './github-comment.mjs';
 import { ACTORS, EFFECTS } from './actor-routing.mjs';
+import { createFeishuAuthorizer } from './feishu-identity.mjs';
 import { createLogger } from './runtime-io.mjs';
 
 const PORT = Number(process.env.PORT ?? 8787);
@@ -63,6 +64,10 @@ export function createServer() {
   const seen = new Set();
   const postComment = (repo, issue, body) =>
     postIssueComment({ actor: ACTORS.HUMAN_AUTHORIZER, effect: EFFECTS.AUTHORIZE, repo, issue, body, token: secrets.github_token });
+  const authorize = createFeishuAuthorizer({
+    feishuAuthorizers: secrets.feishu_authorizers ?? null,
+    commandAuthors: secrets.command_authors ?? [],
+  });
 
   return http.createServer(async (req, res) => {
     try {
@@ -82,7 +87,7 @@ export function createServer() {
       const rawBody = await readBody(req);
       logger.info('request.callback_received', { content_length: rawBody.length });
       const headers = lowerHeaders(req.headers);
-      const result = await handleCallback({ rawBody, headers, secrets, postComment, seen });
+      const result = await handleCallback({ rawBody, headers, secrets, postComment, seen, authorize });
       res.writeHead(result.status, result.headers);
       res.end(result.body);
       logger.info('request.handled', { status: result.status });

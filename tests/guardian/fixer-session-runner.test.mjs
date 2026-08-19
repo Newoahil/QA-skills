@@ -11,7 +11,7 @@ function fakeClient() {
   const calls = { create: [], prompt: [], abort: [] };
   const client = {
     createSession: async ({ title, agent }) => { calls.create.push({ title, agent }); return 'ses_fixer'; },
-    prompt: async (params) => { calls.prompt.push(params); return { kind: 'ok', result: { text: 'fix applied' } }; },
+    prompt: async (params) => { calls.prompt.push(params); return { kind: 'ok', result: { structured: { status: 'READY_FOR_FINALIZATION', summary: 'fix applied', changed_files: ['tools/guardian/fix.mjs'] } } }; },
     abort: async (id) => { calls.abort.push(id); },
     getSession: async () => ({ kind: 'ok', session: { id: 'ses_fixer', agent: 'qa-guardian', directory: 'D:/repo' } }),
   };
@@ -78,7 +78,7 @@ test('passes dossier/plan paths and human note as untrusted data in the prompt',
   assert.equal(text.includes('HUMAN_NOTE'), true);
   assert.equal(text.includes('please also fix the color'), true);
   assert.equal(prompt.system, undefined, 'human note must never be injected into system');
-  assert.equal(text.includes('prepare edits and report the result'), true);
+  assert.equal(text.includes('READY_FOR_FINALIZATION'), true);
   assert.equal(text.includes('supervisor'), true);
   assert.equal(text.includes('commit and push'), true);
   assert.equal(text.includes('Do not create a PR'), true);
@@ -107,9 +107,42 @@ test('normalizes an ok prompt kind to status ok before finalization', async () =
   const result = await runFixerSession({
     client, supervisor, state: { opencode: { fixer: null, qa: null, specialists: {}, inflight: null } },
     issue: 211, repoDir: 'D:/repo', dossierPath: 'dossier.json', planPath: 'plan.json',
+    plan: { affected_files: ['tools/guardian/fix.mjs'] },
   });
   assert.equal(result.status, 'ok');
   assert.deepEqual(calls, ['finalize']);
+});
+
+test('does not finalize when fixer returns an empty or malformed ok result', async () => {
+  for (const result of [{ kind: 'ok', result: {} }, { kind: 'ok', result: { structured: null } }, { kind: 'ok', result: { structured: { status: 'BLOCKED', summary: 'x', changed_files: [] } } }]) {
+    const { client } = fakeClient();
+    client.prompt = async () => result;
+    const calls = [];
+    const run = await runFixerSession({
+      client,
+      supervisor: { finalizeFix: async () => { calls.push('finalize'); return { status: 'ok' }; } },
+      state: { opencode: { fixer: null, qa: null, specialists: {}, inflight: null } },
+      issue: 211, repoDir: 'D:/repo', dossierPath: 'dossier.json', planPath: 'plan.json',
+      plan: { affected_files: ['tools/guardian/fix.mjs'] },
+    });
+    assert.equal(run.status, 'unverified');
+    assert.deepEqual(calls, []);
+  }
+});
+
+test('does not finalize when changed_files are outside the plan scope', async () => {
+  const { client } = fakeClient();
+  client.prompt = async () => ({ kind: 'ok', result: { structured: { status: 'READY_FOR_FINALIZATION', summary: 'x', changed_files: ['other/file.mjs'] } } });
+  const calls = [];
+  const run = await runFixerSession({
+    client,
+    supervisor: { finalizeFix: async () => { calls.push('finalize'); return { status: 'ok' }; } },
+    state: { opencode: { fixer: null, qa: null, specialists: {}, inflight: null } },
+    issue: 211, repoDir: 'D:/repo', dossierPath: 'dossier.json', planPath: 'plan.json',
+    plan: { affected_files: ['tools/guardian/fix.mjs'] },
+  });
+  assert.equal(run.status, 'unverified');
+  assert.deepEqual(calls, []);
 });
 
 test('does not finalize for retryable or unusable prompt results', async () => {

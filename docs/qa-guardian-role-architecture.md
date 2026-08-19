@@ -20,8 +20,8 @@ compromised or distracted step can cross the next boundary.
 | Role | Executed by (Phase 1) | Write power | Core job |
 |---|---|---|---|
 | **QA Agent** | [`qa.md`](../qa-skill/agents/qa.md) (unchanged) | Read-only (welded) | Discover defects, verify fixes, emit a verdict. Never edits product code, never writes GitHub. |
-| **Fixer Agent** | [`qa-guardian.md`](../qa-skill/agents/qa-guardian.md) (unchanged) | Write (code + fix-trace comments + PR) | Locate root cause, make the minimal fix, self-test via QA, hand off a PR. Never grades its own fix, never merges/closes, never writes the QA verdict comment. |
-| **Guardian Supervisor** | [`scheduler-core.mjs`](../tools/guardian/scheduler-core.mjs) + [`state-router.mjs`](../tools/guardian/state-router.mjs) + [`commands.mjs`](../tools/guardian/commands.mjs) + [`scheduler.mjs`](../tools/guardian/scheduler.mjs) (unchanged) | Orchestration + sole GitHub-verdict writer | Own events, state, N=1 concurrency, idempotency, the human command gate, the machine QA gate, and PR creation in enforced mode. Never writes product code. |
+| **Fixer Agent** | [`qa-guardian.md`](../qa-skill/agents/qa-guardian.md) (unchanged) | Write (code edits only) | Locate root cause, make the minimal fix, report a machine completion. Never grades its own fix, never merges/closes, never writes the QA verdict comment, never opens a PR. |
+| **Guardian Supervisor** | [`scheduler-core.mjs`](../tools/guardian/scheduler-core.mjs) + [`state-router.mjs`](../tools/guardian/state-router.mjs) + [`commands.mjs`](../tools/guardian/commands.mjs) + [`scheduler.mjs`](../tools/guardian/scheduler.mjs) (unchanged) | Orchestration + sole GitHub-verdict writer | Own events, state, N=1 concurrency, idempotency, the human command gate, the machine QA gate, scoped commit/push, and PR creation in enforced mode. Never writes product code. |
 
 **Role names are vocabulary.** In Phase 1 the QA Agent *is* the `qa` agent, the Fixer Agent *is*
 the `qa-guardian` agent, and the Supervisor *is* the existing scheduler/router/commands decision

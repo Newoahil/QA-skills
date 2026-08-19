@@ -75,6 +75,13 @@ export async function handleCallback(args) {
     throw e;
   }
 
+  // A valid app signature proves transport authenticity, not human authorization. Require the
+  // acting Feishu user to map to a trusted GitHub command author before posting.
+  if (args.authorize) {
+    const auth = args.authorize(event);
+    if (!auth.allowed) return json(403, { error: `unauthorized:${auth.reason ?? 'denied'}` });
+  }
+
   const result = await executeNormalizedAction({
     eventId: id,
     cmd,

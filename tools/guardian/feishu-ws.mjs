@@ -20,7 +20,7 @@ function actionResultText(result) {
 /**
  * Create the local Feishu WS runtime. SDK is injectable for tests; production dynamically loads
  * @larksuiteoapi/node-sdk so scheduler-only mode does not require the optional dependency.
- * @param {object} args { appId, appSecret, repo, seen, postComment, sdk?, logger? }
+ * @param {object} args { appId, appSecret, repo, seen, postComment, authorize?, sdk?, logger? }
  */
 export async function createFeishuWsRuntime(args) {
   const sdk = args.sdk ?? await import('@larksuiteoapi/node-sdk');
@@ -37,6 +37,13 @@ export async function createFeishuWsRuntime(args) {
       try {
         const cmd = parseCardAction(data);
         logger.info('action.received', { issue: Number(data?.action?.value?.issue), has_event_id: Boolean(eventIdOf(data)) });
+        if (args.authorize) {
+          const auth = args.authorize(data);
+          if (!auth.allowed) {
+            logger.warn('action.unauthorized', { reason: auth.reason ?? 'denied' });
+            return { toast: { type: 'fail', content: '操作未授权' } };
+          }
+        }
         const result = await executeNormalizedAction({
           eventId: eventIdOf(data),
           cmd,

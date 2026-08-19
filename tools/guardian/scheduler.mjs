@@ -441,6 +441,7 @@ async function tick(repoDir, config, logger) {
         humanNote,
          round: currentState.processing_round ?? 1,
          plan: readArtifactPair(guardianDir, issue).plan,
+         mode: investigationMode,
           deadlineMs: Number(config.child_timeout_ms ?? 20 * 60 * 1000),
        });
        writeState(guardianDir, fixerRun.state, { touch: false });

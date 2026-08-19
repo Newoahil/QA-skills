@@ -112,3 +112,21 @@ test('failed post un-reserves the event id so a retry can succeed (atomic reserv
   assert.equal(attempts, 2);
   assert.equal(seen.has('retry-me'), true);
 });
+
+test('authorized Feishu actor posts the command', async () => {
+  const rawBody = JSON.stringify({ header: { event_id: 'e-auth' }, operator: { open_id: 'ou_123' }, action: { value: { issue: 191, verb: 'approve' } } });
+  const { calls, postComment } = recordingPoster();
+  const authorize = () => ({ allowed: true, githubLogin: 'goudaren0528' });
+  const res = await handleCallback({ rawBody, headers: sign(rawBody), secrets: SECRETS, postComment, now: NOW, authorize });
+  assert.equal(res.status, 200);
+  assert.equal(calls.length, 1);
+});
+
+test('unauthorized Feishu actor is rejected with 403 and posts nothing', async () => {
+  const rawBody = JSON.stringify({ header: { event_id: 'e-unauth' }, operator: { open_id: 'ou_evil' }, action: { value: { issue: 191, verb: 'approve' } } });
+  const { calls, postComment } = recordingPoster();
+  const authorize = () => ({ allowed: false, reason: 'unmapped-actor' });
+  const res = await handleCallback({ rawBody, headers: sign(rawBody), secrets: SECRETS, postComment, now: NOW, authorize });
+  assert.equal(res.status, 403);
+  assert.equal(calls.length, 0);
+});
