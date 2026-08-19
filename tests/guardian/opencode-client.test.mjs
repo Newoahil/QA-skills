@@ -9,7 +9,7 @@ import test from 'node:test';
 import { createOpencodeClient } from '../../tools/guardian/opencode-client.mjs';
 
 function fakeSdk() {
-  const calls = { create: [], prompt: [], abort: [], get: [] };
+  const calls = { create: [], prompt: [], abort: [], get: [], messages: [] };
   const sdk = {
     _client: {
       post: async (params) => {
@@ -22,6 +22,10 @@ function fakeSdk() {
       },
       get: async (params) => {
         calls.get.push(params);
+        if (params.url.endsWith('/message')) {
+          calls.messages.push(params);
+          return { data: [{ info: { role: 'assistant' }, parts: [{ type: 'text', text: 'done' }] }] };
+        }
         return { data: { id: 'ses_existing', agent: 'qa-guardian' } };
       },
     },
@@ -110,6 +114,15 @@ test('abort and getSession delegate to the SDK', async () => {
   assert.equal(session.kind, 'ok');
   assert.equal(session.session.id, 'ses_existing');
   assert.equal(calls.get[0].url, '/session/ses_existing');
+});
+
+test('getMessages reads session messages through the explicit SDK URL', async () => {
+  const { sdk, calls } = fakeSdk();
+  const client = createOpencodeClient({ sdk });
+  const result = await client.getMessages('ses_existing');
+  assert.equal(result.kind, 'ok');
+  assert.equal(result.messages[0].parts[0].text, 'done');
+  assert.equal(calls.messages[0].url, '/session/ses_existing/message');
 });
 
 test('normalizes a 404 session as unusable (recreate) vs a 5xx as retryable', async () => {

@@ -33,6 +33,7 @@ export async function runQaSession({
   intendedBehavior,
   round = 1,
   deadlineMs = 20 * 60 * 1000,
+  pollIntervalMs = 1000,
 }) {
   const opencode = state.opencode ?? { schema_version: 1, fixer: null, qa: null, specialists: {}, inflight: null };
   const decision = await resolveSessionForRole({
@@ -49,26 +50,97 @@ export async function runQaSession({
     return { status: 'retry', sessionId, state };
   }
 
+  const baseline = await completedAssistantMessageIds(client, sessionId);
   const prompt = buildQaPrompt({ issue, repoDir, branch, diffSummary, intendedBehavior, round });
+  const control = { cancelled: false };
   const outcome = await withDeadline(
-    () => client.prompt({ sessionId, agent: 'qa', parts: [{ type: 'text', text: prompt }] }),
+    () => promptOrCompletedMessage({
+      client,
+      sessionId,
+      prompt,
+      baseline,
+      pollIntervalMs,
+      control,
+    }),
     deadlineMs,
     () => client.abort(sessionId),
+    () => { control.cancelled = true; },
   );
 
+  const status = outcome.status ?? (outcome.kind === 'ok' ? 'ok' : outcome.kind);
   const text = typeof outcome.result?.text === 'string' ? outcome.result.text : '';
   const verdict = parseOverallStatus(text);
   const nextState = {
     ...state,
     opencode: {
       ...opencode,
-      qa: { session_id: sessionId, agent: 'qa', last_used_round: round, last_status: outcome.status, last_seen_at: new Date().toISOString() },
+      qa: { session_id: sessionId, agent: 'qa', last_used_round: round, last_status: status, last_seen_at: new Date().toISOString() },
     },
   };
-  return { status: outcome.status, sessionId, state: nextState, verdict, report: text };
+  return { status, sessionId, state: nextState, verdict, report: text };
 }
 
-async function withDeadline(fn, deadlineMs, onTimeout) {
+async function completedAssistantMessageIds(client, sessionId) {
+  if (typeof client.getMessages !== 'function') return new Set();
+  const result = await client.getMessages(sessionId);
+  if (result.kind !== 'ok' || !Array.isArray(result.messages)) return new Set();
+  return new Set(result.messages.filter(isCompletedAssistant).map(messageId).filter(Boolean));
+}
+
+async function promptOrCompletedMessage({ client, sessionId, prompt, baseline, pollIntervalMs, control }) {
+  let settled = false;
+  const promptPromise = client.prompt({
+    sessionId,
+    agent: 'qa',
+    parts: [{ type: 'text', text: prompt }],
+  });
+  if (typeof client.getMessages !== 'function') return promptPromise;
+
+  const messagePromise = (async () => {
+    while (!settled && !control.cancelled) {
+      await delay(pollIntervalMs);
+      if (settled || control.cancelled) return null;
+      const result = await client.getMessages(sessionId);
+      if (result.kind !== 'ok' || !Array.isArray(result.messages)) continue;
+      const completed = result.messages
+        .filter(isCompletedAssistant)
+        .filter((message) => !baseline.has(messageId(message)))
+        .sort((left, right) => messageCreated(right) - messageCreated(left))[0];
+      if (!completed) continue;
+      return { kind: 'ok', result: { text: messageText(completed) } };
+    }
+  })();
+
+  try {
+    return await Promise.race([promptPromise, messagePromise]);
+  } finally {
+    settled = true;
+  }
+}
+
+function isCompletedAssistant(message) {
+  return message?.info?.role === 'assistant' && Number.isFinite(Number(message?.info?.time?.completed));
+}
+
+function messageId(message) {
+  return message?.info?.id ?? message?.id ?? null;
+}
+
+function messageCreated(message) {
+  return Number(message?.info?.time?.created ?? 0);
+}
+
+function messageText(message) {
+  return Array.isArray(message?.parts)
+    ? message.parts.filter((part) => part?.type === 'text' && typeof part.text === 'string').map((part) => part.text).join('')
+    : '';
+}
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function withDeadline(fn, deadlineMs, onTimeout, onSettled = () => {}) {
   let timer;
   try {
     return await Promise.race([
@@ -83,6 +155,7 @@ async function withDeadline(fn, deadlineMs, onTimeout) {
   } catch (error) {
     return { status: 'aborted', error };
   } finally {
+    onSettled();
     clearTimeout(timer);
   }
 }

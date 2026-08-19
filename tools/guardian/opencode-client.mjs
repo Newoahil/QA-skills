@@ -140,5 +140,14 @@ export function createOpencodeClient({ baseUrl, sdk } = {}) {
     }
   }
 
-  return { createSession, prompt, abort, getSession };
+  async function getMessages(sessionId) {
+    try {
+      const result = await client._client.get({ url: `/session/${encodeURIComponent(sessionId)}/message` });
+      return { kind: 'ok', messages: result?.data ?? result ?? [] };
+    } catch (error) {
+      return { kind: classifyError(error).kind, error };
+    }
+  }
+
+  return { createSession, prompt, abort, getSession, getMessages };
 }
