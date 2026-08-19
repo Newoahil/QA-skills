@@ -12,9 +12,10 @@ test('prepareInvestigation runs bounded specialists and persists dossier/plan', 
   try {
     const result = await prepareInvestigation({
       issue: 42, repoDir: 'D:/repo', guardianDir: root, issueClass: 'bug', complexity: 'simple',
+      issueData: { title: 'Wrong badge color', body: 'Expected pink, observed red.' },
       capabilities: {}, config: { investigation_budget_ms: 1000, specialist_timeout_ms: 100 },
-      runSpecialist: async ({ role, timeout_ms }) => {
-        calls.push({ role, timeout_ms });
+      runSpecialist: async ({ role, timeout_ms, issueData, issueDataPath }) => {
+        calls.push({ role, timeout_ms, issueData, issueDataPath });
         return {
           specialist: role,
           hypotheses: [{ id: 'H1', statement: 'root' }],
@@ -25,6 +26,11 @@ test('prepareInvestigation runs bounded specialists and persists dossier/plan', 
       buildPlan: async () => ({ root_cause: 'root', affected_files: ['a.mjs'], non_goals: ['b'], test_plan: ['test'], acceptance_criteria: ['works'], rollback_plan: 'revert', evidence_ids: ['E-guardian-code', 'E-guardian-runtime'], risk: 'LOW' }),
     });
     assert.equal(calls.length, 2);
+    assert.deepEqual(calls.map((call) => call.issueData), [
+      { title: 'Wrong badge color', body: 'Expected pink, observed red.' },
+      { title: 'Wrong badge color', body: 'Expected pink, observed red.' },
+    ]);
+    assert.equal(calls.every((call) => call.issueDataPath.endsWith('issue-data.json')), true);
     assert.equal(result.planResult.valid, true);
     assert.equal(investigationArtifactsReady(root, 42), true);
   } finally {

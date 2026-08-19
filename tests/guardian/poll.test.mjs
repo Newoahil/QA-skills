@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { invocationFor, invocationArgvFor, RUNTIME_GUARDRAILS } from '../../tools/guardian/poll.mjs';
+import { invocationFor, invocationArgvFor, pollIssue, RUNTIME_GUARDRAILS } from '../../tools/guardian/poll.mjs';
 import { resolveRepoDir } from '../../tools/guardian/scheduler.mjs';
 import { STATES } from '../../tools/guardian/state.mjs';
 
@@ -83,4 +83,16 @@ test('resolveRepoDir precedence: --repo arg > env > cwd', () => {
   );
   // empty env value is ignored → falls through to cwd
   assert.equal(resolveRepoDir(['node', 'scheduler.mjs'], { QA_GUARDIAN_REPO: '' }), process.cwd());
+});
+
+test('pollIssue carries issue title and body from the GitHub boundary', () => {
+  const decision = pollIssue('D:/missing-guardian-dir', 211, () => ({
+    title: 'Wrong badge color',
+    body: 'Expected pink, observed red.',
+    closed: false,
+    comments: [],
+  }), { repoDir: 'D:/repo' });
+
+  assert.equal(decision.issueTitle, 'Wrong badge color');
+  assert.equal(decision.issueBody, 'Expected pink, observed red.');
 });

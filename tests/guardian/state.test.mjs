@@ -37,6 +37,42 @@ test('newState has every schema field (§11A.3)', () => {
   assert.equal(s.issue, 42);
 });
 
+test('newState carries an opencode session-metadata structure', () => {
+  const s = newState(42);
+  assert.ok(s.opencode, 'missing opencode structure');
+  assert.equal(s.opencode.schema_version, 1);
+  assert.equal(s.opencode.fixer, null);
+  assert.equal(s.opencode.qa, null);
+  assert.deepEqual(s.opencode.specialists, {});
+  assert.equal(s.opencode.inflight, null);
+});
+
+test('startFollowupRound preserves fixer and qa session ids', () => {
+  const record = {
+    ...newState(7),
+    state: STATES.DONE,
+    opencode: {
+      schema_version: 1,
+      fixer: { session_id: 'ses_fixer', agent: 'qa-guardian' },
+      qa: { session_id: 'ses_qa', agent: 'qa' },
+      specialists: {},
+      inflight: null,
+    },
+  };
+  const next = startFollowupRound(record, { commentId: 'c9', data: 'new round' });
+  assert.equal(next.opencode.fixer.session_id, 'ses_fixer');
+  assert.equal(next.opencode.qa.session_id, 'ses_qa');
+  assert.equal(next.processing_round, 2);
+});
+
+test('normalizeState backfills opencode for an older record', () => {
+  const old = { issue: 5, state: STATES.DISCOVERED };
+  const normalized = normalizeState(old, 5);
+  assert.ok(normalized.opencode);
+  assert.equal(normalized.opencode.schema_version, 1);
+  assert.equal(normalized.opencode.fixer, null);
+});
+
 test('write then read round-trips all fields', () => {
   const dir = tempGuardianDir();
   try {

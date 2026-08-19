@@ -19,14 +19,14 @@ function atomicWriteJson(file, value) {
 }
 
 export function writeArtifact(guardianDir, issue, name, value) {
-  if (!['dossier', 'plan', 'qa-verdict'].includes(name)) throw new Error(`unsupported artifact: ${name}`);
+  if (!['issue-data', 'dossier', 'plan', 'qa-verdict'].includes(name)) throw new Error(`unsupported artifact: ${name}`);
   const file = path.join(artifactDir(guardianDir, issue), `${name}.json`);
   atomicWriteJson(file, value);
   return file;
 }
 
 export function readArtifact(guardianDir, issue, name) {
-  if (!['dossier', 'plan', 'qa-verdict'].includes(name)) throw new Error(`unsupported artifact: ${name}`);
+  if (!['issue-data', 'dossier', 'plan', 'qa-verdict'].includes(name)) throw new Error(`unsupported artifact: ${name}`);
   const file = path.join(artifactDir(guardianDir, issue), `${name}.json`);
   if (!existsSync(file)) return null;
   return readJsonFile(file);
@@ -58,6 +58,7 @@ export function quarantineArtifacts(guardianDir, issue) {
 export function artifactPaths(guardianDir, issue) {
   const dir = artifactDir(guardianDir, issue);
   return {
+    issue_data_path: path.join(dir, 'issue-data.json'),
     dossier_path: path.relative(path.dirname(guardianDir), path.join(dir, 'dossier.json')),
     plan_path: path.relative(path.dirname(guardianDir), path.join(dir, 'plan.json')),
   };

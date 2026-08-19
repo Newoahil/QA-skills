@@ -7,6 +7,7 @@
     "guardian:start": "node tools/guardian/guardian-runtime.mjs"
   },
   "dependencies": {
-    "@larksuiteoapi/node-sdk": "1.73.0"
+    "@larksuiteoapi/node-sdk": "1.73.0",
+    "@opencode-ai/sdk": "^1.18.18"
   }
 }

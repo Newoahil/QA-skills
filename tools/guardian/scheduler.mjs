@@ -32,6 +32,7 @@ import { canCreatePr } from './qa-gate.mjs';
 import { createPullRequest } from './pr-io.mjs';
 import { buildVerdictComment, markerForApproval, hashVerdictComment } from './verdict-comment.mjs';
 import { resolveOpencodeBin } from './opencode-bin.mjs';
+import { createOpencodeClient } from './opencode-client.mjs';
 
 const DEFAULT_INTERVAL_MS = 60 * 1000;
 // Heartbeat cadence: renew the lock well within the lease so a live long run never looks stale.
@@ -111,7 +112,10 @@ function runInvocation(repoDir, invokeArgv, lockFile, handle, leaseMs, timeoutMs
     // Resolve the real opencode executable at the spawn point (Windows needs opencode.cmd). The
     // invokeArgv.cmd descriptor stays the logical name 'opencode'; only the actual spawn resolves it.
     const bin = invokeArgv.cmd === 'opencode' ? resolveOpencodeBin() : invokeArgv.cmd;
-    const child = spawn(bin, invokeArgv.args, {
+    const args = [...invokeArgv.args];
+    const serverUrl = process.env.QA_GUARDIAN_OPENCODE_SERVER_URL;
+    if (serverUrl && !args.includes('--attach')) args.splice(1, 0, '--attach', serverUrl);
+    const child = spawn(bin, args, {
       cwd: repoDir, shell: false, stdio: 'inherit', windowsHide: true,
     });
     // NOTE: the N=1 lease heartbeat is owned by the OUTER critical section (started right after
@@ -135,6 +139,12 @@ async function tick(repoDir, config, logger) {
   const leaseMs = Number(config.lease_ms ?? DEFAULT_LEASE_MS);
   const now = Date.now();
   const issues = listCandidates(repoDir, config, new Date(now));
+
+  // Shared OpenCode server client (Oracle design): one serve, SDK sessions per role. Created once
+  // per tick from the configured server URL; null when no shared server is configured (fallback to
+  // child-process path).
+  const serverUrl = process.env.QA_GUARDIAN_OPENCODE_SERVER_URL;
+  const opencodeClient = serverUrl ? createOpencodeClient({ baseUrl: serverUrl }) : null;
 
   const trustedAuthors = config.command_authors ?? [];
   const decisions = issues.map(({ issue, claim_source }) => ({
@@ -235,10 +245,13 @@ async function tick(repoDir, config, logger) {
       if (dossier || planArtifact) quarantineArtifacts(guardianDir, issue);
       try {
         const prepared = await prepareInvestigation({
-          issue, repoDir, guardianDir, issueClass: config.default_issue_class ?? 'bug',
+          issue,
+          issueData: { title: plan.toRun.issueTitle ?? '', body: plan.toRun.issueBody ?? '' },
+          repoDir, guardianDir, issueClass: config.default_issue_class ?? 'bug',
           complexity: config.investigation_complexity ?? 'complex',
           capabilities: discoverCapabilities({ env: process.env }),
-          config, runSpecialist: processSpecialistRunner,
+          config,
+          runSpecialist: (args) => processSpecialistRunner({ ...args, opencodeClient }),
           buildPlan: (args) => processPlanBuilder({ ...args, repoDir }),
         });
         const state = readState(guardianDir, issue) ?? { issue };

@@ -113,6 +113,15 @@ export function newState(issueNumber, now = new Date().toISOString()) {
     qa_verdict_status: null,
     qa_verdict_hash: null,
     last_verdict_comment_hash: null, // idempotent Supervisor verdict-comment (§3A.4)
+    // OpenCode session continuity (Oracle design): one fixer + one qa session per issue, reused
+    // across gates/rework/followup; per-round specialist sessions. Never cleared by followup.
+    opencode: {
+      schema_version: 1,
+      fixer: null, // { session_id, agent:'qa-guardian', created_round, last_used_round, last_status, last_seen_at }
+      qa: null, // { session_id, agent:'qa', ... }
+      specialists: {}, // { [role]: { session_id, agent, round, last_status, last_seen_at } }
+      inflight: null, // { operation_id, role, session_id, kind, round, started_at, deadline_at, status }
+    },
   };
 }
 
@@ -120,7 +129,16 @@ export function newState(issueNumber, now = new Date().toISOString()) {
 // state files written by older versions still round-trip safely.
 export function normalizeState(record, issueNumber) {
   const base = newState(issueNumber ?? record.issue, record.updated_at);
-  return { ...base, ...record, issue: Number(issueNumber ?? record.issue) };
+  const merged = { ...base, ...record, issue: Number(issueNumber ?? record.issue) };
+  // Deep-merge opencode so a partial/older record keeps base defaults for missing sub-fields.
+  if (record.opencode && typeof record.opencode === 'object') {
+    merged.opencode = {
+      ...base.opencode,
+      ...record.opencode,
+      specialists: { ...(base.opencode?.specialists ?? {}), ...(record.opencode.specialists ?? {}) },
+    };
+  }
+  return merged;
 }
 
 export function startFollowupRound(record, command, now = new Date().toISOString()) {

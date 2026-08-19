@@ -26,6 +26,17 @@
 .PARAMETER BaseBranch
   PR base branch written into config on init. Default: dev.
 
+.PARAMETER SchedulerOnly
+  Start only scheduler.mjs. Skips the optional Feishu WebSocket runtime; useful for local polling
+  runs and visible E2E monitoring.
+
+.PARAMETER OpenCodeServerUrl
+  Reuse an already initialized OpenCode server for specialists and fixer runs. This preserves all
+  external plugin capabilities while avoiding one cold plugin/index initialization per agent.
+
+.PARAMETER ProgressDir
+  Directory where specialist progress streams are mirrored for dedicated visible terminals.
+
 .EXAMPLE
   ./tools/guardian/scheduler-start.ps1 -TargetRepo D:\tuantuanrent
   ./tools/guardian/scheduler-start.ps1 -TargetRepo D:\tuantuanrent -Init -CommandAuthors goudaren0528
@@ -36,7 +47,10 @@ param(
   [string]$TargetRepo = "",
   [switch]$Init,
   [string]$CommandAuthors = "",
-  [string]$BaseBranch = "dev"
+  [string]$BaseBranch = "dev",
+  [switch]$SchedulerOnly,
+  [string]$OpenCodeServerUrl = "",
+  [string]$ProgressDir = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -152,6 +166,30 @@ if (-not $cfg.command_authors -or @($cfg.command_authors).Count -eq 0) {
   Write-Host "    可信命令作者: $($cfg.command_authors -join ', ')" -ForegroundColor Green
 }
 
-Write-Host "==> 正在启动 Guardian 组合服务（scheduler + 飞书长连接）" -ForegroundColor Cyan
-Write-Host "    提示：按 Ctrl+C 可停止；首次启动前请确认已执行 npm install 并配置飞书凭证。" -ForegroundColor Gray
-& $nodeExe (Join-Path $GuardianRepo "tools\guardian\guardian-runtime.mjs") --repo $TargetRepo
+if ($SchedulerOnly) {
+  if ($OpenCodeServerUrl) {
+    Write-Host "    OpenCode服务: $OpenCodeServerUrl" -ForegroundColor Green
+    $ready = $false
+    for ($attempt = 0; $attempt -lt 60; $attempt++) {
+      try {
+        $health = Invoke-WebRequest -UseBasicParsing -Uri "$OpenCodeServerUrl/global/health" -TimeoutSec 2
+        if ($health.StatusCode -eq 200) { $ready = $true; break }
+      } catch {}
+      Start-Sleep -Seconds 1
+    }
+    if (-not $ready) { throw "OpenCode server did not become healthy: $OpenCodeServerUrl" }
+    $env:QA_GUARDIAN_OPENCODE_SERVER_URL = $OpenCodeServerUrl
+  }
+  if ($ProgressDir) {
+    New-Item -ItemType Directory -Path $ProgressDir -Force | Out-Null
+    $env:QA_GUARDIAN_PROGRESS_DIR = $ProgressDir
+    Write-Host "    Agent进度  : $ProgressDir" -ForegroundColor Green
+  }
+  Write-Host "==> 正在启动 Guardian scheduler（polling only）" -ForegroundColor Cyan
+  Write-Host "    提示：按 Ctrl+C 可停止。" -ForegroundColor Gray
+  & $nodeExe (Join-Path $GuardianRepo "tools\guardian\scheduler.mjs") --repo $TargetRepo
+} else {
+  Write-Host "==> 正在启动 Guardian 组合服务（scheduler + 飞书长连接）" -ForegroundColor Cyan
+  Write-Host "    提示：按 Ctrl+C 可停止；首次启动前请确认已执行 npm install 并配置飞书凭证。" -ForegroundColor Gray
+  & $nodeExe (Join-Path $GuardianRepo "tools\guardian\guardian-runtime.mjs") --repo $TargetRepo
+}

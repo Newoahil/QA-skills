@@ -75,7 +75,7 @@ export function defaultGhReader(repoDir) {
   return function readGithubIssue(issueNumber) {
     const args = [
       'issue', 'view', String(issueNumber),
-      '--json', 'state,comments,title,labels',
+      '--json', 'state,comments,title,body,labels',
       // comments include author login for the command-authorization boundary (security).
     ];
     const res = spawnSync('gh', args, {
@@ -90,6 +90,7 @@ export function defaultGhReader(repoDir) {
     const data = JSON.parse(res.stdout);
     return {
       title: data.title ?? null,
+      body: data.body ?? '',
       closed: String(data.state).toUpperCase() === 'CLOSED',
       comments: (data.comments ?? []).map((c) => ({
         id: c.id ?? c.url ?? c.createdAt,
@@ -154,6 +155,7 @@ export function pollIssue(guardianDir, issueNumber, ghReader, opts = {}) {
   return {
     issue: Number(issueNumber),
     issueTitle: gh.title ?? null,
+    issueBody: gh.body ?? '',
     ...decision,
     invoke: invocationFor(opts.repoDir ?? '.', issueNumber, decision),
     invokeArgv: invocationArgvFor(opts.repoDir ?? '.', issueNumber, decision),

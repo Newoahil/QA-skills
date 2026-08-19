@@ -7,7 +7,7 @@ import { validatePlan } from './plan-validator.mjs';
 import { resolveBudgets } from './budgets.mjs';
 import { randomUUID } from 'node:crypto';
 
-export async function prepareInvestigation({ issue, repoDir, guardianDir, issueClass, complexity, capabilities, config = {}, runSpecialist, buildPlan }) {
+export async function prepareInvestigation({ issue, issueData, repoDir, guardianDir, issueClass, complexity, capabilities, config = {}, runSpecialist, buildPlan }) {
   const paths = artifactPaths(guardianDir, issue);
   const budgets = resolveBudgets(config, complexity);
   const investigationId = randomUUID();
@@ -15,8 +15,21 @@ export async function prepareInvestigation({ issue, repoDir, guardianDir, issueC
   if (typeof runSpecialist !== 'function') throw new Error('investigation specialist runner is not configured');
   if (typeof buildPlan !== 'function') throw new Error('investigation plan builder is not configured');
 
+  writeArtifact(guardianDir, issue, 'issue-data', {
+    issue: Number(issue),
+    title: issueData?.title ?? '',
+    body: issueData?.body ?? '',
+  });
   const results = await Promise.all(roles.slice(0, budgets.max_specialists).map((role) =>
-    runSpecialist({ role, issue, repoDir, dossierPath: paths.dossier_path, timeout_ms: budgets.specialist_timeout_ms }),
+    runSpecialist({
+      role,
+      issue,
+      issueData,
+      issueDataPath: paths.issue_data_path,
+      repoDir,
+      dossierPath: paths.dossier_path,
+      timeout_ms: budgets.specialist_timeout_ms,
+    }),
   ));
   const synthesis = synthesizeDossier({ issue, issueClass, specialistResults: results, capabilities });
   const dossier = { ...synthesis.dossier, investigation_id: investigationId };
