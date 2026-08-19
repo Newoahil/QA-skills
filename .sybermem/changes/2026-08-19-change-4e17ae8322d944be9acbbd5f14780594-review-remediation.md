@@ -4,7 +4,7 @@ record_id: change-4e17ae8322d944be9acbbd5f14780594
 date: 2026-08-19
 title: Harden QA Guardian after independent review
 status: completed
-key_conclusion: Replaced child-agent shell authority with supervisor-owned direct argv operations, made SDK sessions and Gate 1 approvals context-bound and fail-closed, enforced actor capabilities at mutation seams, and hardened state/GitHub I/O; the Guardian suite passes 379/379.
+key_conclusion: Replaced child-agent shell authority with supervisor-owned direct argv operations, made SDK sessions and Gate 1 approvals context-bound and fail-closed, enforced actor capabilities at mutation seams, bound Feishu actions to trusted users, and hardened state/GitHub I/O; the Guardian suite passes 396/396.
 topics: [qa-guardian, opencode-sdk, security, review-remediation]
 related: [bug-95af95c0c87348659c6d36a12974beb0, bug-8a5db6c7aa0447189f0e23d02741516c]
 ---
@@ -36,10 +36,14 @@ issue #211 product fix or PR #222.
   cleanup on success and failure.
 - Aligned Guardian docs: fixer edits/reports; supervisor finalizes commit/push, owns QA verdicts and
   PR creation; only humans approve, merge, or close.
+- Bound Feishu card actions to a mapped trusted GitHub author that is also in `command_authors`;
+  a valid app signature alone no longer authorizes a command.
+- Required structured fixer completion before finalization, executable scoped tests in enforced
+  mode, and isolated worktrees (no unrelated staged or unstaged changes).
 
 ## Verification
 
-- Guardian test suite: 379/379 passing.
+- Guardian test suite: 396/396 passing.
 - Syntax checks: 13 modified runtime modules passed `node --check`.
 - Static scans found no broad permission allow, child-agent bash allow, inline GitHub CLI `--body`,
   or contradictory fixer-owned PR wording.
