@@ -33,6 +33,8 @@ import { createPullRequest } from './pr-io.mjs';
 import { buildVerdictComment, markerForApproval, hashVerdictComment } from './verdict-comment.mjs';
 import { resolveOpencodeBin } from './opencode-bin.mjs';
 import { createOpencodeClient } from './opencode-client.mjs';
+import { runFixerSession } from './fixer-session-runner.mjs';
+import { runQaSession } from './qa-session-runner.mjs';
 
 const DEFAULT_INTERVAL_MS = 60 * 1000;
 // Heartbeat cadence: renew the lock well within the lease so a live long run never looks stale.
@@ -336,14 +338,88 @@ async function tick(repoDir, config, logger) {
 
   logger.info('run.begin', { issue, action, to_state: toState });
   try {
-    const code = await runInvocation(repoDir, invokeArgv, lockFile, handle, leaseMs, Number(config.child_timeout_ms ?? 20 * 60 * 1000));
-    const qaVerdict = readArtifact(guardianDirOf(repoDir), issue, 'qa-verdict');
+    const guardianDir = guardianDirOf(repoDir);
+    let code = 0;
+    let qaVerdict = null;
+
+    if (opencodeClient) {
+      // 方案 A: fixer runs via a persistent SDK session (reused across gates/rework/followup).
+      const currentState = readState(guardianDir, issue) ?? { issue };
+      const humanNote = plan.toRun.command?.data
+        ? {
+            command_kind: plan.toRun.command.verb,
+            command_comment_id: plan.toRun.command.commentId,
+            trusted_author_id: null,
+            round: currentState.processing_round ?? 1,
+            human_note: plan.toRun.command.data,
+          }
+        : null;
+      const fixerRun = await runFixerSession({
+        client: opencodeClient,
+        state: currentState,
+        issue,
+        repoDir,
+        dossierPath: path.join(guardianDir, String(issue), 'dossier.json'),
+        planPath: path.join(guardianDir, String(issue), 'plan.json'),
+        humanNote,
+        round: currentState.processing_round ?? 1,
+        deadlineMs: Number(config.child_timeout_ms ?? 20 * 60 * 1000),
+      });
+      if (fixerRun.status === 'retry') {
+        logger.warn('fixer.session_retry', { issue });
+        return;
+      }
+      if (fixerRun.status === 'aborted') {
+        logger.warn('fixer.session_aborted', { issue });
+        return;
+      }
+      writeState(guardianDir, fixerRun.state, { touch: false });
+
+      // 方案 A: QA runs via an independent SDK session (scheduler-invoked, not fixer-internal).
+      const afterFix = readState(guardianDir, issue) ?? { issue };
+      const qaRun = await runQaSession({
+        client: opencodeClient,
+        state: afterFix,
+        issue,
+        repoDir,
+        branch: afterFix.branch ?? null,
+        diffSummary: `fix branch ${afterFix.branch ?? 'unknown'}`,
+        intendedBehavior: plan.toRun.issueTitle ?? `issue #${issue}`,
+        round: afterFix.processing_round ?? 1,
+        deadlineMs: Number(config.child_timeout_ms ?? 20 * 60 * 1000),
+      });
+      if (qaRun.status === 'retry') {
+        logger.warn('qa.session_retry', { issue });
+        return;
+      }
+      if (qaRun.status === 'aborted') {
+        logger.warn('qa.session_aborted', { issue });
+        return;
+      }
+      writeState(guardianDir, qaRun.state, { touch: false });
+      if (qaRun.verdict) {
+        qaVerdict = {
+          issue: Number(issue),
+          branch: afterFix.branch ?? null,
+          status: qaRun.verdict,
+          verified_at: new Date().toISOString(),
+          report_hash: `sha256:${crypto.createHash('sha256').update(qaRun.report ?? '', 'utf8').digest('hex')}`,
+          evidence_summary: qaRun.report ?? null,
+        };
+        writeArtifact(guardianDir, issue, 'qa-verdict', qaVerdict);
+      }
+    } else {
+      // Legacy path: fixer spawns and internally dispatches qa (writes qa-verdict.json itself).
+      code = await runInvocation(repoDir, invokeArgv, lockFile, handle, leaseMs, Number(config.child_timeout_ms ?? 20 * 60 * 1000));
+      qaVerdict = readArtifact(guardianDir, issue, 'qa-verdict');
+    }
+
     const qaAudit = auditQaVerdict(qaVerdict, {
       issue,
-      branch: readState(guardianDirOf(repoDir), issue)?.branch ?? undefined,
+      branch: readState(guardianDir, issue)?.branch ?? undefined,
     });
-    const afterRun = readState(guardianDirOf(repoDir), issue) ?? { issue };
-    writeState(guardianDirOf(repoDir), {
+    const afterRun = readState(guardianDir, issue) ?? { issue };
+    writeState(guardianDir, {
       ...afterRun,
       qa_verdict_path: qaVerdict ? path.join(String(issue), 'qa-verdict.json') : null,
       qa_verdict_status: qaVerdict?.status ?? null,
@@ -359,7 +435,7 @@ async function tick(repoDir, config, logger) {
     // exists and it did not approve (FAIL/BLOCKED/NHR). A missing verdict means the run stopped
     // mid-pipeline (e.g. at a gate) and is NOT a QA failure — do not post then. Enforced mode only.
     if (investigationMode === 'enforced' && qaVerdict && !qaAudit.approved) {
-      writeVerdictComment(guardianDirOf(repoDir), issue, {
+      writeVerdictComment(guardianDir, issue, {
         approved: false,
         status: qaVerdict?.status ?? null,
         branch: afterRun.branch ?? null,
@@ -389,7 +465,7 @@ async function tick(repoDir, config, logger) {
           title: plan.toRun.issueTitle ?? `修复 issue #${issue}`,
           body: `## QA Guardian 自动验证\n\nIssue #${issue}\n\n独立 QA 结论：Overall Status: PASS\n\n请人工评审后合并。`,
         });
-        writeState(guardianDirOf(repoDir), {
+        writeState(guardianDir, {
           ...afterRun,
           state: 'GATE_2_WAIT',
           pr_url: prUrl,
@@ -397,7 +473,7 @@ async function tick(repoDir, config, logger) {
         }, { touch: false });
         logger.info('pr.opened_gate2', { issue });
         // Supervisor writes the authoritative [QA_VERIFIED] verification comment (§3A).
-        writeVerdictComment(guardianDirOf(repoDir), issue, {
+        writeVerdictComment(guardianDir, issue, {
           approved: true,
           status: qaVerdict?.status ?? 'PASS',
           branch: currentBranch,
