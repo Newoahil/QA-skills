@@ -1,7 +1,14 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 import { auditQaVerdict, buildQaVerdict, canOpenPr, hashQaReport } from '../../tools/guardian/qa-verdict.mjs';
+
+test('scheduler imports the artifact writer used for SDK QA verdicts', () => {
+  const source = readFileSync(new URL('../../tools/guardian/scheduler.mjs', import.meta.url), 'utf8');
+  assert.match(source, /import \{[^}]*\bwriteArtifact\b[^}]*\} from '\.\/artifacts\.mjs';/);
+  assert.match(source, /writeArtifact\(guardianDir, issue, 'qa-verdict', qaVerdict\)/);
+});
 
 test('buildQaVerdict materializes PASS report with hash and context', () => {
   const report = 'Overall Status: PASS\nall checks passed';

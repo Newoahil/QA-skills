@@ -25,7 +25,7 @@ import { projectLabels } from './label-io.mjs';
 import { prepareInvestigation } from './investigation-runtime.mjs';
 import { processPlanBuilder, processSpecialistRunner } from './investigation-process.mjs';
 import { discoverCapabilities } from './capabilities.mjs';
-import { quarantineArtifacts, readArtifact, readArtifactPair } from './artifacts.mjs';
+import { quarantineArtifacts, readArtifact, readArtifactPair, writeArtifact } from './artifacts.mjs';
 import { assessFixingEntry } from './plan-gate.mjs';
 import { auditQaVerdict } from './qa-verdict.mjs';
 import { canCreatePr } from './qa-gate.mjs';
