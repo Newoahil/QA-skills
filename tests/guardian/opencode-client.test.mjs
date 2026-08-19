@@ -46,6 +46,29 @@ test('createSession passes no-ask permission and returns the session id', async 
   assert.equal(body.permission.some((p) => p.action === 'ask'), false);
 });
 
+test('fixer session permissions allow edits but deny irreversible and install actions', async () => {
+  const { sdk, calls } = fakeSdk();
+  const client = createOpencodeClient({ sdk });
+  await client.createSession({ title: 'fixer', agent: 'qa-guardian', directory: 'D:/repo' });
+  const rules = calls.create[0].body.permission;
+  assert.equal(rules.some((r) => r.permission === 'apply_patch' && r.action === 'allow'), true);
+  assert.equal(rules.some((r) => r.permission === 'bash' && r.pattern === 'gh pr merge*' && r.action === 'deny'), true);
+  assert.equal(rules.some((r) => r.permission === 'bash' && r.pattern === 'npm install*' && r.action === 'deny'), true);
+  assert.equal(rules.some((r) => r.permission === 'task' && r.pattern === '*' && r.action === 'deny'), true);
+});
+
+test('qa and specialist session permissions are read-only and never ask', async () => {
+  for (const agent of ['qa', 'guardian-code']) {
+    const { sdk, calls } = fakeSdk();
+    const client = createOpencodeClient({ sdk });
+    await client.createSession({ title: agent, agent, directory: 'D:/repo' });
+    const rules = calls.create[0].body.permission;
+    assert.equal(rules.some((r) => r.action === 'ask'), false);
+    assert.equal(rules.some((r) => r.permission === 'edit' && r.action === 'deny'), true);
+    assert.equal(rules.some((r) => r.permission === 'apply_patch' && r.action === 'deny'), true);
+  }
+});
+
 test('createSession passes the target directory so agents work in the right repo', async () => {
   const { sdk, calls } = fakeSdk();
   const client = createOpencodeClient({ sdk });

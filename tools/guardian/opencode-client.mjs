@@ -10,12 +10,72 @@
 
 import { createOpencodeClient as createSdkClient } from '@opencode-ai/sdk';
 
-// A session must never block on a permission prompt in headless mode. Every rule is allow/deny.
-const NO_ASK_PERMISSION = Object.freeze([
+// A session must never block on a permission prompt in headless mode. Rules are ordered; OpenCode
+// applies the LAST matching rule. Start broad, then narrow role-specific denies/allows.
+const HEADLESS_BASE = Object.freeze([
+  { permission: '*', action: 'allow', pattern: '*' },
   { permission: 'question', action: 'deny', pattern: '*' },
   { permission: 'plan_enter', action: 'deny', pattern: '*' },
   { permission: 'plan_exit', action: 'deny', pattern: '*' },
+  { permission: 'doom_loop', action: 'deny', pattern: '*' },
 ]);
+
+const INSTALL_AND_GIT_DENIES = Object.freeze([
+  'git commit*', 'git push*', 'git reset*', 'git checkout*', 'git clean*',
+  'npm install*', 'npm i *', 'pnpm add*', 'pnpm install*',
+  'yarn add*', 'yarn install*', 'pip install*',
+]);
+
+function permissionRulesFor(agent) {
+  if (agent === 'qa-guardian') {
+    return [
+      ...HEADLESS_BASE,
+      { permission: 'edit', action: 'allow', pattern: '*' },
+      { permission: 'write', action: 'allow', pattern: '*' },
+      { permission: 'apply_patch', action: 'allow', pattern: '*' },
+      { permission: 'webfetch', action: 'deny', pattern: '*' },
+      { permission: 'websearch', action: 'deny', pattern: '*' },
+      { permission: 'bash', action: 'deny', pattern: 'gh pr merge*' },
+      { permission: 'bash', action: 'deny', pattern: 'gh issue close*' },
+      { permission: 'bash', action: 'deny', pattern: 'gh issue edit*' },
+      ...INSTALL_AND_GIT_DENIES.filter((pattern) => !pattern.startsWith('git commit') && !pattern.startsWith('git push') && !pattern.startsWith('git checkout')).map((pattern) => ({ permission: 'bash', action: 'deny', pattern })),
+      { permission: 'task', action: 'deny', pattern: '*' },
+    ];
+  }
+
+  if (agent === 'qa') {
+    return [
+      ...HEADLESS_BASE,
+      { permission: 'edit', action: 'deny', pattern: '*' },
+      { permission: 'write', action: 'deny', pattern: '*' },
+      { permission: 'apply_patch', action: 'deny', pattern: '*' },
+      { permission: 'webfetch', action: 'deny', pattern: '*' },
+      { permission: 'websearch', action: 'deny', pattern: '*' },
+      ...INSTALL_AND_GIT_DENIES.map((pattern) => ({ permission: 'bash', action: 'deny', pattern })),
+      { permission: 'task', action: 'deny', pattern: '*' },
+      { permission: 'task', action: 'allow', pattern: 'qa-facet' },
+    ];
+  }
+
+  // Investigation specialists + plan builder: read/search/codegraph allowed, product writes and
+  // arbitrary shell denied. A small read-only shell whitelist is restored after the broad deny.
+  return [
+    ...HEADLESS_BASE,
+    { permission: 'edit', action: 'deny', pattern: '*' },
+    { permission: 'write', action: 'deny', pattern: '*' },
+    { permission: 'apply_patch', action: 'deny', pattern: '*' },
+    { permission: 'webfetch', action: 'deny', pattern: '*' },
+    { permission: 'websearch', action: 'deny', pattern: '*' },
+    { permission: 'bash', action: 'deny', pattern: '*' },
+    { permission: 'bash', action: 'allow', pattern: 'git diff*' },
+    { permission: 'bash', action: 'allow', pattern: 'git log*' },
+    { permission: 'bash', action: 'allow', pattern: 'git blame*' },
+    { permission: 'bash', action: 'allow', pattern: 'git show*' },
+    { permission: 'bash', action: 'allow', pattern: 'node --test*' },
+    { permission: 'bash', action: 'allow', pattern: 'npm test*' },
+    { permission: 'task', action: 'deny', pattern: '*' },
+  ];
+}
 
 function isRetryableStatus(status) {
   return status >= 500 || status === 429 || status === 408;
@@ -34,7 +94,7 @@ export function createOpencodeClient({ baseUrl, sdk } = {}) {
   const client = sdk ?? createSdkClient({ baseUrl });
 
   async function createSession({ title, agent, parentID = null, directory = null }) {
-    const body = { title, agent, permission: [...NO_ASK_PERMISSION] };
+    const body = { title, agent, permission: permissionRulesFor(agent) };
     if (parentID) body.parentID = parentID;
     const params = { body };
     if (directory) params.query = { directory };
