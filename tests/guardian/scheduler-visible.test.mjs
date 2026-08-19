@@ -5,6 +5,7 @@ import path from 'node:path';
 
 const script = path.resolve('tools/guardian/scheduler-visible.ps1');
 const monitorScript = path.resolve('tools/guardian/guardian-monitor.ps1');
+const serverScript = path.resolve('tools/guardian/opencode-server.ps1');
 const powershell = 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe';
 
 test('visible launcher uses PowerShell -File for scheduler and monitor windows', () => {
@@ -64,4 +65,21 @@ test('guardian monitor resolves git in an independent PowerShell window', () => 
 
   // Then: Git lookup succeeds without inheriting scheduler-start.ps1's PATH edits.
   assert.equal(result.status, 0, result.stderr || result.stdout || result.error?.message);
+});
+
+test('opencode server resolves Node npm and Git without inheriting PATH', () => {
+  const env = { ...process.env, PATH: 'C:\\Windows\\System32;C:\\Windows' };
+  const result = spawnSync(powershell, [
+    '-NoLogo', '-NoProfile', '-ExecutionPolicy', 'Bypass',
+    '-File', serverScript,
+    '-TargetRepo', path.resolve('.'),
+    '-Port', '4097',
+    '-DryRun',
+  ], { encoding: 'utf8', shell: false, windowsHide: true, env });
+  assert.equal(result.status, 0, result.stderr || result.stdout || result.error?.message);
+  const resolved = JSON.parse(result.stdout);
+  assert.equal(resolved.node.endsWith('node.exe'), true);
+  assert.equal(resolved.npm.endsWith('npm.cmd'), true);
+  assert.equal(resolved.git.endsWith('git.exe'), true);
+  assert.equal(resolved.opencode.endsWith('opencode.exe'), true);
 });
