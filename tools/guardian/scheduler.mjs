@@ -31,6 +31,7 @@ import { auditQaVerdict } from './qa-verdict.mjs';
 import { canCreatePr } from './qa-gate.mjs';
 import { createPullRequest } from './pr-io.mjs';
 import { buildVerdictComment, markerForApproval, hashVerdictComment } from './verdict-comment.mjs';
+import { resolveOpencodeBin } from './opencode-bin.mjs';
 
 const DEFAULT_INTERVAL_MS = 60 * 1000;
 // Heartbeat cadence: renew the lock well within the lease so a live long run never looks stale.
@@ -107,7 +108,10 @@ function guardianDirOf(repoDir) {
 // never be interpreted by a shell. Returns the child's exit code.
 function runInvocation(repoDir, invokeArgv, lockFile, handle, leaseMs, timeoutMs = 20 * 60 * 1000, signal) {
   return new Promise((resolve) => {
-    const child = spawn(invokeArgv.cmd, invokeArgv.args, {
+    // Resolve the real opencode executable at the spawn point (Windows needs opencode.cmd). The
+    // invokeArgv.cmd descriptor stays the logical name 'opencode'; only the actual spawn resolves it.
+    const bin = invokeArgv.cmd === 'opencode' ? resolveOpencodeBin() : invokeArgv.cmd;
+    const child = spawn(bin, invokeArgv.args, {
       cwd: repoDir, shell: false, stdio: 'inherit', windowsHide: true,
     });
     // Heartbeat: keep the lease fresh while the run is alive so N=1 holds for long runs.

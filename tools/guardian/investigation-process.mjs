@@ -3,6 +3,8 @@
 
 import { spawn } from 'node:child_process';
 
+import { resolveOpencodeBin } from './opencode-bin.mjs';
+
 function extractJson(text) {
   const source = String(text).trim();
   const fenced = source.match(/```json\s*([\s\S]*?)```/i);
@@ -16,7 +18,7 @@ function extractJson(text) {
 
 export function runAgentJson({ agent, repoDir, prompt, timeoutMs = 600000, spawnImpl = spawn }) {
   return new Promise((resolve, reject) => {
-    const child = spawnImpl('opencode', ['run', '--agent', agent, '--dir', repoDir, prompt], {
+    const child = spawnImpl(resolveOpencodeBin(), ['run', '--agent', agent, '--dir', repoDir, prompt], {
       cwd: repoDir, shell: false, windowsHide: true,
     });
     let stdout = '';
