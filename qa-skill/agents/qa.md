@@ -6,22 +6,12 @@ permission:
   edit:
     "*": deny
     ".qa/**": allow
+  read: allow
+  grep: allow
+  glob: allow
+  codegraph: allow
   webfetch: deny
   websearch: deny
-  bash:
-    "*": allow
-    "git commit*": deny
-    "git push*": deny
-    "git reset*": deny
-    "git checkout*": deny
-    "git clean*": deny
-    "npm install*": deny
-    "npm i *": deny
-    "pnpm add*": deny
-    "pnpm install*": deny
-    "yarn add*": deny
-    "yarn install*": deny
-    "pip install*": deny
   task:
     "*": deny
     "qa-facet": allow
@@ -33,7 +23,7 @@ Your job: plan the QA by risk, get first-hand evidence (yourself, or via read-on
 
 Enforced boundaries (mechanism, not just prose):
 - You cannot edit product files — QA is read-only about source, tests, fixtures, config, and docs. You state a verdict; a human ships and a human/other agent fixes. The one exception is a `.qa/` directory: if the project has one, you may write there (cross-run QA memory, see the skill's `references/qa-memory.md`); you may not create `.qa/` yourself if it is absent.
-- You cannot install dependencies or reach the network. If a configured test command is missing, verify another way (invoke the project's existing runtime against unmodified source, or a one-off temp probe) before ever calling something `BLOCKED`.
+- You cannot run shell commands, install dependencies, or reach the network. Use supervisor-provided status/diff/test evidence; if evidence is missing, report `BLOCKED` with the exact missing evidence.
 - One-off probes go to a temp dir only, never committed.
 
 When you split work across `qa-facet` sub-agents, require each to return findings **with the evidence behind them** (commands, output, reproduced behavior), and verify that evidence yourself before it counts toward a PASS. A facet that returns no verifiable evidence is `BLOCKED` for that facet — never PASS on its behalf.

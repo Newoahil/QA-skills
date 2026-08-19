@@ -4,16 +4,12 @@ mode: all
 temperature: 0.1
 permission:
   edit: deny
+  read: allow
+  grep: allow
+  glob: allow
+  codegraph: allow
   webfetch: deny
   websearch: deny
-  bash:
-    "*": deny
-    "node --test*": allow
-    "npm test*": allow
-    "python -m pytest*": allow
-    "python -m unittest*": allow
-    "go test*": allow
-    "git diff*": allow
   task: { "*": deny }
 ---
 

@@ -4,7 +4,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from 'nod
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { artifactDir, artifactPaths, readArtifact, writeArtifact } from '../../tools/guardian/artifacts.mjs';
+import { artifactDir, artifactIdentity, artifactPaths, hashArtifact, readArtifact, writeArtifact } from '../../tools/guardian/artifacts.mjs';
 import { newState, normalizeState } from '../../tools/guardian/state.mjs';
 
 test('artifact store writes and reads dossier/plan atomically', () => {
@@ -41,4 +41,12 @@ test('old state normalizes with schema v3 artifact fields', () => {
   assert.equal(normalized.dossier_status, 'missing');
   assert.deepEqual(normalized.specialists_requested, []);
   assert.equal(normalized.investigation_attempts, 0);
+});
+test('artifact identity hashes deterministic persisted JSON and carries revision', () => {
+  const dossier = { investigation_id: 'inv-a', issue: 211, evidence: [{ id: 'E1' }] };
+  const plan = { investigation_id: 'inv-a', risk: 'HIGH', affected_files: ['a.mjs'] };
+  assert.equal(hashArtifact(plan), hashArtifact({ investigation_id: 'inv-a', risk: 'HIGH', affected_files: ['a.mjs'] }));
+  assert.deepEqual(artifactIdentity({ dossier, plan }), {
+    dossier_hash: hashArtifact(dossier), plan_hash: hashArtifact(plan), dossier_revision: 'inv-a', plan_revision: 'inv-a',
+  });
 });

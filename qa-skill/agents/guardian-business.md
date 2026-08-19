@@ -4,14 +4,12 @@ mode: all
 temperature: 0.1
 permission:
   edit: deny
+  read: allow
+  grep: allow
+  glob: allow
+  codegraph: allow
   webfetch: deny
   websearch: deny
-  bash:
-    "*": deny
-    "git log*": allow
-    "git blame*": allow
-    "git show*": allow
-    "node --test*": allow
   task: { "*": deny }
 ---
 

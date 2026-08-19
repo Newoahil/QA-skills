@@ -21,3 +21,8 @@ test('qa gate accepts a PASS tied to the exact plan hash', () => {
   const result = canCreatePr({ verdict: { ...base, plan_hash: 'p1' }, issue: 42, branch: base.branch, expectedPlanHash: 'p1' });
   assert.equal(result.allowed, true);
 });
+
+test('qa gate accepts a PASS only when expected plan revision also matches', () => {
+  assert.equal(canCreatePr({ verdict: { ...base, plan_hash: 'p1', plan_revision: 'r1' }, issue: 42, branch: base.branch, expectedPlanHash: 'p1', expectedPlanRevision: 'r1' }).allowed, true);
+  assert.equal(canCreatePr({ verdict: { ...base, plan_hash: 'p1', plan_revision: 'r2' }, issue: 42, branch: base.branch, expectedPlanHash: 'p1', expectedPlanRevision: 'r1' }).allowed, false);
+});

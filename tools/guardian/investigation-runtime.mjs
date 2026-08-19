@@ -7,7 +7,7 @@ import { validatePlan } from './plan-validator.mjs';
 import { resolveBudgets } from './budgets.mjs';
 import { randomUUID } from 'node:crypto';
 
-export async function prepareInvestigation({ issue, issueData, repoDir, guardianDir, issueClass, complexity, capabilities, config = {}, runSpecialist, buildPlan }) {
+export async function prepareInvestigation({ issue, issueData, repoDir, guardianDir, issueClass, complexity, capabilities, config = {}, runSpecialist, buildPlan, state = null, round = 1 }) {
   const paths = artifactPaths(guardianDir, issue);
   const budgets = resolveBudgets(config, complexity);
   const investigationId = randomUUID();
@@ -29,6 +29,8 @@ export async function prepareInvestigation({ issue, issueData, repoDir, guardian
       repoDir,
       dossierPath: paths.dossier_path,
       timeout_ms: budgets.specialist_timeout_ms,
+      state,
+      round,
     }),
   ));
   const synthesis = synthesizeDossier({ issue, issueClass, specialistResults: results, capabilities });
@@ -47,6 +49,7 @@ export async function prepareInvestigation({ issue, issueData, repoDir, guardian
     artifact_paths: paths,
     budgets,
     specialists: roles,
+    opencode: state?.opencode ?? null,
   };
 }
 

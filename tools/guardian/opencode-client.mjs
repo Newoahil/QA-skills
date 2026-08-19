@@ -10,10 +10,13 @@
 
 import { createOpencodeClient as createSdkClient } from '@opencode-ai/sdk';
 
-// A session must never block on a permission prompt in headless mode. Rules are ordered; OpenCode
-// applies the LAST matching rule. Start broad, then narrow role-specific denies/allows.
+export const PERMISSION_POLICY_VERSION = 2;
+
+// A session must never block on a permission prompt in headless mode. There is no broad allow:
+// every role receives explicit capability rules and supervisor-owned repository operations are not
+// exposed as agent permissions.
 const HEADLESS_BASE = Object.freeze([
-  { permission: '*', action: 'allow', pattern: '*' },
+  { permission: '*', action: 'deny', pattern: '*' },
   { permission: 'question', action: 'deny', pattern: '*' },
   { permission: 'plan_enter', action: 'deny', pattern: '*' },
   { permission: 'plan_exit', action: 'deny', pattern: '*' },
@@ -26,19 +29,24 @@ const INSTALL_AND_GIT_DENIES = Object.freeze([
   'yarn add*', 'yarn install*', 'pip install*',
 ]);
 
-function permissionRulesFor(agent) {
+export function permissionRulesFor(agent) {
   if (agent === 'qa-guardian') {
     return [
       ...HEADLESS_BASE,
       { permission: 'edit', action: 'allow', pattern: '*' },
       { permission: 'write', action: 'allow', pattern: '*' },
       { permission: 'apply_patch', action: 'allow', pattern: '*' },
+      { permission: 'read', action: 'allow', pattern: '*' },
+      { permission: 'grep', action: 'allow', pattern: '*' },
+      { permission: 'glob', action: 'allow', pattern: '*' },
+      { permission: 'codegraph', action: 'allow', pattern: '*' },
       { permission: 'webfetch', action: 'deny', pattern: '*' },
       { permission: 'websearch', action: 'deny', pattern: '*' },
+      { permission: 'bash', action: 'deny', pattern: '*' },
       { permission: 'bash', action: 'deny', pattern: 'gh pr merge*' },
       { permission: 'bash', action: 'deny', pattern: 'gh issue close*' },
       { permission: 'bash', action: 'deny', pattern: 'gh issue edit*' },
-      ...INSTALL_AND_GIT_DENIES.filter((pattern) => !pattern.startsWith('git commit') && !pattern.startsWith('git push') && !pattern.startsWith('git checkout')).map((pattern) => ({ permission: 'bash', action: 'deny', pattern })),
+      ...INSTALL_AND_GIT_DENIES.map((pattern) => ({ permission: 'bash', action: 'deny', pattern })),
       { permission: 'task', action: 'deny', pattern: '*' },
     ];
   }
@@ -49,16 +57,21 @@ function permissionRulesFor(agent) {
       { permission: 'edit', action: 'deny', pattern: '*' },
       { permission: 'write', action: 'deny', pattern: '*' },
       { permission: 'apply_patch', action: 'deny', pattern: '*' },
-      { permission: 'webfetch', action: 'deny', pattern: '*' },
-      { permission: 'websearch', action: 'deny', pattern: '*' },
-      ...INSTALL_AND_GIT_DENIES.map((pattern) => ({ permission: 'bash', action: 'deny', pattern })),
-      { permission: 'task', action: 'deny', pattern: '*' },
+      { permission: 'read', action: 'allow', pattern: '*' },
+      { permission: 'grep', action: 'allow', pattern: '*' },
+      { permission: 'glob', action: 'allow', pattern: '*' },
+      { permission: 'codegraph', action: 'allow', pattern: '*' },
+       { permission: 'webfetch', action: 'deny', pattern: '*' },
+       { permission: 'websearch', action: 'deny', pattern: '*' },
+       { permission: 'bash', action: 'deny', pattern: '*' },
+       ...INSTALL_AND_GIT_DENIES.map((pattern) => ({ permission: 'bash', action: 'deny', pattern })),
+       { permission: 'task', action: 'deny', pattern: '*' },
       { permission: 'task', action: 'allow', pattern: 'qa-facet' },
     ];
   }
 
-  // Investigation specialists + plan builder: read/search/codegraph allowed, product writes and
-  // arbitrary shell denied. A small read-only shell whitelist is restored after the broad deny.
+  // Investigation specialists + plan builder: read/search/codegraph only; repository commands are
+  // supervisor-owned and therefore not represented as bash permission patterns.
   return [
     ...HEADLESS_BASE,
     { permission: 'edit', action: 'deny', pattern: '*' },
@@ -66,15 +79,22 @@ function permissionRulesFor(agent) {
     { permission: 'apply_patch', action: 'deny', pattern: '*' },
     { permission: 'webfetch', action: 'deny', pattern: '*' },
     { permission: 'websearch', action: 'deny', pattern: '*' },
-    { permission: 'bash', action: 'deny', pattern: '*' },
-    { permission: 'bash', action: 'allow', pattern: 'git diff*' },
-    { permission: 'bash', action: 'allow', pattern: 'git log*' },
-    { permission: 'bash', action: 'allow', pattern: 'git blame*' },
-    { permission: 'bash', action: 'allow', pattern: 'git show*' },
-    { permission: 'bash', action: 'allow', pattern: 'node --test*' },
-    { permission: 'bash', action: 'allow', pattern: 'npm test*' },
+     { permission: 'read', action: 'allow', pattern: '*' },
+     { permission: 'grep', action: 'allow', pattern: '*' },
+     { permission: 'glob', action: 'allow', pattern: '*' },
+     { permission: 'codegraph', action: 'allow', pattern: '*' },
     { permission: 'task', action: 'deny', pattern: '*' },
   ];
+}
+
+export function isPermissionCompatible(roleOrAgent, permission) {
+  if (!Array.isArray(permission)) return false;
+  if (permission.some((rule) => rule?.action === 'allow' && (rule.permission === '*' || rule.permission === 'bash'))) return false;
+  const fixer = roleOrAgent === 'fixer' || roleOrAgent === 'qa-guardian';
+  const required = fixer ? ['edit', 'write', 'apply_patch', 'read'] : ['read', 'grep', 'glob'];
+  if (!required.every((name) => permission.some((rule) => rule?.permission === name && rule.action === 'allow' && rule.pattern === '*'))) return false;
+  if (!fixer && permission.some((rule) => rule?.action === 'allow' && ['edit', 'write', 'apply_patch'].includes(rule.permission))) return false;
+  return true;
 }
 
 function isRetryableStatus(status) {
@@ -121,7 +141,7 @@ export function createOpencodeClient({ baseUrl, sdk } = {}) {
         ? data.parts.filter((part) => part?.type === 'text' && typeof part.text === 'string').map((part) => part.text).join('')
         : (typeof data?.text === 'string' ? data.text : '');
       const structured = data?.info?.structured ?? null;
-      return { kind: 'ok', result: { ...data, text, structured } };
+      return { kind: 'ok', status: 'ok', result: { ...data, text, structured } };
     } catch (error) {
       return { kind: classifyError(error).kind, error };
     }
@@ -134,7 +154,7 @@ export function createOpencodeClient({ baseUrl, sdk } = {}) {
   async function getSession(sessionId) {
     try {
       const result = await client._client.get({ url: `/session/${encodeURIComponent(sessionId)}` });
-      return { kind: 'ok', session: result?.data ?? result };
+      return { kind: 'ok', status: 'ok', session: result?.data ?? result };
     } catch (error) {
       return { kind: classifyError(error).kind, error };
     }
@@ -143,7 +163,7 @@ export function createOpencodeClient({ baseUrl, sdk } = {}) {
   async function getMessages(sessionId) {
     try {
       const result = await client._client.get({ url: `/session/${encodeURIComponent(sessionId)}/message` });
-      return { kind: 'ok', messages: result?.data ?? result ?? [] };
+      return { kind: 'ok', status: 'ok', messages: result?.data ?? result ?? [] };
     } catch (error) {
       return { kind: classifyError(error).kind, error };
     }

@@ -18,6 +18,8 @@ export function buildQaVerdict(report, context = {}) {
     verified_at: context.verified_at ?? new Date().toISOString(),
     report_hash: hashQaReport(report),
     evidence_summary: context.evidence_summary ?? null,
+    ...(context.plan_hash ? { plan_hash: context.plan_hash } : {}),
+    ...(context.plan_revision ? { plan_revision: context.plan_revision } : {}),
   };
 }
 

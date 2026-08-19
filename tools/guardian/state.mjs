@@ -5,9 +5,10 @@
 // process (§11B.1 stateless re-entry). Everything here is pure I/O + schema; routing lives
 // in state-router.mjs.
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { readJsonFile } from './runtime-io.mjs';
+import { atomicWriteJson } from './atomic-io.mjs';
 
 // Canonical state set (§11 state machine). "active" states carry a heartbeat and are
 // lease-checked for STALLED; "waiting"/"terminal" states do not occupy the concurrency
@@ -77,6 +78,8 @@ export function newState(issueNumber, now = new Date().toISOString()) {
     last_consumed_comment_id: null, // idempotent command consumption (§11.2)
     last_notified_state: null, // idempotent notify (§11B.5)
     gate_1_approved_comment_id: null, // trusted human approve/revise that unlocks a valid plan
+    gate_1_approved_plan_hash: null,
+    gate_1_approved_plan_revision: null,
     gate_1_revision_data: null, // opaque DATA tail from /guardian revise
     handed_back_reason: null, // one of HANDED_BACK_REASONS
     issue_class: null, // bug | request
@@ -94,6 +97,7 @@ export function newState(issueNumber, now = new Date().toISOString()) {
     dossier_status: 'missing',
     plan_status: 'missing',
     plan_hash: null,
+    plan_revision: null,
     investigation_started_at: null,
     investigation_completed_at: null,
     investigation_budget_ms: null,
@@ -119,9 +123,9 @@ export function newState(issueNumber, now = new Date().toISOString()) {
     // across gates/rework/followup; per-round specialist sessions. Never cleared by followup.
     opencode: {
       schema_version: 1,
-      fixer: null, // { session_id, agent:'qa-guardian', created_round, last_used_round, last_status, last_seen_at }
-      qa: null, // { session_id, agent:'qa', ... }
-      specialists: {}, // { [role]: { session_id, agent, round, last_status, last_seen_at } }
+      fixer: null, // { session_id, agent:'qa-guardian', repo_dir, issue, role, created_round, last_used_round, last_status, last_seen_at }
+      qa: null, // { session_id, agent:'qa', repo_dir, issue, role, ... }
+      specialists: {}, // { [role]: { session_id, agent, repo_dir, issue, role, round, last_status, last_seen_at } }
       inflight: null, // { operation_id, role, session_id, kind, round, started_at, deadline_at, status }
     },
   };
@@ -170,6 +174,8 @@ export function startFollowupRound(record, command, now = new Date().toISOString
     last_consumed_comment_id: command.commentId,
     last_notified_state: null,
     gate_1_approved_comment_id: null,
+    gate_1_approved_plan_hash: null,
+    gate_1_approved_plan_revision: null,
     gate_1_revision_data: null,
     handed_back_reason: null,
     claim_source: 'followup',
@@ -187,14 +193,14 @@ export function readState(guardianDir, issueNumber) {
   return normalizeState(readJsonFile(file), issueNumber);
 }
 
-// Write a state record atomically-ish (write then rename would be ideal; kept simple for
-// the single-writer MVP where N=1). Always stamps updated_at unless the caller froze it.
-export function writeState(guardianDir, record, { touch = true, now = new Date().toISOString() } = {}) {
+// Always stamps updated_at unless the caller froze it. The canonical file is replaced only after
+// the complete UTF-8 temp file is written, so a failed write/rename cannot truncate old state.
+export function writeState(guardianDir, record, { touch = true, now = new Date().toISOString(), fsOps, makeId } = {}) {
   mkdirSync(guardianDir, { recursive: true });
   const out = normalizeState(record, record.issue);
   if (touch) out.updated_at = now;
   const file = statePath(guardianDir, out.issue);
-  writeFileSync(file, `${JSON.stringify(out, null, 2)}\n`, 'utf8');
+  atomicWriteJson(file, out, { ...(fsOps ? { fsOps } : {}), ...(makeId ? { makeId } : {}) });
   return out;
 }
 

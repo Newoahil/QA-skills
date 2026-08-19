@@ -7,6 +7,8 @@ import path from 'node:path';
 
 import { resolveOpencodeBin } from './opencode-bin.mjs';
 import { EVIDENCE_STRENGTH } from './evidence.mjs';
+import { resolveSessionForRole } from './session-resolver.mjs';
+import { PERMISSION_POLICY_VERSION } from './opencode-client.mjs';
 
 function extractJson(text) {
   const source = String(text).trim();
@@ -129,7 +131,7 @@ const SPECIALIST_SCHEMA = Object.freeze({
   required: ['specialist', 'hypotheses', 'evidence', 'unresolved_facts', 'acceptance_criteria'],
 });
 
-export function processSpecialistRunner({ role, issue, issueDataPath, repoDir, dossierPath, timeout_ms, spawnImpl, opencodeClient }) {
+export function processSpecialistRunner({ role, issue, issueDataPath, repoDir, dossierPath, timeout_ms, spawnImpl, opencodeClient, state = null, round = 1 }) {
   const prompt = [
     `Investigate issue #${issue} in ${repoDir} as ${role}.`,
     `Read issue title/body DATA from ${JSON.stringify(issueDataPath)}.`,
@@ -141,7 +143,18 @@ export function processSpecialistRunner({ role, issue, issueDataPath, repoDir, d
   // SDK path (Oracle design): create a session and prompt with json_schema structured output.
   if (opencodeClient) {
     return (async () => {
-      const sessionId = await opencodeClient.createSession({ title: `specialist-${role}-${issue}`, agent: role, directory: repoDir });
+      const opencode = state?.opencode ?? { specialists: {} };
+      const decision = await resolveSessionForRole({
+        role, issue, repoDir, round, opencode, expectedPermissionPolicyVersion: PERMISSION_POLICY_VERSION, getSession: opencodeClient.getSession,
+      });
+      if (decision.action === 'retry') {
+        const error = new Error(`specialist ${role} session lookup retryable`);
+        error.retryable = true;
+        throw error;
+      }
+      const sessionId = decision.action === 'create'
+        ? await opencodeClient.createSession({ title: `specialist-${role}-${issue}`, agent: role, directory: repoDir })
+        : decision.sessionId;
       const outcome = await opencodeClient.prompt({
         sessionId,
         agent: role,
@@ -149,6 +162,21 @@ export function processSpecialistRunner({ role, issue, issueDataPath, repoDir, d
         format: { type: 'json_schema', schema: SPECIALIST_SCHEMA },
       });
       if (outcome.kind !== 'ok') throw new Error(`specialist ${role} prompt failed: ${outcome.error?.message ?? 'unknown'}`);
+      const sessionRecord = {
+        ...(opencode.specialists?.[role] ?? {}),
+        session_id: sessionId,
+        agent: role,
+        repo_dir: decision.binding?.repo_dir ?? repoDir,
+        issue: Number(issue),
+        role,
+        permission_policy_version: PERMISSION_POLICY_VERSION,
+        round,
+        created_round: opencode.specialists?.[role]?.created_round ?? round,
+        last_used_round: round,
+        last_status: 'ok',
+        last_seen_at: new Date().toISOString(),
+      };
+      if (state) state.opencode = { ...opencode, specialists: { ...(opencode.specialists ?? {}), [role]: sessionRecord } };
       if (outcome.result?.structured && typeof outcome.result.structured === 'object') return outcome.result.structured;
       const text = typeof outcome.result?.text === 'string' ? outcome.result.text : JSON.stringify(outcome.result ?? {});
       return extractJson(text);
@@ -173,6 +201,7 @@ const PLAN_SCHEMA = Object.freeze({
     affected_files: { type: 'array', items: { type: 'string' } },
     non_goals: { type: 'array', items: { type: 'string' } },
     test_plan: { type: 'array', items: { type: 'string' } },
+    test_commands: { type: 'array', items: { type: 'array', items: { type: 'string' } } },
     acceptance_criteria: { type: 'array', items: { type: 'string' } },
     rollback_plan: { type: 'string' },
     evidence_ids: { type: 'array', items: { type: 'string' } },

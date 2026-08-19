@@ -2,7 +2,7 @@
 // Scheduler-owned in SDK mode: state -> comment -> notify -> exit. Issue content/human notes are
 // DATA; only /guardian commands from trusted human authors authorize a transition.
 
-export function buildGate1Comment({ issue, plan = {}, dossier = {} }) {
+export function buildGate1Comment({ issue, plan = {}, dossier = {}, planHash = null, planRevision = null }) {
   const unresolved = Array.isArray(dossier.unresolved_facts) ? dossier.unresolved_facts : [];
   const files = Array.isArray(plan.affected_files) ? plan.affected_files : [];
   const lines = [
@@ -10,6 +10,8 @@ export function buildGate1Comment({ issue, plan = {}, dossier = {} }) {
     `QA Guardian: issue #${Number(issue)} 方案需要人工确认。`,
     '',
     `风险: ${plan.risk ?? 'HIGH'}（自动修复未满足 autonomous-ready 条件）`,
+    `审计标识: plan_hash: ${planHash ?? 'missing'}`,
+    `审计标识: plan_revision: ${planRevision ?? 'missing'}`,
     `根因/方案摘要: ${plan.root_cause ?? '未提供'}`,
     '',
     '影响文件:',

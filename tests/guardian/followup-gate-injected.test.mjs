@@ -6,6 +6,7 @@ import test from 'node:test';
 import { parseCardAction, CallbackError } from '../../tools/guardian/feishu-callback.mjs';
 import { buildFeishuCard } from '../../tools/guardian/notify-feishu.mjs';
 import { deliverNotifications, notifyTargetState } from '../../tools/guardian/notify-io.mjs';
+import { ACTORS } from '../../tools/guardian/actor-routing.mjs';
 import { planTick } from '../../tools/guardian/scheduler-core.mjs';
 import { newState, startFollowupRound } from '../../tools/guardian/state.mjs';
 
@@ -79,6 +80,7 @@ test('a second processing round can notify DONE after the first round', () => {
     guardianDir: '/injected',
     config: {},
     io,
+    actor: ACTORS.SUPERVISOR,
     deps,
   });
   assert.equal(firstResult[0].delivered, true);
@@ -99,6 +101,7 @@ test('a second processing round can notify DONE after the first round', () => {
     guardianDir: '/injected',
     config: {},
     io,
+    actor: ACTORS.SUPERVISOR,
     deps,
   });
   assert.equal(secondResult[0].delivered, true);

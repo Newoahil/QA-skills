@@ -4,7 +4,7 @@
 
 import { existsSync, mkdirSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { readJsonFile } from './runtime-io.mjs';
 
 export function artifactDir(guardianDir, issue) {
@@ -16,6 +16,23 @@ function atomicWriteJson(file, value) {
   const temp = `${file}.${randomUUID()}.tmp`;
   writeFileSync(temp, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
   renameSync(temp, file);
+}
+
+export function artifactJson(value) {
+  return `${JSON.stringify(value, null, 2)}\n`;
+}
+
+export function hashArtifact(value) {
+  return `sha256:${createHash('sha256').update(artifactJson(value), 'utf8').digest('hex')}`;
+}
+
+export function artifactIdentity({ dossier, plan }) {
+  return {
+    dossier_hash: dossier ? hashArtifact(dossier) : null,
+    plan_hash: plan ? hashArtifact(plan) : null,
+    dossier_revision: dossier?.investigation_id ?? null,
+    plan_revision: plan?.investigation_id ?? null,
+  };
 }
 
 export function writeArtifact(guardianDir, issue, name, value) {

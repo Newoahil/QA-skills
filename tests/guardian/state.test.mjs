@@ -4,7 +4,7 @@
 
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -132,6 +132,51 @@ test('writeState touch=true stamps updated_at; touch=false preserves it', () => 
   }
 });
 
+test('writeState preserves canonical state and cleans same-directory temp after write failure', () => {
+  const dir = tempGuardianDir();
+  try {
+    writeState(dir, { ...newState(8), state: STATES.DISCOVERED }, { touch: false });
+    const canonical = path.join(dir, '8.json');
+    const before = readFileSync(canonical, 'utf8');
+    const temp = path.join(dir, '.8.json.write-failure.tmp');
+    const fsOps = {
+      mkdirSync: () => {},
+      writeFileSync: (file, text, encoding) => {
+        writeFileSync(file, text, encoding);
+        throw new Error('injected write failure');
+      },
+      renameSync: () => { throw new Error('rename must not run'); },
+      rmSync,
+    };
+    assert.throws(() => writeState(dir, { ...newState(8), state: STATES.FIXING }, { touch: false, fsOps, makeId: () => 'write-failure' }), /injected write failure/);
+    assert.equal(readFileSync(canonical, 'utf8'), before);
+    assert.equal(existsSync(temp), false);
+  } finally {
+    rmSync(path.dirname(path.dirname(dir)), { recursive: true, force: true });
+  }
+});
+
+test('writeState preserves canonical state and cleans same-directory temp after rename failure', () => {
+  const dir = tempGuardianDir();
+  try {
+    writeState(dir, { ...newState(9), state: STATES.DISCOVERED }, { touch: false });
+    const canonical = path.join(dir, '9.json');
+    const before = readFileSync(canonical, 'utf8');
+    const temp = path.join(dir, '.9.json.rename-failure.tmp');
+    const fsOps = {
+      mkdirSync: () => {},
+      writeFileSync,
+      renameSync: () => { throw new Error('injected rename failure'); },
+      rmSync,
+    };
+    assert.throws(() => writeState(dir, { ...newState(9), state: STATES.FIXING }, { touch: false, fsOps, makeId: () => 'rename-failure' }), /injected rename failure/);
+    assert.equal(readFileSync(canonical, 'utf8'), before);
+    assert.equal(existsSync(temp), false);
+  } finally {
+    rmSync(path.dirname(path.dirname(dir)), { recursive: true, force: true });
+  }
+});
+
 test('isActiveState / isTerminalState classification', () => {
   assert.equal(isActiveState(STATES.INVESTIGATING), true);
   assert.equal(isActiveState(STATES.FIXING), true);
@@ -169,4 +214,14 @@ test('startFollowupRound preserves history and resets round-local fields', () =>
   assert.equal(next.last_followup_comment_id, 9);
   assert.equal(next.last_notified_state, null);
   assert.equal(next.round_history[0].pr_url, 'https://pr/42');
+});
+
+test('startFollowupRound clears Gate 1 approval identity for the new plan', () => {
+  const next = startFollowupRound({
+    ...newState(211), state: STATES.GATE_2_WAIT,
+    gate_1_approved_comment_id: 'comment-a', gate_1_approved_plan_hash: 'sha256:a', gate_1_approved_plan_revision: 'rev-a',
+  }, { commentId: 'followup-1', data: 'new acceptance' });
+  assert.equal(next.gate_1_approved_comment_id, null);
+  assert.equal(next.gate_1_approved_plan_hash, null);
+  assert.equal(next.gate_1_approved_plan_revision, null);
 });

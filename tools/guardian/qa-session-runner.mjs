@@ -1,168 +1,179 @@
 // QA Guardian — independent QA SDK session runner (方案 A, Oracle design).
-//
-// Runs the read-only QA agent through a persistent OpenCode session reused across verification
-// attempts (including after fixer changes). The session id is persisted in state.opencode.qa.
-// The QA verdict is parsed from the prompt result's `Overall Status:` line. A deadline aborts the
-// session (session.abort) rather than killing the shared serve.
 
+import { randomUUID } from 'node:crypto';
 import { resolveSessionForRole } from './session-resolver.mjs';
+import { PERMISSION_POLICY_VERSION } from './opencode-client.mjs';
+
+const MAX_MESSAGES = 200;
+const MAX_TEXT_BYTES = 64 * 1024;
+const CLOCK_TOLERANCE_MS = 5000;
 
 function parseOverallStatus(text) {
   const match = String(text ?? '').match(/^\s*Overall Status:\s*(PASS|FAIL|BLOCKED|NEEDS_HUMAN_REVIEW)\s*$/im);
   return match ? match[1] : null;
 }
 
-function buildQaPrompt({ issue, repoDir, branch, diffSummary, intendedBehavior, round }) {
+function buildQaPrompt({ issue, repoDir, branch, diffSummary, intendedBehavior, round, operationMarker }) {
   return [
     `Verify the fix for issue #${issue} in ${repoDir} (round ${round}).`,
     `Fix branch: ${branch}.`,
     `Fix summary (DATA): ${JSON.stringify(diffSummary)}.`,
     `Intended behavior (DATA): ${JSON.stringify(intendedBehavior)}.`,
-    'Run evidence-first QA: reproduce, check the diff against the intended behavior, and emit exactly one line: Overall Status: PASS|FAIL|BLOCKED|NEEDS_HUMAN_REVIEW.',
+    `QA_OPERATION_MARKER=${operationMarker}`,
+    'Use the supervisor-provided status/diff/test evidence; do not run shell commands. Check the diff against the intended behavior and emit exactly one line: Overall Status: PASS|FAIL|BLOCKED|NEEDS_HUMAN_REVIEW.',
     'You are read-only. Do not edit files, install dependencies, commit, push, or open a PR.',
   ].join('\n');
 }
 
 export async function runQaSession({
-  client,
-  state,
-  issue,
-  repoDir,
-  branch,
-  diffSummary,
-  intendedBehavior,
-  round = 1,
-  deadlineMs = 20 * 60 * 1000,
-  pollIntervalMs = 1000,
+  client, state, issue, repoDir, branch, diffSummary, intendedBehavior, round = 1,
+  deadlineMs = 20 * 60 * 1000, pollIntervalMs = 1000,
 }) {
+  const startedAt = Date.now();
   const opencode = state.opencode ?? { schema_version: 1, fixer: null, qa: null, specialists: {}, inflight: null };
-  const decision = await resolveSessionForRole({
-    role: 'qa',
-    opencode,
-    getSession: client.getSession,
-  });
-
-  let sessionId = decision.sessionId;
-  if (decision.action === 'create') {
-    sessionId = await client.createSession({ title: `qa-${issue}`, agent: 'qa', directory: repoDir });
-  }
-  if (decision.action === 'retry') {
-    return { status: 'retry', sessionId, state };
+  let sessionId = opencode.qa?.session_id ?? null;
+  const remaining = () => Math.max(0, deadlineMs - (Date.now() - startedAt));
+  let decision;
+  try {
+    decision = await raceDeadline(() => resolveSessionForRole({ role: 'qa', opencode, repoDir, issue, round, expectedPermissionPolicyVersion: PERMISSION_POLICY_VERSION, getSession: client.getSession }), remaining());
+    sessionId = decision.sessionId ?? sessionId;
+    if (decision.action === 'retry') return { status: 'retry', sessionId, state };
+    if (decision.action === 'create') sessionId = await raceDeadline(() => client.createSession({ title: `qa-${issue}`, agent: 'qa', directory: repoDir }), remaining());
+  } catch (error) {
+    return { status: 'aborted', sessionId, state, error };
   }
 
-  const baseline = await completedAssistantMessageIds(client, sessionId);
-  const prompt = buildQaPrompt({ issue, repoDir, branch, diffSummary, intendedBehavior, round });
+  const baselineResult = await raceDeadline(() => baselineMessageIds(client, sessionId), remaining()).catch((error) => ({ error }));
+  if (baselineResult?.error) return { status: baselineResult.error.name === 'DeadlineError' ? 'aborted' : 'retry', sessionId, state, error: baselineResult.error };
+
+  const operationMarker = randomUUID();
+  const prompt = buildQaPrompt({ issue, repoDir, branch, diffSummary, intendedBehavior, round, operationMarker });
   const control = { cancelled: false };
   const outcome = await withDeadline(
-    () => promptOrCompletedMessage({
-      client,
-      sessionId,
-      prompt,
-      baseline,
-      pollIntervalMs,
-      control,
-    }),
-    deadlineMs,
+    () => promptOrCompletedMessage({ client, sessionId, prompt, baseline: baselineResult, promptStartedAt: Date.now(), operationMarker, pollIntervalMs, control, deadlineMs: remaining() }),
+    remaining(),
     () => client.abort(sessionId),
     () => { control.cancelled = true; },
   );
-
-  const status = outcome.status ?? (outcome.kind === 'ok' ? 'ok' : outcome.kind);
-  const text = typeof outcome.result?.text === 'string' ? outcome.result.text : '';
-  const verdict = parseOverallStatus(text);
+  const status = normalizeOutcomeStatus(outcome);
+  const text = typeof outcome?.result?.text === 'string' ? outcome.result.text : '';
+  const verdict = status === 'ok' ? parseOverallStatus(text) : null;
   const nextState = {
     ...state,
     opencode: {
       ...opencode,
-      qa: { session_id: sessionId, agent: 'qa', last_used_round: round, last_status: status, last_seen_at: new Date().toISOString() },
+      qa: status === 'unusable-session' ? null : {
+        ...(opencode.qa ?? {}),
+        session_id: sessionId,
+        agent: 'qa',
+        repo_dir: decision.binding?.repo_dir ?? opencode.qa?.repo_dir ?? repoDir,
+        issue: Number(issue),
+        role: 'qa',
+        permission_policy_version: PERMISSION_POLICY_VERSION,
+        created_round: opencode.qa?.created_round ?? round,
+        last_used_round: round,
+        last_status: status,
+        last_seen_at: new Date().toISOString(),
+      },
     },
   };
-  return { status, sessionId, state: nextState, verdict, report: text };
+  return { status, sessionId, state: nextState, verdict, report: text, error: outcome?.error, abortError: outcome?.abortError, recreateOnNextRun: status === 'unusable-session' };
 }
 
-async function completedAssistantMessageIds(client, sessionId) {
-  if (typeof client.getMessages !== 'function') return new Set();
+async function baselineMessageIds(client, sessionId) {
+  if (typeof client.getMessages !== 'function') throw new Error('qa baseline message reader is required');
   const result = await client.getMessages(sessionId);
-  if (result.kind !== 'ok' || !Array.isArray(result.messages)) return new Set();
-  return new Set(result.messages.filter(isCompletedAssistant).map(messageId).filter(Boolean));
+  if (result.kind !== 'ok' || !Array.isArray(result.messages)) throw new Error('qa baseline message read failed');
+  return new Set(result.messages.map(messageId).filter(Boolean));
 }
 
-async function promptOrCompletedMessage({ client, sessionId, prompt, baseline, pollIntervalMs, control }) {
-  let settled = false;
-  const rawPromptPromise = client.prompt({
-    sessionId,
-    agent: 'qa',
-    parts: [{ type: 'text', text: prompt }],
-  });
+async function promptOrCompletedMessage({ client, sessionId, prompt, baseline, promptStartedAt, operationMarker, pollIntervalMs, control, deadlineMs }) {
+  let promptResult = null;
+  let promptSettled = false;
+  const rawPromptPromise = client.prompt({ sessionId, agent: 'qa', parts: [{ type: 'text', text: prompt }] })
+    .then((result) => { promptResult = result; promptSettled = true; return result; });
   if (typeof client.getMessages !== 'function') return rawPromptPromise;
 
-  const messagePromise = (async () => {
-    while (!settled && !control.cancelled) {
-      await delay(pollIntervalMs);
-      if (settled || control.cancelled) return null;
-      const result = await client.getMessages(sessionId);
-      if (result.kind !== 'ok' || !Array.isArray(result.messages)) continue;
-      const completed = result.messages
-        .filter(isCompletedAssistant)
-        .filter((message) => !baseline.has(messageId(message)))
-        .filter((message) => parseOverallStatus(messageText(message)) !== null)
-        .sort((left, right) => messageCreated(right) - messageCreated(left))[0];
-      if (!completed) continue;
-      return { kind: 'ok', result: { text: messageText(completed) } };
+  const attempts = Math.max(1, Math.ceil(deadlineMs / Math.max(1, pollIntervalMs)));
+  let promptId = null;
+  for (let attempt = 0; attempt < attempts && !control.cancelled; attempt += 1) {
+    if (promptSettled) {
+      const status = normalizeOutcomeStatus(promptResult);
+      if (status !== 'ok') return promptResult ?? { status: 'unverified' };
+      if (parseOverallStatus(promptResult?.result?.text) !== null) return promptResult;
+      promptId = promptIdFromResult(promptResult);
     }
-  })();
 
-  const promptPromise = (async () => {
-    const result = await rawPromptPromise;
-    if (parseOverallStatus(result?.result?.text) !== null) return result;
-    return messagePromise;
-  })();
-
-  try {
-    return await Promise.race([promptPromise, messagePromise]);
-  } finally {
-    settled = true;
+    await delay(pollIntervalMs);
+    const result = await client.getMessages(sessionId);
+    if (result.kind !== 'ok' || !Array.isArray(result.messages)) continue;
+    const messages = result.messages.slice(-MAX_MESSAGES);
+    promptId ??= discoverPromptUserId(messages, baseline, promptStartedAt, prompt, operationMarker);
+    if (!promptId) continue;
+    const candidate = messages
+      .filter(isCompletedAssistant)
+      .filter((message) => message?.info?.parentID === promptId)
+      .filter((message) => parseOverallStatus(messageText(message)) !== null)
+      .sort((left, right) => messageCreated(right) - messageCreated(left))[0];
+    if (candidate) return { kind: 'ok', status: 'ok', result: { text: messageText(candidate) } };
   }
+  throw new DeadlineError();
 }
 
-function isCompletedAssistant(message) {
-  return message?.info?.role === 'assistant' && Number.isFinite(Number(message?.info?.time?.completed));
+function discoverPromptUserId(messages, baseline, promptStartedAt, prompt, operationMarker) {
+  return messages.find((message) => {
+    const created = messageCreated(message);
+    return message?.info?.role === 'user'
+      && !baseline.has(messageId(message))
+      && created >= promptStartedAt - CLOCK_TOLERANCE_MS
+      && (messageText(message) === prompt || messageText(message).includes(operationMarker));
+  })?.info?.id ?? null;
 }
 
-function messageId(message) {
-  return message?.info?.id ?? message?.id ?? null;
+function promptIdFromResult(result) {
+  const info = result?.result?.info;
+  if (info?.role === 'user') return info.id ?? null;
+  if (info?.role === 'assistant') return info.parentID ?? null;
+  return null;
 }
 
-function messageCreated(message) {
-  return Number(message?.info?.time?.created ?? 0);
-}
-
+function isCompletedAssistant(message) { return message?.info?.role === 'assistant' && Number.isFinite(Number(message?.info?.time?.completed)); }
+function messageId(message) { return message?.info?.id ?? message?.id ?? null; }
+function messageCreated(message) { return Number(message?.info?.time?.created ?? 0); }
 function messageText(message) {
-  return Array.isArray(message?.parts)
-    ? message.parts.filter((part) => part?.type === 'text' && typeof part.text === 'string').map((part) => part.text).join('')
-    : '';
+  const text = Array.isArray(message?.parts) ? message.parts.filter((part) => part?.type === 'text' && typeof part.text === 'string').map((part) => part.text).join('') : '';
+  return text.slice(0, MAX_TEXT_BYTES);
 }
-
-function delay(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+function normalizeOutcomeStatus(outcome) {
+  if (outcome?.status === 'ok' || outcome?.kind === 'ok') return 'ok';
+  if (outcome?.status) return outcome.status;
+  if (outcome?.kind === 'retryable') return 'retry';
+  if (outcome?.kind === 'unusable-session') return 'unusable-session';
+  return 'unverified';
 }
-
+function delay(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
+class DeadlineError extends Error { constructor() { super('qa session timed out'); this.name = 'DeadlineError'; } }
+async function raceDeadline(fn, timeoutMs) {
+  if (timeoutMs <= 0) throw new DeadlineError();
+  let timer;
+  try { return await Promise.race([fn(), new Promise((_, reject) => { timer = setTimeout(() => reject(new DeadlineError()), timeoutMs); })]); }
+  finally { clearTimeout(timer); }
+}
 async function withDeadline(fn, deadlineMs, onTimeout, onSettled = () => {}) {
   let timer;
+  let cleanupStarted = false;
+  const timeoutResult = async (error) => {
+    if (cleanupStarted) return { status: 'aborted', error };
+    cleanupStarted = true;
+    let abortError = null;
+    try { await onTimeout(); } catch (cleanupError) { abortError = cleanupError; }
+    return { status: 'aborted', error, abortError };
+  };
   try {
-    return await Promise.race([
-      fn(),
-      new Promise((_, reject) => {
-        timer = setTimeout(() => {
-          onTimeout();
-          reject(new Error('qa session timed out'));
-        }, deadlineMs);
-      }),
-    ]);
+    return await Promise.race([fn(), new Promise((_, reject) => { timer = setTimeout(async () => reject(await timeoutResult(new Error('qa session timed out'))), deadlineMs); })]);
   } catch (error) {
-    return { status: 'aborted', error };
-  } finally {
-    onSettled();
-    clearTimeout(timer);
-  }
+    if (error?.status === 'aborted') return error;
+    if (error?.name === 'DeadlineError') return timeoutResult(error);
+    return { status: 'aborted', error, abortError: error?.abortError ?? null };
+  } finally { onSettled(); clearTimeout(timer); }
 }

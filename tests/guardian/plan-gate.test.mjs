@@ -43,9 +43,40 @@ test('trusted Gate 1 approval allows a structurally valid non-autonomous plan', 
     dossier: unresolved,
     investigationMode: 'enforced',
     humanApproved: true,
+    currentPlanHash: 'sha256:plan-a',
+    currentPlanRevision: 'inv-a',
+    approvedPlanHash: 'sha256:plan-a',
+    approvedPlanRevision: 'inv-a',
   });
   assert.equal(afterApproval.allowed, true);
   assert.equal(afterApproval.human_approved, true);
+});
+
+test('approval hash A cannot unlock plan B', () => {
+  const result = assessFixingEntry({
+    plan, dossier: { ...dossier, unresolved_facts: ['human confirms'] }, investigationMode: 'enforced', humanApproved: true,
+    currentPlanHash: 'sha256:plan-b', currentPlanRevision: 'inv-a', approvedPlanHash: 'sha256:plan-a', approvedPlanRevision: 'inv-a',
+  });
+  assert.equal(result.allowed, false);
+  assert.equal(result.reason, 'gate1-approval-mismatch');
+});
+
+test('approval revision mismatch cannot unlock the current plan', () => {
+  const result = assessFixingEntry({
+    plan, dossier: { ...dossier, unresolved_facts: ['human confirms'] }, investigationMode: 'enforced', humanApproved: true,
+    currentPlanHash: 'sha256:plan-a', currentPlanRevision: 'inv-b', approvedPlanHash: 'sha256:plan-a', approvedPlanRevision: 'inv-a',
+  });
+  assert.equal(result.allowed, false);
+  assert.equal(result.reason, 'gate1-approval-mismatch');
+});
+
+test('missing approval binding fails closed even when humanApproved is true', () => {
+  const result = assessFixingEntry({
+    plan, dossier: { ...dossier, unresolved_facts: ['human confirms'] }, investigationMode: 'enforced', humanApproved: true,
+    currentPlanHash: 'sha256:plan-a', currentPlanRevision: 'inv-a',
+  });
+  assert.equal(result.allowed, false);
+  assert.equal(result.reason, 'gate1-approval-mismatch');
 });
 
 test('human approval never bypasses structural validation errors', () => {

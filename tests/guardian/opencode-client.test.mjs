@@ -6,7 +6,16 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { createOpencodeClient } from '../../tools/guardian/opencode-client.mjs';
+import { createOpencodeClient, isPermissionCompatible, PERMISSION_POLICY_VERSION, permissionRulesFor } from '../../tools/guardian/opencode-client.mjs';
+
+test('exports the stable current permission policy version and compatibility helper', () => {
+  assert.equal(PERMISSION_POLICY_VERSION, 2);
+  assert.equal(isPermissionCompatible('fixer', permissionRulesFor('qa-guardian')), true);
+  assert.equal(isPermissionCompatible('qa', permissionRulesFor('qa')), true);
+  assert.equal(isPermissionCompatible('guardian-code', permissionRulesFor('guardian-code')), true);
+  assert.equal(isPermissionCompatible('fixer', [{ permission: '*', action: 'allow', pattern: '*' }]), false);
+  assert.equal(isPermissionCompatible('qa', [{ permission: 'bash', action: 'allow', pattern: '*' }]), false);
+});
 
 function fakeSdk() {
   const calls = { create: [], prompt: [], abort: [], get: [], messages: [] };
@@ -59,6 +68,11 @@ test('fixer session permissions allow edits but deny irreversible and install ac
   assert.equal(rules.some((r) => r.permission === 'bash' && r.pattern === 'gh pr merge*' && r.action === 'deny'), true);
   assert.equal(rules.some((r) => r.permission === 'bash' && r.pattern === 'npm install*' && r.action === 'deny'), true);
   assert.equal(rules.some((r) => r.permission === 'task' && r.pattern === '*' && r.action === 'deny'), true);
+  assert.equal(rules.some((r) => r.permission === '*' && r.action === 'allow'), false);
+  assert.equal(rules.some((r) => r.permission === 'bash' && r.action === 'allow'), false);
+  for (const permission of ['read', 'grep', 'glob', 'codegraph']) {
+    assert.equal(rules.some((r) => r.permission === permission && r.action === 'allow'), true);
+  }
 });
 
 test('qa and specialist session permissions are read-only and never ask', async () => {
@@ -70,6 +84,22 @@ test('qa and specialist session permissions are read-only and never ask', async 
     assert.equal(rules.some((r) => r.action === 'ask'), false);
     assert.equal(rules.some((r) => r.permission === 'edit' && r.action === 'deny'), true);
     assert.equal(rules.some((r) => r.permission === 'apply_patch' && r.action === 'deny'), true);
+    assert.equal(rules.some((r) => r.permission === '*' && r.action === 'allow'), false);
+    assert.equal(rules.some((r) => r.permission === 'bash' && r.action === 'allow'), false);
+    for (const permission of ['read', 'grep', 'glob', 'codegraph']) {
+      assert.equal(rules.some((r) => r.permission === permission && r.action === 'allow'), true);
+    }
+  }
+});
+
+test('specialist permissions have no broad allow and no bash permission', async () => {
+  for (const agent of ['guardian-code', 'guardian-business', 'guardian-runtime', 'guardian-docs']) {
+    const { sdk, calls } = fakeSdk();
+    const client = createOpencodeClient({ sdk });
+    await client.createSession({ title: agent, agent, directory: 'D:/repo' });
+    const rules = calls.create[0].body.permission;
+    assert.equal(rules.some((r) => r.permission === '*' && r.action === 'allow'), false);
+    assert.equal(rules.some((r) => r.permission === 'bash'), false);
   }
 });
 

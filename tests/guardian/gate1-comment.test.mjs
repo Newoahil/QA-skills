@@ -8,10 +8,14 @@ test('gate1 comment carries marker, plan summary, unresolved facts, and commands
     issue: 211,
     plan: { risk: 'LOW', root_cause: 'color', affected_files: ['a.jsx'] },
     dossier: { unresolved_facts: ['exact pink token?'] },
+    planHash: 'sha256:plan-a',
+    planRevision: 'inv-a',
   });
   assert.equal(body.split('\n')[0], '[GATE_1_WAIT]');
   assert.equal(body.includes('/guardian approve'), true);
   assert.equal(body.includes('/guardian revise'), true);
   assert.equal(body.includes('/guardian reject'), true);
   assert.equal(body.includes('exact pink token?'), true);
+  assert.equal(body.includes('plan_hash: sha256:plan-a'), true);
+  assert.equal(body.includes('plan_revision: inv-a'), true);
 });
