@@ -35,6 +35,7 @@ import { resolveOpencodeBin } from './opencode-bin.mjs';
 import { createOpencodeClient } from './opencode-client.mjs';
 import { runFixerSession } from './fixer-session-runner.mjs';
 import { runQaSession } from './qa-session-runner.mjs';
+import { buildGate1Comment } from './gate1-comment.mjs';
 
 const DEFAULT_INTERVAL_MS = 60 * 1000;
 // Heartbeat cadence: renew the lock well within the lease so a live long run never looks stale.
@@ -295,6 +296,19 @@ async function tick(repoDir, config, logger) {
     const planArtifact = pair.plan;
     const gate = assessFixingEntry({ plan: planArtifact, dossier, investigationMode });
     if (!gate.allowed || gate.shadow === true) {
+      const current = readState(guardianDir, issue) ?? { issue };
+      writeState(guardianDir, {
+        ...current,
+        state: 'GATE_1_WAIT',
+        risk: 'HIGH',
+        last_phase: 'gate1-wait',
+        plan_validation_errors: gate.plan_result?.errors ?? [],
+      }, { touch: false });
+      try {
+        defaultGhComment(repoDir)(issue, buildGate1Comment({ issue, plan: planArtifact, dossier }));
+      } catch (error) {
+        logger.warn('gate1.comment_failed', { issue, error_message: error instanceof Error ? error.message : 'unknown' });
+      }
       releaseLock(lockFile, handle);
       logger.warn('run.blocked_plan_gate', { issue, mode: investigationMode, reason: gate.reason ?? 'shadow-mode' });
       return;
