@@ -223,9 +223,13 @@ async function tick(repoDir, config, logger) {
   try {
   const currentBeforeRun = readState(guardianDirOf(repoDir), issue);
   if (currentBeforeRun && plan.toRun.command) {
+    const gateApproved = plan.toRun.command.verb === 'approve' || plan.toRun.command.verb === 'revise';
     writeState(guardianDirOf(repoDir), {
       ...currentBeforeRun,
+      state: gateApproved ? 'FIXING' : currentBeforeRun.state,
       last_consumed_comment_id: plan.toRun.command.commentId,
+      gate_1_approved_comment_id: gateApproved ? plan.toRun.command.commentId : currentBeforeRun.gate_1_approved_comment_id,
+      gate_1_revision_data: plan.toRun.command.verb === 'revise' ? plan.toRun.command.data : currentBeforeRun.gate_1_revision_data,
       fix_rounds: plan.toRun.clearFixRounds ? 0 : currentBeforeRun.fix_rounds,
       stall_retries: plan.toRun.nextStallRetries ?? currentBeforeRun.stall_retries,
     }, { touch: false });
@@ -294,13 +298,21 @@ async function tick(repoDir, config, logger) {
     const pair = readArtifactPair(guardianDir, issue);
     const dossier = pair.dossier;
     const planArtifact = pair.plan;
-    const gate = assessFixingEntry({ plan: planArtifact, dossier, investigationMode });
+    const gateState = readState(guardianDir, issue);
+    const gate = assessFixingEntry({
+      plan: planArtifact,
+      dossier,
+      investigationMode,
+      humanApproved: Boolean(gateState?.gate_1_approved_comment_id),
+    });
     if (!gate.allowed || gate.shadow === true) {
       const current = readState(guardianDir, issue) ?? { issue };
       writeState(guardianDir, {
         ...current,
         state: 'GATE_1_WAIT',
         risk: 'HIGH',
+        gate_1_approved_comment_id: null,
+        gate_1_revision_data: null,
         last_phase: 'gate1-wait',
         plan_validation_errors: gate.plan_result?.errors ?? [],
       }, { touch: false });

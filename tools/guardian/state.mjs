@@ -76,6 +76,8 @@ export function newState(issueNumber, now = new Date().toISOString()) {
     stall_retries: 0, // auto-rerun count after STALLED; capped (§11B.4)
     last_consumed_comment_id: null, // idempotent command consumption (§11.2)
     last_notified_state: null, // idempotent notify (§11B.5)
+    gate_1_approved_comment_id: null, // trusted human approve/revise that unlocks a valid plan
+    gate_1_revision_data: null, // opaque DATA tail from /guardian revise
     handed_back_reason: null, // one of HANDED_BACK_REASONS
     issue_class: null, // bug | request
     processing_round: 1,
@@ -167,6 +169,8 @@ export function startFollowupRound(record, command, now = new Date().toISOString
     last_followup_data: command.data,
     last_consumed_comment_id: command.commentId,
     last_notified_state: null,
+    gate_1_approved_comment_id: null,
+    gate_1_revision_data: null,
     handed_back_reason: null,
     claim_source: 'followup',
   };

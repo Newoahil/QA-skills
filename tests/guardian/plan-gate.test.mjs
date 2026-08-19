@@ -33,6 +33,31 @@ test('enforced mode allows only valid evidence-backed autonomous plan', () => {
   assert.equal(assessFixingEntry({ plan: { risk: 'LOW' }, dossier, investigationMode: 'enforced' }).allowed, false);
 });
 
+test('trusted Gate 1 approval allows a structurally valid non-autonomous plan', () => {
+  const unresolved = { ...dossier, unresolved_facts: ['human must confirm exact color'] };
+  const beforeApproval = assessFixingEntry({ plan, dossier: unresolved, investigationMode: 'enforced' });
+  assert.equal(beforeApproval.allowed, false);
+
+  const afterApproval = assessFixingEntry({
+    plan,
+    dossier: unresolved,
+    investigationMode: 'enforced',
+    humanApproved: true,
+  });
+  assert.equal(afterApproval.allowed, true);
+  assert.equal(afterApproval.human_approved, true);
+});
+
+test('human approval never bypasses structural validation errors', () => {
+  const result = assessFixingEntry({
+    plan: { risk: 'LOW' },
+    dossier,
+    investigationMode: 'enforced',
+    humanApproved: true,
+  });
+  assert.equal(result.allowed, false);
+});
+
 test('prompt context blocks editing when enforced plan is invalid', () => {
   const context = fixingPromptContext({ plan: {}, dossier, mode: 'enforced' });
   assert.equal(context.can_edit, false);

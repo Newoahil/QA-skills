@@ -63,6 +63,8 @@ test('startFollowupRound preserves fixer and qa session ids', () => {
   assert.equal(next.opencode.fixer.session_id, 'ses_fixer');
   assert.equal(next.opencode.qa.session_id, 'ses_qa');
   assert.equal(next.processing_round, 2);
+  assert.equal(next.gate_1_approved_comment_id, null);
+  assert.equal(next.gate_1_revision_data, null);
 });
 
 test('normalizeState backfills opencode for an older record', () => {
