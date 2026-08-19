@@ -10,6 +10,12 @@ test('scheduler imports the artifact writer used for SDK QA verdicts', () => {
   assert.match(source, /writeArtifact\(guardianDir, issue, 'qa-verdict', qaVerdict\)/);
 });
 
+test('Gate 2 state preserves the QA verdict fields written earlier in the run', () => {
+  const source = readFileSync(new URL('../../tools/guardian/scheduler.mjs', import.meta.url), 'utf8');
+  assert.match(source, /const gate2State = readState\(guardianDir, issue\) \?\? afterRun;/);
+  assert.match(source, /writeState\(guardianDir, \{\s*\.\.\.gate2State,\s*state: 'GATE_2_WAIT'/s);
+});
+
 test('buildQaVerdict materializes PASS report with hash and context', () => {
   const report = 'Overall Status: PASS\nall checks passed';
   const verdict = buildQaVerdict(report, { issue: 42, branch: 'fix/issue-42', verified_at: 'now' });

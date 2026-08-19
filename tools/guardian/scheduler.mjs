@@ -492,8 +492,9 @@ async function tick(repoDir, config, logger) {
           title: plan.toRun.issueTitle ?? `修复 issue #${issue}`,
           body: `## QA Guardian 自动验证\n\nIssue #${issue}\n\n独立 QA 结论：Overall Status: PASS\n\n请人工评审后合并。`,
         });
+        const gate2State = readState(guardianDir, issue) ?? afterRun;
         writeState(guardianDir, {
-          ...afterRun,
+          ...gate2State,
           state: 'GATE_2_WAIT',
           pr_url: prUrl,
           last_phase: 'pr-opened',
