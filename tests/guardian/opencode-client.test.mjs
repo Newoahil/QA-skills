@@ -11,11 +11,22 @@ import { createOpencodeClient } from '../../tools/guardian/opencode-client.mjs';
 function fakeSdk() {
   const calls = { create: [], prompt: [], abort: [], get: [] };
   const sdk = {
+    _client: {
+      post: async (params) => {
+        if (params.url.endsWith('/message')) {
+          calls.prompt.push(params);
+          return { data: { parts: [{ type: 'text', text: '{"ok":true}' }] } };
+        }
+        calls.abort.push(params);
+        return { data: true };
+      },
+      get: async (params) => {
+        calls.get.push(params);
+        return { data: { id: 'ses_existing', agent: 'qa-guardian' } };
+      },
+    },
     session: {
       create: async (params) => { calls.create.push(params); return { id: 'ses_new' }; },
-      prompt: async (params) => { calls.prompt.push(params); return { text: '{"ok":true}' }; },
-      abort: async (params) => { calls.abort.push(params); return {}; },
-      get: async (params) => { calls.get.push(params); return { id: 'ses_existing', agent: 'qa-guardian' }; },
     },
   };
   return { sdk, calls };
@@ -54,7 +65,7 @@ test('prompt passes agent, parts, and json_schema format to the session', async 
   });
   assert.equal(calls.prompt.length, 1);
   const call = calls.prompt[0];
-  assert.equal(call.path.sessionID, 'ses_1');
+  assert.equal(call.url, '/session/ses_1/message');
   assert.equal(call.body.agent, 'guardian-code');
   assert.deepEqual(call.body.parts, [{ type: 'text', text: 'investigate' }]);
   assert.equal(call.body.format.type, 'json_schema');
@@ -64,21 +75,20 @@ test('abort and getSession delegate to the SDK', async () => {
   const { sdk, calls } = fakeSdk();
   const client = createOpencodeClient({ sdk });
   await client.abort('ses_1');
-  assert.equal(calls.abort[0].path.sessionID, 'ses_1');
+  assert.equal(calls.abort[0].url, '/session/ses_1/abort');
   const session = await client.getSession('ses_existing');
   assert.equal(session.kind, 'ok');
   assert.equal(session.session.id, 'ses_existing');
-  assert.equal(calls.get[0].path.sessionID, 'ses_existing');
+  assert.equal(calls.get[0].url, '/session/ses_existing');
 });
 
 test('normalizes a 404 session as unusable (recreate) vs a 5xx as retryable', async () => {
   const sdk = {
-    session: {
-      create: async () => ({ id: 'ses_new' }),
-      prompt: async () => { throw Object.assign(new Error('not found'), { status: 404 }); },
-      abort: async () => ({}),
+    _client: {
+      post: async () => { throw Object.assign(new Error('not found'), { status: 404 }); },
       get: async () => { throw Object.assign(new Error('server error'), { status: 500 }); },
     },
+    session: { create: async () => ({ id: 'ses_new' }) },
   };
   const client = createOpencodeClient({ sdk });
   const promptResult = await client.prompt({ sessionId: 'ses_missing', agent: 'qa', parts: [] });

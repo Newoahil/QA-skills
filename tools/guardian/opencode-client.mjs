@@ -39,7 +39,8 @@ export function createOpencodeClient({ baseUrl, sdk } = {}) {
     const params = { body };
     if (directory) params.query = { directory };
     const result = await client.session.create(params);
-    return result?.id ?? result;
+    // SDK returns { data: { id, ... }, request, response }; unwrap .data.
+    return result?.data?.id ?? result?.id ?? result;
   }
 
   async function prompt({ sessionId, agent, parts, format = null, system = null }) {
@@ -47,21 +48,32 @@ export function createOpencodeClient({ baseUrl, sdk } = {}) {
       const body = { agent, parts };
       if (format) body.format = format;
       if (system) body.system = system;
-      const result = await client.session.prompt({ path: { sessionID: sessionId }, body });
-      return { kind: 'ok', result };
+      // SDK 1.18.18 generated path template is broken (`/session/%7Bid%7D/message`) even when
+      // path.sessionID is supplied. Use the SDK's low-level client with an explicit URL until the
+      // upstream codegen bug is fixed. Still uses the official SDK transport/interceptors.
+      const result = await client._client.post({
+        url: `/session/${encodeURIComponent(sessionId)}/message`,
+        body,
+        headers: { 'Content-Type': 'application/json' },
+      });
+      const data = result?.data ?? result;
+      const text = Array.isArray(data?.parts)
+        ? data.parts.filter((part) => part?.type === 'text' && typeof part.text === 'string').map((part) => part.text).join('')
+        : (typeof data?.text === 'string' ? data.text : '');
+      return { kind: 'ok', result: { ...data, text } };
     } catch (error) {
       return { kind: classifyError(error).kind, error };
     }
   }
 
   async function abort(sessionId) {
-    await client.session.abort({ path: { sessionID: sessionId } });
+    await client._client.post({ url: `/session/${encodeURIComponent(sessionId)}/abort` });
   }
 
   async function getSession(sessionId) {
     try {
-      const result = await client.session.get({ path: { sessionID: sessionId } });
-      return { kind: 'ok', session: result };
+      const result = await client._client.get({ url: `/session/${encodeURIComponent(sessionId)}` });
+      return { kind: 'ok', session: result?.data ?? result };
     } catch (error) {
       return { kind: classifyError(error).kind, error };
     }
