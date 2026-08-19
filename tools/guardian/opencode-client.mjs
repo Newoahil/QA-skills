@@ -33,10 +33,12 @@ function classifyError(error) {
 export function createOpencodeClient({ baseUrl, sdk } = {}) {
   const client = sdk ?? createSdkClient({ baseUrl });
 
-  async function createSession({ title, agent, parentID = null }) {
+  async function createSession({ title, agent, parentID = null, directory = null }) {
     const body = { title, agent, permission: [...NO_ASK_PERMISSION] };
     if (parentID) body.parentID = parentID;
-    const result = await client.session.create({ body });
+    const params = { body };
+    if (directory) params.query = { directory };
+    const result = await client.session.create(params);
     return result?.id ?? result;
   }
 

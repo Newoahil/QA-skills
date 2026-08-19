@@ -35,6 +35,14 @@ test('createSession passes no-ask permission and returns the session id', async 
   assert.equal(body.permission.some((p) => p.action === 'ask'), false);
 });
 
+test('createSession passes the target directory so agents work in the right repo', async () => {
+  const { sdk, calls } = fakeSdk();
+  const client = createOpencodeClient({ sdk });
+  await client.createSession({ title: 'specialist', agent: 'guardian-code', directory: 'D:/tuantuanrent' });
+  assert.equal(calls.create.length, 1);
+  assert.equal(calls.create[0].query.directory, 'D:/tuantuanrent');
+});
+
 test('prompt passes agent, parts, and json_schema format to the session', async () => {
   const { sdk, calls } = fakeSdk();
   const client = createOpencodeClient({ sdk });

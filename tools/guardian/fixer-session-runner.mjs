@@ -44,7 +44,7 @@ export async function runFixerSession({
 
   let sessionId = decision.sessionId;
   if (decision.action === 'create') {
-    sessionId = await client.createSession({ title: `fixer-${issue}`, agent: 'qa-guardian' });
+    sessionId = await client.createSession({ title: `fixer-${issue}`, agent: 'qa-guardian', directory: repoDir });
   }
   if (decision.action === 'retry') {
     return { status: 'retry', sessionId, state };

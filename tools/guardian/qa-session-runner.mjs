@@ -43,7 +43,7 @@ export async function runQaSession({
 
   let sessionId = decision.sessionId;
   if (decision.action === 'create') {
-    sessionId = await client.createSession({ title: `qa-${issue}`, agent: 'qa' });
+    sessionId = await client.createSession({ title: `qa-${issue}`, agent: 'qa', directory: repoDir });
   }
   if (decision.action === 'retry') {
     return { status: 'retry', sessionId, state };

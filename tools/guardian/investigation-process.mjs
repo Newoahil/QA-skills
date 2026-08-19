@@ -119,7 +119,7 @@ export function processSpecialistRunner({ role, issue, issueDataPath, repoDir, d
   // SDK path (Oracle design): create a session and prompt with json_schema structured output.
   if (opencodeClient) {
     return (async () => {
-      const sessionId = await opencodeClient.createSession({ title: `specialist-${role}-${issue}`, agent: role });
+      const sessionId = await opencodeClient.createSession({ title: `specialist-${role}-${issue}`, agent: role, directory: repoDir });
       const outcome = await opencodeClient.prompt({
         sessionId,
         agent: role,
