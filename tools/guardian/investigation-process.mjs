@@ -6,6 +6,7 @@ import { appendFileSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 
 import { resolveOpencodeBin } from './opencode-bin.mjs';
+import { EVIDENCE_STRENGTH } from './evidence.mjs';
 
 function extractJson(text) {
   const source = String(text).trim();
@@ -99,8 +100,29 @@ const SPECIALIST_SCHEMA = Object.freeze({
   type: 'object',
   properties: {
     specialist: { type: 'string' },
-    hypotheses: { type: 'array', items: { type: 'object' } },
-    evidence: { type: 'array', items: { type: 'object' } },
+    hypotheses: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: { id: { type: 'string' }, statement: { type: 'string' } },
+        required: ['id', 'statement'],
+      },
+    },
+    evidence: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          id: { type: 'string' },
+          kind: { type: 'string', enum: Object.keys(EVIDENCE_STRENGTH) },
+          source: { type: 'string' },
+          observation: { type: 'string' },
+          supports: { type: 'array', items: { type: 'string' } },
+          contradicts: { type: 'array', items: { type: 'string' } },
+        },
+        required: ['id', 'kind', 'source', 'observation', 'supports', 'contradicts'],
+      },
+    },
     unresolved_facts: { type: 'array', items: { type: 'string' } },
     acceptance_criteria: { type: 'array', items: { type: 'string' } },
   },
@@ -154,7 +176,7 @@ const PLAN_SCHEMA = Object.freeze({
     acceptance_criteria: { type: 'array', items: { type: 'string' } },
     rollback_plan: { type: 'string' },
     evidence_ids: { type: 'array', items: { type: 'string' } },
-    risk: { type: 'string' },
+    risk: { type: 'string', enum: ['LOW', 'HIGH'] },
   },
   required: ['root_cause', 'affected_files', 'non_goals', 'test_plan', 'acceptance_criteria', 'rollback_plan', 'evidence_ids', 'risk'],
 });

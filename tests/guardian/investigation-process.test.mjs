@@ -132,6 +132,9 @@ test('processSpecialistRunner uses the SDK client to create and prompt a session
   assert.equal(prompted[0].sessionId, 'ses_spec');
   assert.equal(prompted[0].agent, 'guardian-code');
   assert.equal(prompted[0].format.type, 'json_schema');
+  assert.deepEqual(prompted[0].format.schema.properties.evidence.items.required, [
+    'id', 'kind', 'source', 'observation', 'supports', 'contradicts',
+  ]);
   assert.equal(result.specialist, 'guardian-code');
 });
 
@@ -165,6 +168,7 @@ test('processPlanBuilder uses the SDK client instead of spawning an attach proce
   assert.equal(prompted.length, 1);
   assert.equal(prompted[0].agent, 'guardian-business');
   assert.equal(prompted[0].format.type, 'json_schema');
+  assert.deepEqual(prompted[0].format.schema.properties.risk.enum, ['LOW', 'HIGH']);
   assert.equal(result.root_cause, 'color');
 });
 
