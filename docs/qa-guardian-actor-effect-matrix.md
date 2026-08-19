@@ -43,10 +43,10 @@ Every GitHub-mutating call in `tools/guardian/**` today, with its transport and 
 | 6 | `gh issue comment` (notification) | [notify-io.mjs:16](../tools/guardian/notify-io.mjs) `defaultGhComment` | gh CLI | fact comment | bot_fact_writer (QA App) |
 | 7 | `curl POST` (webhook notify) | [notify-io.mjs:29](../tools/guardian/notify-io.mjs) `defaultCurlPost` | curl | fact webhook | Supervisor |
 | 8 | `gh issue comment` (verdict `[QA_VERIFIED]`/`[QA_FAILED]`) | [scheduler.mjs](../tools/guardian/scheduler.mjs) `writeVerdictComment` → `defaultGhComment` | gh CLI | fact comment | bot_fact_writer (QA App) |
-| 9 | `gh pr create` | [pr-io.mjs:6](../tools/guardian/pr-io.mjs) `createPullRequest` | gh CLI | PR create | bot_executor (Fixer App) |
-| 10 | branch commit + `git push` (fix branch) | the `qa-guardian` agent itself (runtime), not a module | gh/git ambient | code write | bot_executor (Fixer App) |
+| 9 | `gh pr create` | [pr-io.mjs:6](../tools/guardian/pr-io.mjs) `createPullRequest` | gh CLI | PR create | Supervisor |
+| 10 | branch commit + `git push` (fix branch) | Supervisor finalization in enforced runtime | gh/git ambient | code write | Supervisor |
 | 11 | issue comment via REST PAT (`/guardian <verb>` from callback) | [github-comment.mjs:34](../tools/guardian/github-comment.mjs) `postIssueComment` | REST PAT | command-relay comment | see §5 note |
-| 12 | fix-trace / diagnosis / audit comments | the `qa-guardian` agent (runtime) | gh ambient | fact comment | bot_executor (Fixer) writes its own trace |
+| 12 | fix report / diagnosis / audit artifact | the `qa-guardian` agent (runtime) | local artifact | fix report | bot_executor (Fixer) |
 
 Denied everywhere (mechanism + discipline), no actor performs them automatically:
 `gh pr merge`, `gh issue close`, `git reset`, `git clean`, force-push. These stay HUMAN-only.

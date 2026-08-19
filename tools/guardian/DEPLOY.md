@@ -9,7 +9,7 @@
 
 > **角色术语（规范见 [`../../docs/qa-guardian-role-architecture.md`](../../docs/qa-guardian-role-architecture.md)）。**
 > 系统按三个角色描述：**QA Agent**（只读 `qa`，只发现缺陷与验证修复，不写 GitHub）、
-> **Fixer Agent**（有写权限的 `qa-guardian`，负责修复与提 PR，不自评、不 merge/close）、
+> **Fixer Agent**（有写权限的 `qa-guardian`，只负责修复与报告，不自评、不提 PR、不 merge/close）、
 > **Guardian Supervisor**（`scheduler`/`state-router`/`commands` 决策层，掌管事件、状态、N=1、
 > 人工命令闸门、机器 QA 门与 PR 创建，并且是 QA 验证评论的唯一写入方）。这些**只是角色名**：
 > 运行时 agent 仍是 `qa-guardian`，发现标签仍是 `qa-guardian`，状态机不变。修改任何
@@ -57,6 +57,9 @@
 | `notify_webhook` | 通知 webhook 地址（飞书自定义机器人或通用 webhook） | 无（降级为只发 issue 评论） |
 | `notify_channel` | `generic`（原始 JSON）或 `feishu`（交互卡片） | generic |
 | `investigation_mode` | `legacy` / `shadow` / `enforced`：调查 dossier/plan 迁移开关；无人值守默认 enforced | enforced |
+
+`60000` ms 是代码默认的轮询间隔；项目配置可以覆盖它。`lease_ms` 是心跳续租的锁存活窗口，
+不是 fixer/QA 子进程的硬超时。
 
 > ⚠️ **`command_authors` 不配 = 所有 `/guardian` 命令失效**。这是有意的安全默认，防止任意评论（含伪造回调）批准 HIGH 风险方案。至少填入你自己的 GitHub 登录名。
 

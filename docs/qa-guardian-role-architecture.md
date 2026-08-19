@@ -106,7 +106,7 @@ Phase 2 emits **only** `[QA_VERIFIED]` and `[QA_FAILED]`, and **only** the Super
 
 ```
 [QA_VERIFIED]
-QA Guardian: issue #<n> 独立 QA 通过，已开 PR 待人工评审。
+  QA Guardian: issue #<n> 独立 QA 通过，Supervisor 已开 PR 待人工评审。
 
 ```json
 { "protocol": "qa-guardian/v1", "marker": "QA_VERIFIED", "agent": "guardian-supervisor",

@@ -86,13 +86,13 @@ node --test "tests/guardian/*.test.mjs"
 2. 运行:
    ```bash
    opencode run --agent qa-guardian --dir <repo> \
-     "Watch GitHub issue #<n>: investigate root cause, assess risk, dispatch read-only qa, open a dev PR, stop at gate 2."
+      "Watch GitHub issue #<n>: investigate root cause, assess risk, dispatch read-only qa, hand off to the Supervisor for a dev PR, stop at gate 2."
    ```
 3. **预期观察点:**
    - issue 评论出现**诊断 + 判 LOW 的理由**(命中白名单哪几条),但**不停闸门1**。
    - 新分支 `fix/issue-<n>`,只有最小改动。
    - 有一次**独立 `qa` 子 session**(只读)自验,评论里带 `Overall Status: PASS`。
-   - `gh pr create --base dev` 出了 PR,正文含诊断+QA结论+风险等级;commit message 含 `fixes #<n>`。
+    - Supervisor 在独立 QA PASS 后创建 `gh pr create --base dev` PR,正文含诊断+QA结论+风险等级;commit message 含 `fixes #<n>`。
    - issue 追踪评论含 PR 链接 + commit sha + 风险等级。
    - **停在闸门2**:未 merge、未 close issue。
 4. **通过判据:**上述全部出现,且 Guardian 进程已退出(未继续动代码)。

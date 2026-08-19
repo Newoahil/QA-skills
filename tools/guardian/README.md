@@ -12,7 +12,8 @@ It does **not** modify `qa` / `qa-facet` / `SKILL.md` / `references/*` — it di
 > **Role vocabulary (see [`docs/qa-guardian-role-architecture.md`](../../docs/qa-guardian-role-architecture.md), normative).**
 > The system is described as three roles: the **QA Agent** (the read-only `qa` agent — discovers
 > defects and verifies fixes, never writes GitHub), the **Fixer Agent** (the write-capable
-> `qa-guardian` agent — fixes and opens a PR, never grades its own fix, never merges/closes), and
+> `qa-guardian` agent — fixes and reports the fix, never grades its own fix, never opens the PR or
+> merges/closes), and
 > the **Guardian Supervisor** (the `scheduler`/`state-router`/`commands` decision layer — owns
 > events, state, N=1, the human command gate, the machine QA gate, and PR creation; it is the sole
 > writer of the QA verification comment). These are **role names only**: the runtime agent is still
@@ -88,7 +89,7 @@ The write-capable agent itself is [`qa-skill/agents/qa-guardian.md`](../../qa-sk
     |---|---|---|
     | `watch_mode` | `labeled` or `new-open` (discover issues created after watch baseline) | labeled |
    | `command_authors` | **trusted `/guardian` command authors (security, required).** Only these GitHub logins can drive commands; **unset = every command is ignored (fail-closed)** | none |
-   | `poll_interval_ms` | resident scheduler poll interval | 60000 |
+    | `poll_interval_ms` | resident scheduler poll interval; config may override the code default | 60000 |
    | `lease_ms` | N=1 lock lease (heartbeat-renewed while a run is live) | 1800000 |
    | `base_branch` | PR target branch | dev |
    | `notify_webhook` | notification webhook URL (Feishu bot / generic) | none → comment-only |
@@ -110,9 +111,9 @@ Drive one issue directly through the guardian agent:
 
 ```bash
 opencode run --agent qa-guardian --dir <repo> \
-  "Watch GitHub issue #<n>: investigate the root cause, assess risk, and follow the qa-guardian
-   contract — stop at gate 1 only if high-risk, dispatch read-only qa to verify, open a dev PR, and
-   stop at gate 2."
+   "Watch GitHub issue #<n>: investigate the root cause, assess risk, and follow the qa-guardian
+    contract — stop at gate 1 only if high-risk, dispatch read-only qa to verify, then hand off to
+    the Supervisor for PR creation and stop at gate 2."
 ```
 
 The guardian will, per its contract:
@@ -125,8 +126,10 @@ The guardian will, per its contract:
 5. Create `fix/issue-<n>`, make the **minimal** fix.
 6. Dispatch read-only `qa` for independent verification (**low-risk is verified too**). `FAIL` → fix
    again (≤1–2 rounds); a `FAIL` never opens a PR.
-7. On `PASS`: commit (`fixes #<n>`), push, `gh pr create --base dev`, dual-write the trace (issue
-   comment + `.qa/` objective case), write `GATE_2_WAIT`, notify, and **exit**.
+    7. On `PASS`: the Supervisor finalizes the scoped commit (`fixes #<n>`), pushes the branch,
+    creates the PR, dual-writes the trace (issue comment + `.qa/` objective case), writes
+    `GATE_2_WAIT`, notifies, and **exits**. The Fixer only edits and reports; in enforced mode the
+    scheduler/Supervisor owns the QA gate, verdict comment, and PR.
 8. **Never** merges, **never** closes the issue — the human's merge does that.
 
 ### Resuming after a gate (comment commands, §11.2)
