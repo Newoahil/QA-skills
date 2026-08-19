@@ -17,7 +17,7 @@ import { readJsonFile } from './runtime-io.mjs';
 
 import { pollIssue, defaultGhReader, DEFAULT_LEASE_MS, invocationArgvFor } from './poll.mjs';
 import { readState, startFollowupRound, writeState } from './state.mjs';
-import { planTick } from './scheduler-core.mjs';
+import { commandlessStateTransition, planTick } from './scheduler-core.mjs';
 import { acquireLock, renewLock, releaseLock } from './lock.mjs';
 import { deliverNotifications, defaultGhComment, defaultCurlPost } from './notify-io.mjs';
 import { createLogger } from './runtime-io.mjs';
@@ -77,6 +77,24 @@ function readWatchState(repoDir) {
 export function writeWatchState(repoDir, state, { fsOps, makeId } = {}) {
   mkdirSync(path.dirname(watchStatePath(repoDir)), { recursive: true });
   atomicWriteJson(watchStatePath(repoDir), state, { ...(fsOps ? { fsOps } : {}), ...(makeId ? { makeId } : {}) });
+}
+
+// Persist router transitions that do not have a guardian command to execute before notifications
+// read the record. This keeps the notification stage and authoritative state on the same tick.
+export function persistCommandlessTransitions({ decisions, guardianDir, deps = {} }) {
+  const rs = deps.readState ?? readState;
+  const ws = deps.writeState ?? writeState;
+  const now = deps.now ?? new Date().toISOString();
+
+  for (const decision of decisions) {
+    const current = rs(guardianDir, decision.issue);
+    if (!current) continue;
+    const patch = commandlessStateTransition(current, decision);
+    if (!patch) continue;
+    const changed = Object.keys(patch).some((key) => current[key] !== patch[key]);
+    if (!changed) continue;
+    ws(guardianDir, { ...current, ...patch }, { touch: true, now });
+  }
 }
 
 function listCandidates(repoDir, config, now = new Date()) {
@@ -179,6 +197,12 @@ async function tick(repoDir, config, logger) {
   // the ATOMIC lock acquire below — planTick's lock arg is null here so it only picks a candidate.
   const plan = planTick({ decisions, lock: null, leaseMs, now });
 
+  persistCommandlessTransitions({
+    decisions,
+    guardianDir: guardianDirOf(repoDir),
+    now: new Date(now).toISOString(),
+  });
+
   // Deliver notifications (FR-21 / §11B.5) for gate-stop/STALLED/HANDED_BACK decisions BEFORE
   // handling the run. Idempotent per last_notified_state; independent of the N=1 run lock, so a
   // stopped issue is announced even while another issue is running. Best-effort per issue.
@@ -249,14 +273,6 @@ async function tick(repoDir, config, logger) {
       stall_retries: plan.toRun.nextStallRetries ?? currentBeforeRun.stall_retries,
     }, { touch: false });
   }
-  if (currentBeforeRun && action === 'STALLED' && plan.toRun.nextStallRetries) {
-    writeState(guardianDirOf(repoDir), {
-      ...currentBeforeRun,
-      stall_retries: plan.toRun.nextStallRetries,
-      last_phase: 'stalled',
-    }, { touch: false });
-  }
-
   const investigationMode = config.investigation_mode ?? 'enforced';
   if (investigationMode !== 'legacy') {
     const guardianDir = guardianDirOf(repoDir);

@@ -12,6 +12,41 @@
 export const RUNNABLE_ACTIONS = Object.freeze(['START', 'RESUME', 'STALLED']);
 export const NOTIFY_ACTIONS = Object.freeze(['GATE_1_WAIT', 'GATE_2_WAIT', 'STALLED', 'HANDED_BACK', 'DONE']);
 
+// Project a router decision into the authoritative fields for transitions that do not launch a
+// guardian command. The router remains the owner of whether a transition should happen; this
+// helper only describes the persisted consequence of that already-made decision.
+export function commandlessStateTransition(_record, decision) {
+  switch (decision.action) {
+    case 'DONE':
+      return {
+        state: 'DONE',
+        handed_back_reason: null,
+        last_phase: decision.reason ?? 'done',
+        last_error_class: null,
+      };
+    case 'STALLED':
+      return {
+        state: 'STALLED',
+        stall_retries: decision.nextStallRetries,
+        last_phase: 'stalled',
+        last_error_class: decision.reason ?? 'stalled',
+      };
+    case 'HANDED_BACK':
+      return {
+        state: 'HANDED_BACK',
+        handed_back_reason: decision.handedBackReason ?? decision.reason ?? null,
+        last_phase: 'handed-back',
+        last_error_class: decision.reason ?? 'handed-back',
+      };
+    case 'START':
+    case 'SKIP':
+    case 'RESUME':
+      return null;
+    default:
+      return null;
+  }
+}
+
 export function isNotifyDecision(decision) {
   return NOTIFY_ACTIONS.includes(decision.action)
     || decision.reason === 'gate1-waiting'

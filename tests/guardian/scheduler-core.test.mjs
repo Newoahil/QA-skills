@@ -3,7 +3,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { planTick, isLockLive } from '../../tools/guardian/scheduler-core.mjs';
+import { commandlessStateTransition, planTick, isLockLive } from '../../tools/guardian/scheduler-core.mjs';
+import { newState, STATES } from '../../tools/guardian/state.mjs';
 
 const LEASE = 30 * 60 * 1000;
 const NOW = Date.parse('2026-08-18T12:00:00Z');
@@ -62,4 +63,53 @@ test('gate waiting decisions are notify candidates even when action is SKIP', ()
   ];
   const plan = planTick({ decisions, lock: null, leaseMs: 1800000, now: Date.now() });
   assert.deepEqual(plan.notify.map((x) => x.issue), [1, 2, 3]);
+});
+
+test('commandless DONE transition persists merged close-out fields', () => {
+  const current = { ...newState(211), state: STATES.GATE_2_WAIT, last_phase: 'pr-opened' };
+  const patch = commandlessStateTransition(current, { action: 'DONE', reason: 'merged-closed' });
+
+  assert.deepEqual(patch, {
+    state: STATES.DONE,
+    handed_back_reason: null,
+    last_phase: 'merged-closed',
+    last_error_class: null,
+  });
+});
+
+test('commandless STALLED transition persists retry counter and audit phase', () => {
+  const current = { ...newState(42), state: STATES.INVESTIGATING, stall_retries: 0 };
+  const patch = commandlessStateTransition(current, {
+    action: 'STALLED',
+    reason: 'lease-expired',
+    nextStallRetries: 1,
+  });
+
+  assert.deepEqual(patch, {
+    state: STATES.STALLED,
+    stall_retries: 1,
+    last_phase: 'stalled',
+    last_error_class: 'lease-expired',
+  });
+});
+
+test('commandless HANDED_BACK transition persists reason and audit fields', () => {
+  const current = { ...newState(7), state: STATES.GATE_1_WAIT };
+  const patch = commandlessStateTransition(current, {
+    action: 'HANDED_BACK',
+    reason: 'reject',
+    handedBackReason: 'reject',
+  });
+
+  assert.deepEqual(patch, {
+    state: STATES.HANDED_BACK,
+    handed_back_reason: 'reject',
+    last_phase: 'handed-back',
+    last_error_class: 'reject',
+  });
+});
+
+test('gate waiting SKIP has no commandless state transition', () => {
+  const current = { ...newState(9), state: STATES.GATE_2_WAIT };
+  assert.equal(commandlessStateTransition(current, { action: 'SKIP', reason: 'gate2-waiting' }), null);
 });
