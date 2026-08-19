@@ -10,7 +10,7 @@
 // notify_channel? }.
 
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { readJsonFile } from './runtime-io.mjs';
@@ -25,17 +25,26 @@ import { projectLabels } from './label-io.mjs';
 import { prepareInvestigation } from './investigation-runtime.mjs';
 import { processPlanBuilder, processSpecialistRunner } from './investigation-process.mjs';
 import { discoverCapabilities } from './capabilities.mjs';
-import { quarantineArtifacts, readArtifact, readArtifactPair, writeArtifact } from './artifacts.mjs';
+import { artifactIdentity, quarantineArtifacts, readArtifact, readArtifactPair, writeArtifact } from './artifacts.mjs';
 import { assessFixingEntry } from './plan-gate.mjs';
 import { auditQaVerdict } from './qa-verdict.mjs';
 import { canCreatePr } from './qa-gate.mjs';
-import { createPullRequest, currentBranch } from './pr-io.mjs';
+import { createPullRequest } from './pr-io.mjs';
 import { buildVerdictComment, markerForApproval, hashVerdictComment } from './verdict-comment.mjs';
 import { resolveOpencodeBin } from './opencode-bin.mjs';
 import { createOpencodeClient } from './opencode-client.mjs';
 import { runFixerSession } from './fixer-session-runner.mjs';
 import { runQaSession } from './qa-session-runner.mjs';
 import { buildGate1Comment } from './gate1-comment.mjs';
+import { createSupervisorExecutor } from './supervisor-exec.mjs';
+import { ACTORS, assertActorMayPerform, EFFECTS } from './actor-routing.mjs';
+import { atomicWriteJson } from './atomic-io.mjs';
+
+export function sessionStatusAction(status) {
+  if (status === 'ok') return { continue: true, retry: false, failClosed: false };
+  if (status === 'retry') return { continue: false, retry: true, failClosed: false };
+  return { continue: false, retry: false, failClosed: true };
+}
 
 const DEFAULT_INTERVAL_MS = 60 * 1000;
 // Heartbeat cadence: renew the lock well within the lease so a live long run never looks stale.
@@ -65,9 +74,9 @@ function readWatchState(repoDir) {
   if (!existsSync(file)) return null;
   return readJsonFile(file);
 }
-function writeWatchState(repoDir, state) {
+export function writeWatchState(repoDir, state, { fsOps, makeId } = {}) {
   mkdirSync(path.dirname(watchStatePath(repoDir)), { recursive: true });
-  writeFileSync(watchStatePath(repoDir), `${JSON.stringify(state, null, 2)}\n`, 'utf8');
+  atomicWriteJson(watchStatePath(repoDir), state, { ...(fsOps ? { fsOps } : {}), ...(makeId ? { makeId } : {}) });
 }
 
 function listCandidates(repoDir, config, now = new Date()) {
@@ -148,6 +157,7 @@ async function tick(repoDir, config, logger) {
   // child-process path).
   const serverUrl = process.env.QA_GUARDIAN_OPENCODE_SERVER_URL;
   const opencodeClient = serverUrl ? createOpencodeClient({ baseUrl: serverUrl }) : null;
+  const supervisor = opencodeClient ? createSupervisorExecutor({ repoDir }) : null;
 
   const trustedAuthors = config.command_authors ?? [];
   const decisions = issues.map(({ issue, claim_source }) => ({
@@ -161,7 +171,7 @@ async function tick(repoDir, config, logger) {
   for (const decision of decisions) {
     const record = readState(guardianDirOf(repoDir), decision.issue);
     if (!record) continue;
-    const projection = projectLabels(repoDir, decision.issue, record);
+     const projection = projectLabels(repoDir, decision.issue, record, undefined, ACTORS.SUPERVISOR);
     if (projection.errors.length > 0) logger.warn('labels.projection_failed', { issue: decision.issue, errors: projection.errors.length });
   }
 
@@ -178,7 +188,8 @@ async function tick(repoDir, config, logger) {
       decisions: plan.notify,
       guardianDir,
       config,
-      io: { ghComment: defaultGhComment(repoDir), curlPost: defaultCurlPost() },
+       actor: ACTORS.SUPERVISOR,
+       io: { ghComment: defaultGhComment(repoDir, ACTORS.SUPERVISOR), curlPost: defaultCurlPost(ACTORS.SUPERVISOR) },
     });
     const delivered = results.filter((r) => r.delivered).length;
     logger.info('notify.summary', { attempted: plan.notify.length, delivered });
@@ -224,11 +235,15 @@ async function tick(repoDir, config, logger) {
   const currentBeforeRun = readState(guardianDirOf(repoDir), issue);
   if (currentBeforeRun && plan.toRun.command) {
     const gateApproved = plan.toRun.command.verb === 'approve' || plan.toRun.command.verb === 'revise';
+    const currentPair = readArtifactPair(guardianDirOf(repoDir), issue);
+    const currentIdentity = artifactIdentity(currentPair);
     writeState(guardianDirOf(repoDir), {
       ...currentBeforeRun,
       state: gateApproved ? 'FIXING' : currentBeforeRun.state,
       last_consumed_comment_id: plan.toRun.command.commentId,
       gate_1_approved_comment_id: gateApproved ? plan.toRun.command.commentId : currentBeforeRun.gate_1_approved_comment_id,
+      gate_1_approved_plan_hash: gateApproved ? currentIdentity.plan_hash : currentBeforeRun.gate_1_approved_plan_hash,
+      gate_1_approved_plan_revision: gateApproved ? currentIdentity.plan_revision : currentBeforeRun.gate_1_approved_plan_revision,
       gate_1_revision_data: plan.toRun.command.verb === 'revise' ? plan.toRun.command.data : currentBeforeRun.gate_1_revision_data,
       fix_rounds: plan.toRun.clearFixRounds ? 0 : currentBeforeRun.fix_rounds,
       stall_retries: plan.toRun.nextStallRetries ?? currentBeforeRun.stall_retries,
@@ -251,6 +266,7 @@ async function tick(repoDir, config, logger) {
     if (!pair.complete) {
       if (dossier || planArtifact) quarantineArtifacts(guardianDir, issue);
       try {
+        const investigationState = readState(guardianDir, issue) ?? { issue };
         const prepared = await prepareInvestigation({
           issue,
           issueData: { title: plan.toRun.issueTitle ?? '', body: plan.toRun.issueBody ?? '' },
@@ -258,6 +274,8 @@ async function tick(repoDir, config, logger) {
           complexity: config.investigation_complexity ?? 'complex',
           capabilities: discoverCapabilities({ env: process.env }),
           config,
+          state: investigationState,
+          round: investigationState.processing_round ?? 1,
           runSpecialist: (args) => processSpecialistRunner({ ...args, opencodeClient }),
           buildPlan: (args) => processPlanBuilder({ ...args, repoDir, opencodeClient }),
         });
@@ -268,6 +286,8 @@ async function tick(repoDir, config, logger) {
           plan_path: prepared.artifact_paths.plan_path,
           dossier_status: prepared.validation.valid ? 'valid' : 'invalid',
           plan_status: prepared.planResult.valid ? 'valid' : 'invalid',
+          ...artifactIdentity({ dossier: prepared.dossier, plan: prepared.plan }),
+          opencode: prepared.opencode ?? investigationState.opencode,
           evidence_count: prepared.dossier.evidence.length,
           hypothesis_ids: prepared.dossier.hypotheses.map((item) => item.id),
           unresolved_fact_count: prepared.dossier.unresolved_facts.length,
@@ -299,11 +319,19 @@ async function tick(repoDir, config, logger) {
     const dossier = pair.dossier;
     const planArtifact = pair.plan;
     const gateState = readState(guardianDir, issue);
+    const identity = artifactIdentity(pair);
+    if (gateState && (gateState.plan_hash !== identity.plan_hash || gateState.plan_revision !== identity.plan_revision || gateState.dossier_revision !== identity.dossier_revision)) {
+      writeState(guardianDir, { ...gateState, ...identity }, { touch: false });
+    }
     const gate = assessFixingEntry({
       plan: planArtifact,
       dossier,
       investigationMode,
       humanApproved: Boolean(gateState?.gate_1_approved_comment_id),
+      currentPlanHash: identity.plan_hash,
+      currentPlanRevision: identity.plan_revision,
+      approvedPlanHash: gateState?.gate_1_approved_plan_hash,
+      approvedPlanRevision: gateState?.gate_1_approved_plan_revision,
     });
     if (!gate.allowed || gate.shadow === true) {
       const current = readState(guardianDir, issue) ?? { issue };
@@ -311,13 +339,15 @@ async function tick(repoDir, config, logger) {
         ...current,
         state: 'GATE_1_WAIT',
         risk: 'HIGH',
-        gate_1_approved_comment_id: null,
-        gate_1_revision_data: null,
+         gate_1_approved_comment_id: null,
+         gate_1_approved_plan_hash: null,
+         gate_1_approved_plan_revision: null,
+         gate_1_revision_data: null,
         last_phase: 'gate1-wait',
         plan_validation_errors: gate.plan_result?.errors ?? [],
       }, { touch: false });
       try {
-        defaultGhComment(repoDir)(issue, buildGate1Comment({ issue, plan: planArtifact, dossier }));
+       defaultGhComment(repoDir, ACTORS.SUPERVISOR)(issue, buildGate1Comment({ issue, plan: planArtifact, dossier, planHash: identity.plan_hash, planRevision: identity.plan_revision }));
       } catch (error) {
         logger.warn('gate1.comment_failed', { issue, error_message: error instanceof Error ? error.message : 'unknown' });
       }
@@ -371,7 +401,7 @@ async function tick(repoDir, config, logger) {
     if (opencodeClient) {
       // 方案 A: fixer runs via a persistent SDK session (reused across gates/rework/followup).
       const currentState = readState(guardianDir, issue) ?? { issue };
-      const humanNote = plan.toRun.command?.data
+       const humanNote = plan.toRun.command?.data
         ? {
             command_kind: plan.toRun.command.verb,
             command_comment_id: plan.toRun.command.commentId,
@@ -379,27 +409,35 @@ async function tick(repoDir, config, logger) {
             round: currentState.processing_round ?? 1,
             human_note: plan.toRun.command.data,
           }
-        : null;
-      const fixerRun = await runFixerSession({
-        client: opencodeClient,
-        state: currentState,
+         : null;
+       const branchPreparation = supervisor.prepareFixBranch(issue);
+       if (branchPreparation.status !== 0) {
+         throw new Error(`prepare fix branch failed: ${branchPreparation.stderr || 'unknown'}`);
+       }
+       const fixerRun = await runFixerSession({
+         client: opencodeClient,
+         supervisor,
+         state: currentState,
         issue,
         repoDir,
         dossierPath: path.join(guardianDir, String(issue), 'dossier.json'),
         planPath: path.join(guardianDir, String(issue), 'plan.json'),
         humanNote,
-        round: currentState.processing_round ?? 1,
-        deadlineMs: Number(config.child_timeout_ms ?? 20 * 60 * 1000),
-      });
-      if (fixerRun.status === 'retry') {
-        logger.warn('fixer.session_retry', { issue });
-        return;
-      }
-      if (fixerRun.status === 'aborted') {
-        logger.warn('fixer.session_aborted', { issue });
-        return;
-      }
-      const fixedBranch = currentBranch(repoDir);
+         round: currentState.processing_round ?? 1,
+         plan: readArtifactPair(guardianDir, issue).plan,
+          deadlineMs: Number(config.child_timeout_ms ?? 20 * 60 * 1000),
+       });
+       writeState(guardianDir, fixerRun.state, { touch: false });
+       const fixerAction = sessionStatusAction(fixerRun.status);
+       if (fixerAction.retry) {
+         logger.warn('fixer.session_retry', { issue });
+         return;
+       }
+       if (!fixerAction.continue) {
+         logger.warn('fixer.session_stopped', { issue, status: fixerRun.status });
+         return;
+       }
+       const fixedBranch = fixerRun.finalization?.branch ?? null;
       writeState(guardianDir, { ...fixerRun.state, branch: fixedBranch }, { touch: false });
 
       // 方案 A: QA runs via an independent SDK session (scheduler-invoked, not fixer-internal).
@@ -410,28 +448,34 @@ async function tick(repoDir, config, logger) {
         issue,
         repoDir,
         branch: afterFix.branch ?? null,
-        diffSummary: `fix branch ${afterFix.branch ?? 'unknown'}`,
+         diffSummary: fixerRun.finalization
+           ? { evidence: fixerRun.finalization.evidence, tests: fixerRun.finalization.tests }
+           : `fix branch ${afterFix.branch ?? 'unknown'}`,
         intendedBehavior: plan.toRun.issueTitle ?? `issue #${issue}`,
         round: afterFix.processing_round ?? 1,
         deadlineMs: Number(config.child_timeout_ms ?? 20 * 60 * 1000),
       });
-      if (qaRun.status === 'retry') {
-        logger.warn('qa.session_retry', { issue });
-        return;
-      }
-      if (qaRun.status === 'aborted') {
-        logger.warn('qa.session_aborted', { issue });
-        return;
-      }
+       writeState(guardianDir, qaRun.state, { touch: false });
+       const qaAction = sessionStatusAction(qaRun.status);
+       if (qaAction.retry) {
+         logger.warn('qa.session_retry', { issue });
+         return;
+       }
+       if (!qaAction.continue) {
+         logger.warn('qa.session_stopped', { issue, status: qaRun.status });
+         return;
+       }
       writeState(guardianDir, qaRun.state, { touch: false });
       if (qaRun.verdict) {
-        qaVerdict = {
+         qaVerdict = {
           issue: Number(issue),
           branch: afterFix.branch ?? null,
           status: qaRun.verdict,
           verified_at: new Date().toISOString(),
-          report_hash: `sha256:${createHash('sha256').update(qaRun.report ?? '', 'utf8').digest('hex')}`,
-          evidence_summary: qaRun.report ?? null,
+           report_hash: `sha256:${createHash('sha256').update(qaRun.report ?? '', 'utf8').digest('hex')}`,
+           evidence_summary: qaRun.report ?? null,
+           plan_hash: afterFix.plan_hash ?? null,
+           plan_revision: afterFix.plan_revision ?? null,
         };
         writeArtifact(guardianDir, issue, 'qa-verdict', qaVerdict);
       }
@@ -469,7 +513,7 @@ async function tick(repoDir, config, logger) {
         reason: qaAudit.reason,
         reportHash: qaVerdict?.report_hash ?? null,
         attempt: afterRun.fix_rounds ?? 1,
-      }, { ghComment: defaultGhComment(repoDir), logger });
+      }, { actor: ACTORS.SUPERVISOR, ghComment: defaultGhComment(repoDir, ACTORS.SUPERVISOR), logger });
     }
 
     if (investigationMode === 'enforced' && qaAudit.approved) {
@@ -478,7 +522,8 @@ async function tick(repoDir, config, logger) {
         verdict: qaVerdict,
         issue,
         branch: currentBranch,
-        expectedPlanHash: afterRun.plan_hash ?? undefined,
+         expectedPlanHash: afterRun.plan_hash ?? undefined,
+         expectedPlanRevision: afterRun.plan_revision ?? undefined,
       });
       if (!qaGate.allowed) {
         logger.warn('pr.blocked_qa_gate', { issue, errors: qaGate.errors.length });
@@ -490,7 +535,8 @@ async function tick(repoDir, config, logger) {
           head: currentBranch,
           base: config.base_branch ?? 'dev',
           title: plan.toRun.issueTitle ?? `修复 issue #${issue}`,
-          body: `## QA Guardian 自动验证\n\nIssue #${issue}\n\n独立 QA 结论：Overall Status: PASS\n\n请人工评审后合并。`,
+           actor: ACTORS.SUPERVISOR,
+           body: `## QA Guardian 自动验证\n\nIssue #${issue}\n\n独立 QA 结论：Overall Status: PASS\n\n请人工评审后合并。`,
         });
         const gate2State = readState(guardianDir, issue) ?? afterRun;
         writeState(guardianDir, {
@@ -508,7 +554,7 @@ async function tick(repoDir, config, logger) {
           prUrl,
           reportHash: qaVerdict?.report_hash ?? null,
           attempt: afterRun.fix_rounds ?? 1,
-        }, { ghComment: defaultGhComment(repoDir), logger });
+        }, { actor: ACTORS.SUPERVISOR, ghComment: defaultGhComment(repoDir, ACTORS.SUPERVISOR), logger });
       }
     }
     logger.info('run.exit', { issue, exit_code: code });
@@ -531,6 +577,7 @@ export function writeVerdictComment(guardianDir, issue, params, deps) {
   const rs = deps?.readState ?? readState;
   const ws = deps?.writeState ?? writeState;
   const ghComment = deps.ghComment;
+  const actor = deps.actor;
   const logger = deps.logger;
   const marker = markerForApproval(params.approved);
   const body = buildVerdictComment({
@@ -551,6 +598,7 @@ export function writeVerdictComment(guardianDir, issue, params, deps) {
     return { delivered: false, skipped: true, marker };
   }
   try {
+    assertActorMayPerform(actor, EFFECTS.FACT_COMMENT);
     ghComment(issue, body);
     const fresh = rs(guardianDir, issue) ?? record ?? { issue };
     ws(guardianDir, { ...fresh, last_verdict_comment_hash: hash }, { touch: false });
