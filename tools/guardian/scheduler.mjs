@@ -114,14 +114,12 @@ function runInvocation(repoDir, invokeArgv, lockFile, handle, leaseMs, timeoutMs
     const child = spawn(bin, invokeArgv.args, {
       cwd: repoDir, shell: false, stdio: 'inherit', windowsHide: true,
     });
-    // Heartbeat: keep the lease fresh while the run is alive so N=1 holds for long runs.
-    const beat = setInterval(() => {
-      renewLock(lockFile, handle, { leaseMs });
-    }, HEARTBEAT_MS);
-    if (typeof beat.unref === 'function') beat.unref();
+    // NOTE: the N=1 lease heartbeat is owned by the OUTER critical section (started right after
+    // acquireLock in tick, cleared in its finally), so it covers the whole critical section —
+    // investigation AND fixer — not just this spawn. This prevents a long investigation from going
+    // lease-stale mid-run (E2E bug #2). No heartbeat here; the outer one renews for us.
     let timedOut = false;
     const done = (code) => {
-      clearInterval(beat);
       clearTimeout(timer);
       resolve(code);
     };
@@ -200,6 +198,14 @@ async function tick(repoDir, config, logger) {
     logger.warn('run.blocked_non_idempotent_stall', { issue, from_state: plan.toRun.fromState });
     return;
   }
+
+  // N=1 critical-section heartbeat: renew the lease for the WHOLE critical section (investigation
+  // + fixer + QA + PR), so a long investigation cannot go lease-stale and be judged STALLED by
+  // another poll (E2E bug #2). Cleared in the finally below. Owner-guarded by handle.token.
+  const criticalBeat = setInterval(() => {
+    renewLock(lockFile, handle, { leaseMs });
+  }, HEARTBEAT_MS);
+  if (typeof criticalBeat.unref === 'function') criticalBeat.unref();
 
   try {
   const currentBeforeRun = readState(guardianDirOf(repoDir), issue);
@@ -395,6 +401,7 @@ async function tick(repoDir, config, logger) {
     throw error;
   }
   } finally {
+    clearInterval(criticalBeat);
     releaseLock(lockFile, handle);
   }
 }
