@@ -39,18 +39,19 @@ issue #211 product fix or PR #222.
 
 ## Verification
 
-- Guardian test suite: 371/371 passing.
+- Guardian test suite: 379/379 passing.
 - Syntax checks: 13 modified runtime modules passed `node --check`.
 - Static scans found no broad permission allow, child-agent bash allow, inline GitHub CLI `--body`,
   or contradictory fixer-owned PR wording.
-- Live read-only issue #211 check: state remains `GATE_2_WAIT` with PASS artifact and PR #222; old
-  unversioned broad-permission fixer/QA sessions resolve to `create + contextLoss` under policy v2,
-  so future rework cannot reuse them.
+- Live issue #211 check: old unversioned broad-permission fixer/QA sessions resolve to
+  `create + contextLoss` under policy v2, so future work cannot reuse them. After human merge of PR
+  #222, the hardened scheduler atomically transitioned authoritative state from `GATE_2_WAIT` to
+  `DONE` without posting a duplicate notification (comment count remained 7).
 - No force push, target-repository mutation, or `.codegraph` staging occurred.
 
 ## Residual Risk
 
-- PR #222 was merged by a human while remediation was in progress. The old scheduler was stopped;
-  after deployment the new scheduler should perform the normal closed-PR transition to DONE.
+- PR #222 was merged by a human while remediation was in progress; the hardened scheduler has now
+  completed the normal closed-PR transition to `DONE`.
 - Merchant-admin dependencies remain absent in the local target checkout, so its focused Jest and
   browser visual checks were not added to this Guardian-runtime remediation.
