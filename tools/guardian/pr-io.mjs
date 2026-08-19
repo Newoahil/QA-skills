@@ -2,11 +2,14 @@
 // gh pr create and calls this only after qa-gate PASS.
 
 import { spawnSync } from 'node:child_process';
+import { assertActorMayPerform, EFFECTS } from './actor-routing.mjs';
+import { withGithubBodyFile } from './github-body-file.mjs';
 
-export function createPullRequest({ repoDir, head, base, title, body, run = spawnSync }) {
-  const result = run('gh', ['pr', 'create', '--base', base, '--head', head, '--title', title, '--body', body], {
-    cwd: repoDir, encoding: 'utf8', shell: false, windowsHide: true,
-  });
+export function createPullRequest({ actor, repoDir, head, base, title, body, run = spawnSync }) {
+  assertActorMayPerform(actor, EFFECTS.PR_CREATE);
+  const result = withGithubBodyFile(body, (bodyFile) => run('gh', [
+    'pr', 'create', '--base', base, '--head', head, '--title', title, '--body-file', bodyFile,
+  ], { cwd: repoDir, encoding: 'utf8', shell: false, windowsHide: true }));
   if (result.status !== 0) throw new Error(`gh pr create failed: ${result.stderr || 'unknown'}`);
   return String(result.stdout).trim();
 }

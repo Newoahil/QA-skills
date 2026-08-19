@@ -20,20 +20,20 @@ test('only human_authorizer may authorize', () => {
   }
 });
 
-test('QA App (bot_fact_writer) can read/label/comment but NOT create PR or write code', () => {
+test('QA App (bot_fact_writer) can read/fact-comment but NOT label, PR, or write code', () => {
   const a = ACTORS.BOT_FACT_WRITER;
   assert.equal(actorMayPerform(a, EFFECTS.READ), true);
-  assert.equal(actorMayPerform(a, EFFECTS.LABEL), true);
+  assert.equal(actorMayPerform(a, EFFECTS.LABEL), false);
   assert.equal(actorMayPerform(a, EFFECTS.FACT_COMMENT), true);
   assert.equal(actorMayPerform(a, EFFECTS.PR_CREATE), false);
   assert.equal(actorMayPerform(a, EFFECTS.CODE_WRITE), false);
 });
 
-test('Fixer App (bot_executor) can write code + create PR but NOT project qa labels', () => {
+test('Fixer App (bot_executor) can write code but NOT GitHub mutations', () => {
   const a = ACTORS.BOT_EXECUTOR;
   assert.equal(actorMayPerform(a, EFFECTS.CODE_WRITE), true);
-  assert.equal(actorMayPerform(a, EFFECTS.PR_CREATE), true);
-  assert.equal(actorMayPerform(a, EFFECTS.FACT_COMMENT), true);
+  assert.equal(actorMayPerform(a, EFFECTS.PR_CREATE), false);
+  assert.equal(actorMayPerform(a, EFFECTS.FACT_COMMENT), false);
   assert.equal(actorMayPerform(a, EFFECTS.LABEL), false, 'Fixer must not add qa labels');
 });
 

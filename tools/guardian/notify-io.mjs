@@ -11,13 +11,16 @@ import path from 'node:path';
 
 import { notify } from './notify.mjs';
 import { readState, writeState } from './state.mjs';
+import { assertActorMayPerform, EFFECTS } from './actor-routing.mjs';
+import { withGithubBodyFile } from './github-body-file.mjs';
 
 // Default gh-backed issue-comment channel. Writes the notification text as an issue comment.
-export function defaultGhComment(repoDir) {
+export function defaultGhComment(repoDir, actor, run = spawnSync) {
   return function ghComment(issue, text) {
-    const res = spawnSync('gh', ['issue', 'comment', String(issue), '--body', text], {
-      cwd: repoDir, encoding: 'utf8', shell: false, windowsHide: true,
-    });
+    assertActorMayPerform(actor, EFFECTS.FACT_COMMENT);
+    const res = withGithubBodyFile(text, (bodyFile) => run('gh', [
+      'issue', 'comment', String(issue), '--body-file', bodyFile,
+    ], { cwd: repoDir, encoding: 'utf8', shell: false, windowsHide: true }));
     if (res.status !== 0) {
       throw new Error(`gh issue comment #${issue} failed: ${res.stderr || 'unknown'}`);
     }
@@ -26,8 +29,9 @@ export function defaultGhComment(repoDir) {
 
 // Default curl-backed webhook channel. POSTs the JSON body to the one configured URL. This is
 // the sole network egress allowed for notification (§11B.5); no other host is contacted.
-export function defaultCurlPost() {
+export function defaultCurlPost(actor) {
   return function curlPost(url, body) {
+    assertActorMayPerform(actor, EFFECTS.FACT_WEBHOOK);
     const res = spawnSync(
       'curl',
       ['-sS', '-X', 'POST', '-H', 'Content-Type: application/json', '-d', JSON.stringify(body), url],
@@ -57,6 +61,11 @@ export function defaultCurlPost() {
  */
 export function deliverNotifications(args) {
   const { decisions, guardianDir, config, io } = args;
+  const actor = args.actor;
+  if (decisions.some((decision) => notifyTargetState(decision))) {
+    assertActorMayPerform(actor, EFFECTS.FACT_COMMENT);
+    if (config?.notify_webhook) assertActorMayPerform(actor, EFFECTS.FACT_WEBHOOK);
+  }
   const rs = args.deps?.readState ?? readState;
   const ws = args.deps?.writeState ?? writeState;
   const now = args.deps?.now;
@@ -76,8 +85,14 @@ export function deliverNotifications(args) {
         { targetState, link: config?.issue_url_for?.(d.issue) ?? null, reason: d.reason ?? d.handedBackReason ?? null },
         config,
         {
-          comment: (payload) => io.ghComment(d.issue, payload.text),
-          webhook: (url, body) => io.curlPost(url, body),
+          comment: (payload) => {
+            assertActorMayPerform(actor, EFFECTS.FACT_COMMENT);
+            return io.ghComment(d.issue, payload.text);
+          },
+          webhook: (url, body) => {
+            assertActorMayPerform(actor, EFFECTS.FACT_WEBHOOK);
+            return io.curlPost(url, body);
+          },
         },
       );
       if (outcome.skipped) {

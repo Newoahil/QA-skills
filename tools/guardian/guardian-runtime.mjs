@@ -8,6 +8,7 @@ import { loadSecrets, requireSecrets } from './secrets.mjs';
 import { postIssueComment } from './github-comment.mjs';
 import { createFeishuWsRuntime } from './feishu-ws.mjs';
 import { resolveRepoDir, runScheduler } from './scheduler.mjs';
+import { ACTORS, EFFECTS } from './actor-routing.mjs';
 
 function readConfig(repoDir) {
   const file = path.join(repoDir, '.qa', 'guardian', 'config.json');
@@ -30,7 +31,7 @@ export async function startGuardianRuntime(options = {}) {
   const controller = options.controller ?? new AbortController();
   const seen = options.seen ?? new Set();
   const postComment = options.postComment ?? ((repo, issue, body) =>
-    postIssueComment({ repo, issue, body, token: requireSecrets(secrets, ['github_token']).github_token }));
+    postIssueComment({ actor: ACTORS.HUMAN_AUTHORIZER, effect: EFFECTS.AUTHORIZE, repo, issue, body, token: requireSecrets(secrets, ['github_token']).github_token }));
 
   printStartupBanner({ env });
   logger.info('startup.begin', { repo_dir: repoDir });

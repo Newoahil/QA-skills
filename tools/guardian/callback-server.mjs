@@ -12,6 +12,7 @@ import http from 'node:http';
 import { loadSecrets, requireSecrets } from './secrets.mjs';
 import { handleCallback } from './callback-handler.mjs';
 import { postIssueComment } from './github-comment.mjs';
+import { ACTORS, EFFECTS } from './actor-routing.mjs';
 import { createLogger } from './runtime-io.mjs';
 
 const PORT = Number(process.env.PORT ?? 8787);
@@ -61,7 +62,7 @@ export function createServer() {
   ]);
   const seen = new Set();
   const postComment = (repo, issue, body) =>
-    postIssueComment({ repo, issue, body, token: secrets.github_token });
+    postIssueComment({ actor: ACTORS.HUMAN_AUTHORIZER, effect: EFFECTS.AUTHORIZE, repo, issue, body, token: secrets.github_token });
 
   return http.createServer(async (req, res) => {
     try {

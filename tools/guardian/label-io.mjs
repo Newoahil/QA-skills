@@ -2,6 +2,7 @@
 // authoritative. Optional projection failures never block the Guardian workflow.
 
 import { spawnSync } from 'node:child_process';
+import { assertActorMayPerform, EFFECTS } from './actor-routing.mjs';
 
 export const PROJECTED_LABELS = Object.freeze([
   'qa-guardian:bug',
@@ -25,7 +26,8 @@ export function labelsForState(record) {
   return labels;
 }
 
-export function projectLabels(repoDir, issue, record, run = spawnSync) {
+export function projectLabels(repoDir, issue, record, run = spawnSync, actor) {
+  assertActorMayPerform(actor, EFFECTS.LABEL);
   const desired = new Set(labelsForState(record));
   const add = [...desired];
   const remove = PROJECTED_LABELS.filter((label) => !desired.has(label));

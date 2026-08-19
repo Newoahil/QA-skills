@@ -8,6 +8,8 @@
 // comment. It never merges, closes, edits labels, or pushes code — the same safety envelope as
 // the human typing the command in GitHub.
 
+import { assertActorMayPerform, EFFECTS } from './actor-routing.mjs';
+
 export class GithubApiError extends Error {
   constructor(status, message) {
     super(message);
@@ -28,11 +30,12 @@ function parseRepo(repo) {
 
 /**
  * Post an issue comment. Pure except for the injected fetch.
- * @param {object} args { repo, issue, body, token, fetchImpl?, apiBase? }
+ * @param {object} args { actor, repo, issue, body, token, fetchImpl?, apiBase? }
  * @returns {Promise<{ id:number, url:string }>}
  */
 export async function postIssueComment(args) {
-  const { repo, issue, body, token } = args;
+  const { actor, repo, issue, body, token } = args;
+  assertActorMayPerform(actor, args.effect ?? EFFECTS.FACT_COMMENT);
   const fetchImpl = args.fetchImpl ?? fetch;
   const apiBase = args.apiBase ?? GITHUB_API;
 
