@@ -127,6 +127,7 @@ export function processSpecialistRunner({ role, issue, issueDataPath, repoDir, d
         format: { type: 'json_schema', schema: SPECIALIST_SCHEMA },
       });
       if (outcome.kind !== 'ok') throw new Error(`specialist ${role} prompt failed: ${outcome.error?.message ?? 'unknown'}`);
+      if (outcome.result?.structured && typeof outcome.result.structured === 'object') return outcome.result.structured;
       const text = typeof outcome.result?.text === 'string' ? outcome.result.text : JSON.stringify(outcome.result ?? {});
       return extractJson(text);
     })();
@@ -176,6 +177,7 @@ export function processPlanBuilder({ issue, repoDir, dossier, timeoutMs = 600000
         format: { type: 'json_schema', schema: PLAN_SCHEMA },
       });
       if (outcome.kind !== 'ok') throw new Error(`plan builder prompt failed: ${outcome.error?.message ?? 'unknown'}`);
+      if (outcome.result?.structured && typeof outcome.result.structured === 'object') return outcome.result.structured;
       const text = typeof outcome.result?.text === 'string' ? outcome.result.text : JSON.stringify(outcome.result ?? {});
       return extractJson(text);
     })();

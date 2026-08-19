@@ -15,7 +15,7 @@ function fakeSdk() {
       post: async (params) => {
         if (params.url.endsWith('/message')) {
           calls.prompt.push(params);
-          return { data: { parts: [{ type: 'text', text: '{"ok":true}' }] } };
+          return { data: { info: { structured: { ok: true } }, parts: [{ type: 'text', text: 'fallback' }] } };
         }
         calls.abort.push(params);
         return { data: true };
@@ -69,6 +69,13 @@ test('prompt passes agent, parts, and json_schema format to the session', async 
   assert.equal(call.body.agent, 'guardian-code');
   assert.deepEqual(call.body.parts, [{ type: 'text', text: 'investigate' }]);
   assert.equal(call.body.format.type, 'json_schema');
+  const result = await client.prompt({
+    sessionId: 'ses_1',
+    agent: 'guardian-code',
+    parts: [{ type: 'text', text: 'investigate' }],
+    format: { type: 'json_schema', schema: { type: 'object' } },
+  });
+  assert.deepEqual(result.result.structured, { ok: true });
 });
 
 test('abort and getSession delegate to the SDK', async () => {

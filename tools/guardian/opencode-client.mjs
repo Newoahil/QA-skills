@@ -60,7 +60,8 @@ export function createOpencodeClient({ baseUrl, sdk } = {}) {
       const text = Array.isArray(data?.parts)
         ? data.parts.filter((part) => part?.type === 'text' && typeof part.text === 'string').map((part) => part.text).join('')
         : (typeof data?.text === 'string' ? data.text : '');
-      return { kind: 'ok', result: { ...data, text } };
+      const structured = data?.info?.structured ?? null;
+      return { kind: 'ok', result: { ...data, text, structured } };
     } catch (error) {
       return { kind: classifyError(error).kind, error };
     }
