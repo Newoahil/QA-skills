@@ -414,6 +414,13 @@ $changedCfg = $false
 if (-not $cfg.github_repo) { $cfg | Add-Member -NotePropertyName github_repo -NotePropertyValue $targetGithub; $changedCfg = $true }
 if (-not $cfg.watch_mode) { $cfg | Add-Member -NotePropertyName watch_mode -NotePropertyValue $WatchMode; $changedCfg = $true }
 if (-not $cfg.base_branch) { $cfg | Add-Member -NotePropertyName base_branch -NotePropertyValue $BaseBranch; $changedCfg = $true }
+if (-not $cfg.command_authors -or @($cfg.command_authors).Count -eq 0) {
+  if ($Yes) { throw "command_authors 为空：请先不带 -Yes 运行一次，输入可信 GitHub 登录名，例如 goudaren0528。" }
+  $authorInput = Read-Host "    请输入可信 GitHub 登录名（多个用逗号或空格分隔；只需首次输入）"
+  if (-not $authorInput) { throw "已取消：未配置可信 GitHub 登录名。" }
+  $cfg.command_authors = @($authorInput -split '[,\s]+' | Where-Object { $_ })
+  $changedCfg = $true
+}
 if ($changedCfg) {
   [System.IO.File]::WriteAllText($configPath, (($cfg | ConvertTo-Json -Depth 8) + "`n"), (New-Object System.Text.UTF8Encoding($false)))
   $cfg = Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json
