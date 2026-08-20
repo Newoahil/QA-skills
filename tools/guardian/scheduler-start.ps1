@@ -508,7 +508,7 @@ if ($bindingMode -eq 'strict') {
     if (Test-Path -LiteralPath $controlGuardianConfig) {
       # The control worktree is authoritative. A first-run -Init may intentionally create this
       # file here while leaving the canonical target untouched.
-      if (Test-Path -LiteralPath $sourceGuardianConfig -and (Get-FileHash $sourceGuardianConfig -Algorithm SHA256).Hash -ne (Get-FileHash $controlGuardianConfig -Algorithm SHA256).Hash) { throw "control worktree 已有不同的 Guardian config，已停止以避免覆盖。" }
+      if ((Test-Path -LiteralPath $sourceGuardianConfig) -and ((Get-FileHash $sourceGuardianConfig -Algorithm SHA256).Hash -ne (Get-FileHash $controlGuardianConfig -Algorithm SHA256).Hash)) { throw "control worktree 已有不同的 Guardian config，已停止以避免覆盖。" }
     } elseif (Test-Path -LiteralPath $sourceGuardianConfig) {
       New-Item -ItemType Directory -Force -Path (Split-Path -Parent $controlGuardianConfig) | Out-Null
       Copy-Item -LiteralPath $sourceGuardianConfig -Destination $controlGuardianConfig

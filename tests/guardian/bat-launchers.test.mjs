@@ -167,3 +167,9 @@ test('scheduler captures snapshot git diff and apply exit codes under Continue',
   assert.match(snapshotBlock, /\$diffExitCode = \$LASTEXITCODE/);
   assert.match(snapshotBlock, /\$applyExitCode = \$LASTEXITCODE/);
 });
+
+test('scheduler parenthesizes PowerShell cmdlets before boolean operators', () => {
+  const text = readFileSync('tools/guardian/scheduler-start.ps1', 'utf8');
+  assert.match(text, /if \(\(Test-Path -LiteralPath \$sourceGuardianConfig\) -and/);
+  assert.doesNotMatch(text, /if \(Test-Path -LiteralPath \$sourceGuardianConfig -and/);
+});
