@@ -283,12 +283,10 @@ function Ensure-QaSnapshot([string]$SourceRepo, [string]$Destination, [string]$B
 function Initialize-WorktreeBinding([string]$CanonicalRepo, [string]$Base, [string]$BindingPath, [switch]$ForDryRun) {
   $controlDefault = "$CanonicalRepo.qa-guardian-control"
   $snapshotDefault = "$CanonicalRepo.qa-guardian-qa"
-  $control = Read-Host "    控制 worktree 路径（回车使用 $controlDefault）"
-  if (-not $control) { $control = $controlDefault }
-  $snapshot = Read-Host "    QA snapshot 路径（回车使用 $snapshotDefault）"
-  if (-not $snapshot) { $snapshot = $snapshotDefault }
-  $rawInputs = Read-Host "    选择要复制到 QA snapshot 的仓库相对文件（逗号/空格分隔；无则回车）"
-  $inputs = @($rawInputs -split '[,\s]+' | Where-Object { $_ } | ForEach-Object { Assert-RelativeRuntimeInput $_ })
+  $control = $controlDefault
+  $snapshot = $snapshotDefault
+  $defaultRuntimeInputs = @('.env.test', '.env.local.test', 'config/test.json', 'config/testing.json')
+  $inputs = @($defaultRuntimeInputs | Where-Object { Test-Path -LiteralPath (Join-Path $CanonicalRepo ($_ -replace '/', '\')) } | ForEach-Object { Assert-RelativeRuntimeInput $_ })
   $binding = [ordered]@{
     version = 1
     target_repo = (Resolve-Path $CanonicalRepo).Path
