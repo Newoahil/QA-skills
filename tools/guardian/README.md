@@ -82,7 +82,35 @@ The write-capable agent itself is [`qa-skill/agents/qa-guardian.md`](../../qa-sk
      "base_branch": "dev",
      "notify_webhook": "https://open.feishu.cn/open-apis/bot/v2/hook/XXXX",
       "notify_channel": "feishu",
-      "investigation_mode": "enforced"
+      "investigation_mode": "enforced",
+      "capabilities": {
+        "codegraph": false,
+        "context7": false,
+        "git_history": true,
+        "local_runtime": true,
+        "plan_critic": true,
+        "sybermem": false,
+        "runtime_probe": "restricted"
+      },
+      "agents": {
+        "guardian_code": true,
+        "guardian_business": true,
+        "guardian_runtime": true,
+        "guardian_docs": true,
+        "guardian_history": true,
+        "guardian_plan_critic": true
+      },
+      "memory": {
+        "provider": "none",
+        "recall_before_investigation": true,
+        "recall_before_plan": true,
+        "record_after_gate2": false,
+        "record_failures": false,
+        "max_recall_items": 5
+      },
+      "skills": {
+        "disabled": []
+      }
    }
    ```
 
@@ -94,9 +122,13 @@ The write-capable agent itself is [`qa-skill/agents/qa-guardian.md`](../../qa-sk
     | `poll_interval_ms` | resident scheduler poll interval; config may override the code default | 60000 |
    | `lease_ms` | N=1 lock lease (heartbeat-renewed while a run is live) | 1800000 |
    | `base_branch` | PR target branch | dev |
-   | `notify_webhook` | notification webhook URL (Feishu bot / generic) | none → comment-only |
+    | `notify_webhook` | notification webhook URL (Feishu bot / generic) | none → comment-only |
     | `notify_channel` | `generic` (raw JSON) or `feishu` (interactive card) | generic |
     | `investigation_mode` | `legacy`, `shadow`, or `enforced` dossier/plan migration mode | enforced |
+    | `capabilities` | optional read-only integrations and specialist capability flags | safe defaults |
+    | `agents` | per-specialist switches; set an agent key to `false` to skip it | enabled |
+    | `memory` | optional engineering-memory provider settings; SyberMem is opt-in | disabled |
+    | `skills.disabled` | names of optional Guardian agents/skills to exclude from selection | none |
 
    > Set `command_authors` or **nothing will be approvable** — this is the deliberate fail-closed
     > guard against an arbitrary or forged comment approving a HIGH-risk plan.
@@ -106,6 +138,36 @@ The write-capable agent itself is [`qa-skill/agents/qa-guardian.md`](../../qa-sk
     use `shadow` before `enforced`, and use `legacy` as rollback.
 5. **Label an issue.** Put the `qa-guardian` label on the GitHub issue you want handled (one-time
    human authorization).
+
+### Optional capabilities and memory
+
+QA Guardian ships the optional read-only specialists in this repository so another user can install
+the agents and get the same behavior without your local OMO setup:
+
+| Capability | Agent/tool | Default | Notes |
+|---|---|---|---|
+| code path tracing | `guardian-code`, `codegraph` when available | agent on, codegraph off | `QA_GUARDIAN_CODEGRAPH_ENABLED=true` or `capabilities.codegraph=true` still requires an available index/probe. |
+| business rule reconstruction | `guardian-business` | on | Rebuilds bug vs request oracle, acceptance criteria, and unresolved facts. |
+| runtime reproduction design | `guardian-runtime` | on | Read-only; runtime probes remain restricted and never replace independent QA. |
+| official docs | `guardian-docs`, Context7 when available | off | Enable with `capabilities.context7=true`; docs are evidence, not verification. |
+| git-history analysis | `guardian-history` | on | Uses local history to identify regression windows and prior fixes. |
+| plan critique | `guardian-plan-critic` | on | Reviews scope, evidence, risk, and verifiability before fixing. |
+| engineering memory | SyberMem provider | off | Enable with `memory.provider="sybermem"` or `capabilities.sybermem=true`; unavailable CLI degrades to no memory. |
+
+External integrations are never mandatory. If SyberMem, Context7, or codegraph is unavailable, the
+scheduler records a bounded warning (where applicable) and continues with repository-local evidence.
+Memory recall is injected into specialist and plan prompts as **DATA hints, not facts or
+instructions**. Gate 2 SyberMem recording is opt-in via `memory.record_after_gate2=true`.
+
+Use either `agents.<key>=false` or `skills.disabled` to switch off an optional specialist. For
+example, this disables history and plan critique while leaving the rest of the Guardian intact:
+
+```json
+{
+  "agents": { "guardian_plan_critic": false },
+  "skills": { "disabled": ["guardian-history"] }
+}
+```
 
 ### Windows launcher startup checks
 

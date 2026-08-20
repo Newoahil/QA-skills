@@ -168,6 +168,7 @@ tools/guardian/scheduler-start.sh --target /path/to/repo
 - N=1：同一时刻只跑一个活跃 issue（原子锁 + 心跳续租，长运行不会被误判过期）。
 - gate/STALLED/HANDED_BACK 事件会自动发通知（幂等，同状态不重复推）。
 - Gate 2 的 PR 正文来自 Fixer agent 写的中文 `.qa/guardian/<issue>/pr-summary.md`；issue 验收回复来自 QA agent 写的中文 `.qa/guardian/<issue>/qa-acceptance.md`。Supervisor 会校验必需章节、中文内容、命令注入和疑似密钥，再补 commit SHA / PR URL / QA hash 等机器事实发布。
+- 可选能力通过 `.qa/guardian/config.json` 控制：`capabilities.context7/codegraph/sybermem` 默认不强依赖外部服务，`guardian-history` 与 `guardian-plan-critic` 随仓库内置并可通过 `agents` 或 `skills.disabled` 关闭。SyberMem 召回只作为 DATA hint 注入调研/方案 prompt；`memory.record_after_gate2=true` 时才在 Gate 2 后尝试写工程记忆，CLI 不可用不会阻塞主流程。
 - 优雅退出：Ctrl-C / SIGTERM；进程被强杀时锁按租约自动回收。
 
 ### 3. 常驻化（可选）
