@@ -90,6 +90,8 @@ test('scheduler launcher ignores Guardian-owned state when checking control work
   const controlFunction = text.slice(text.indexOf('function Ensure-ControlWorktree'), text.indexOf('function Ensure-QaSnapshot'));
   assert.match(controlFunction, /\.qa\/guardian\//);
   assert.match(controlFunction, /\.sybermem\//);
+  assert.match(controlFunction, /\$line = \$_.Trim\(\)/);
+  assert.match(controlFunction, /\$line\.Substring\(2\)/);
   assert.match(controlFunction, /unownedDirty/);
 });
 

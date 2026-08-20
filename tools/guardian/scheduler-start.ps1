@@ -266,8 +266,11 @@ function Ensure-ControlWorktree([string]$SourceRepo, [string]$Destination, [stri
   if ($inside.code -ne 0 -or $inside.output -ne 'true') { throw "已存在的 control worktree 路径不是有效 git worktree：$Destination" }
   $status = Invoke-Git $Destination @('status', '--porcelain')
   $unownedDirty = @(($status.output -split "`r?`n") | Where-Object {
-    if ($_.Length -lt 4) { return $false }
-    $p = $_.Substring(3).Trim().Replace('\', '/')
+    $line = $_.Trim()
+    if ($line.Length -lt 3) { return $false }
+    # Invoke-Git trims the complete output, so porcelain's leading status space is already gone.
+    # The remaining two status columns still occupy the first two characters.
+    $p = $line.Substring(2).Trim().Replace('\', '/')
     $p -and -not ($p -match '^(\.qa/guardian/|\.sybermem/|\.scheduler\.lock$|watch-state\.json$)')
   })
   if ($unownedDirty.Count -gt 0) { throw "control worktree 存在 Guardian 状态之外的工作区修改，已停止以避免覆盖现有修改：$Destination" }
