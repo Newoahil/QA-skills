@@ -125,21 +125,31 @@ function Ensure-OnPath($dir) {
   }
 }
 
-function Invoke-Git([string]$Repo, [string[]]$Args, [switch]$AllowFailure) {
-  $out = & git -C $Repo @Args 2>&1
+function Invoke-Git([string]$Repo, [string[]]$GitArgs, [switch]$AllowFailure) {
+  $out = & git -C $Repo @GitArgs 2>&1
   $code = $LASTEXITCODE
-  if ($code -ne 0 -and -not $AllowFailure) { throw "git $($Args -join ' ') failed in ${Repo}: $out" }
+  if ($code -ne 0 -and -not $AllowFailure) { throw "git $($GitArgs -join ' ') failed in ${Repo}: $out" }
   return [ordered]@{ code = $code; output = ($out -join "`n").Trim() }
+}
+
+function Normalize-GitHubRepo([string]$Value) {
+  if (-not $Value) { return "" }
+  $v = $Value.Trim().Trim('"')
+  if ($v -match '^(?<owner>[^/\s]+)/(?<name>[^/\s]+?)(?:\.git)?$') { return "$($Matches.owner)/$($Matches.name)" }
+  if ($v -match '^https?://github\.com/(?<owner>[^/]+)/(?<name>[^/#?]+?)(?:\.git)?/?(?:[?#].*)?$') {
+    return "$($Matches.owner)/$($Matches.name)"
+  }
+  if ($v -match '^git@github\.com:(?<owner>[^/]+)/(?<name>[^/]+?)(?:\.git)?$') {
+    return "$($Matches.owner)/$($Matches.name)"
+  }
+  return ""
 }
 
 function Infer-GitHubRepo([string]$Repo) {
   $remote = Invoke-Git $Repo @('remote', 'get-url', 'origin') -AllowFailure
   if ($remote.code -ne 0 -or -not $remote.output) { return "" }
   $value = $remote.output.Trim()
-  if ($value -match 'github\.com[:/](?<owner>[^/]+)/(?<name>[^/]+?)(?:\.git)?$') {
-    return "$($Matches.owner)/$($Matches.name)"
-  }
-  return ""
+  return Normalize-GitHubRepo $value
 }
 
 function Assert-CleanAndLatest([string]$Repo, [string]$Branch, [string]$Label) {
@@ -181,9 +191,10 @@ if ((Test-Path $packageRoot) -and -not (Test-Path $sdkPath)) {
 
 if (-not (Test-Path -LiteralPath $TargetRepo)) { throw "目标项目目录不存在: $TargetRepo" }
 
-$targetGithub = if ($GitHubRepo) { $GitHubRepo } else { Infer-GitHubRepo $TargetRepo }
+$targetGithub = if ($GitHubRepo) { Normalize-GitHubRepo $GitHubRepo } else { Infer-GitHubRepo $TargetRepo }
 if (-not $targetGithub) {
-  $targetGithub = Read-Host "    请输入目标 GitHub 仓库（owner/repo，直接回车取消）"
+  $inputGithub = Read-Host "    请输入目标 GitHub 仓库（owner/repo 或 https://github.com/owner/repo，直接回车取消）"
+  $targetGithub = Normalize-GitHubRepo $inputGithub
   if (-not $targetGithub) { throw "已取消：缺少目标 GitHub 仓库。" }
 }
 

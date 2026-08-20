@@ -24,3 +24,19 @@ test('dashboard-start.ps1 runs the read-only dashboard without scheduler preflig
   assert.doesNotMatch(text, /gh auth status/);
   assert.doesNotMatch(text, /Assert-CleanAndLatest/);
 });
+
+test('scheduler-start.ps1 avoids the PowerShell $Args automatic-variable trap for git argv', () => {
+  const text = readFileSync('tools/guardian/scheduler-start.ps1', 'utf8');
+  assert.match(text, /function Invoke-Git\(\[string\]\$Repo, \[string\[\]\]\$GitArgs/);
+  assert.match(text, /& git -C \$Repo @GitArgs/);
+  assert.doesNotMatch(text, /\[string\[\]\]\$Args/);
+});
+
+test('scheduler-start.ps1 accepts GitHub URL input by normalizing it to owner repo form', () => {
+  const text = readFileSync('tools/guardian/scheduler-start.ps1', 'utf8');
+  assert.match(text, /function Normalize-GitHubRepo/);
+  assert.match(text, /https\?:\/\/github\\\.com/);
+  assert.match(text, /git@github\\\.com/);
+  assert.match(text, /Normalize-GitHubRepo \$GitHubRepo/);
+  assert.match(text, /Normalize-GitHubRepo \$inputGithub/);
+});
