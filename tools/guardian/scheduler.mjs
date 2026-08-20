@@ -1,6 +1,6 @@
 // QA Guardian — resident watch-mode scheduler (§15.1)
 //
-// Thin resident loop. Every interval it lists open `qa-guardian` issues, asks poll.mjs for each
+// Thin resident loop. Every interval it lists all open issues, asks poll.mjs for each
 // issue's decision, then uses scheduler-core.planTick (pure) to pick the SINGLE issue to run
 // (N=1) and which stopped issues to notify. Decisions/routing live in poll/router/scheduler-core;
 // this file only does I/O: gh list, spawn `opencode run`, the N=1 lock file, and logging.
@@ -99,33 +99,25 @@ export function persistCommandlessTransitions({ decisions, guardianDir, deps = {
   }
 }
 
-function listCandidates(repoDir, config, now = new Date()) {
+export function listCandidates(repoDir, _config = {}, _now = new Date(), deps = {}) {
   const fields = ['number,createdAt,updatedAt,labels'];
-  const labeled = ghIssueList(repoDir, ['--state', 'open', '--label', 'qa-guardian', '--limit', '1000', '--json', fields[0]])
-    .map((x) => ({ ...x, claim_source: 'labeled' }));
+  const issueList = deps.ghIssueList ?? ghIssueList;
+  const stateReader = deps.readState ?? readState;
+  const openIssues = issueList(repoDir, ['--state', 'open', '--limit', '1000', '--json', fields[0]]);
   const followups = readdirSync(path.join(repoDir, '.qa', 'guardian'), { withFileTypes: true })
     .filter((entry) => entry.isFile() && /^\d+\.json$/.test(entry.name))
     .map((entry) => readJsonFile(path.join(repoDir, '.qa', 'guardian', entry.name)))
     .filter((record) => record.state === 'DONE' || record.state === 'GATE_2_WAIT')
     .map((record) => ({ issue: Number(record.issue), updatedAt: record.updated_at, claim_source: 'followup' }));
-  if (config.watch_mode !== 'new-open') return [...new Map(labeled.concat(followups).map((x) => [x.issue, x])).values()];
-
-  const current = now.toISOString();
-  const state = readWatchState(repoDir) ?? {
-    schema_version: 1,
-    watch_mode: 'new-open',
-    baseline_created_at: current,
-    next_created_at: current,
-    last_successful_scan_at: null,
-  };
-  const created = ghIssueList(repoDir, [
-    '--state', 'open', '--search', `is:issue is:open created:>=${state.next_created_at}`,
-    '--limit', '1000', '--json', fields[0],
-  ]).filter((x) => typeof x.createdAt === 'string' && x.createdAt >= state.next_created_at)
-    .map((x) => ({ ...x, claim_source: 'new-open' }));
-  writeWatchState(repoDir, { ...state, watch_mode: 'new-open', next_created_at: current, last_successful_scan_at: current });
-  const merged = new Map(labeled.concat(created, followups).map((x) => [x.issue, x]));
-  return [...merged.values()].sort((a, b) => String(a.updatedAt).localeCompare(String(b.updatedAt)));
+  const candidates = openIssues.map((issue) => {
+    const record = stateReader(path.join(repoDir, '.qa', 'guardian'), issue.issue);
+    return { ...issue, claim_source: record ? 'existing' : 'discovered' };
+  });
+  const merged = new Map(candidates.concat(followups).map((x) => [x.issue, x]));
+  return [...merged.values()].sort((a, b) => {
+    const updated = String(a.updatedAt ?? '').localeCompare(String(b.updatedAt ?? ''));
+    return updated || Number(a.issue) - Number(b.issue);
+  });
 }
 
 function lockPath(repoDir) {
@@ -260,6 +252,15 @@ async function tick(repoDir, config, logger) {
 
   try {
   const currentBeforeRun = readState(guardianDirOf(repoDir), issue);
+  if (plan.toRun.claim_source === 'discovered' && !currentBeforeRun) {
+    const claimId = randomUUID();
+    writeState(guardianDirOf(repoDir), {
+      issue, state: 'DISCOVERED', claim_id: claimId, claimed_at: new Date(now).toISOString(), claim_source: 'discovered',
+    }, { touch: false });
+    const claimProjection = projectLabels(repoDir, issue, { issue_class: null, risk: null, state: 'INVESTIGATING' }, undefined, ACTORS.SUPERVISOR);
+    if (claimProjection.errors.length > 0) logger.warn('claim.doing_projection_failed', { issue, errors: claimProjection.errors.length });
+    logger.info('claim.accepted', { issue, claim_source: 'discovered' });
+  }
   if (currentBeforeRun && plan.toRun.command) {
     const gateApproved = plan.toRun.command.verb === 'approve' || plan.toRun.command.verb === 'revise';
     const currentPair = readArtifactPair(guardianDirOf(repoDir), issue);
@@ -393,24 +394,6 @@ async function tick(repoDir, config, logger) {
     });
   }
 
-  if (plan.toRun.claim_source === 'new-open') {
-    const claimId = randomUUID();
-    const labelCreate = spawnSync('gh', ['label', 'create', 'qa-guardian-claimed', '--color', '5319e7', '--description', 'Issue claimed by QA Guardian', '--force'], {
-      cwd: repoDir, encoding: 'utf8', shell: false, windowsHide: true,
-    });
-    const labelRes = spawnSync('gh', ['issue', 'edit', String(issue), '--add-label', 'qa-guardian', '--add-label', 'qa-guardian-claimed'], {
-      cwd: repoDir, encoding: 'utf8', shell: false, windowsHide: true,
-    });
-    if (labelCreate.status !== 0 || labelRes.status !== 0) {
-      releaseLock(lockFile, handle);
-      logger.error('claim.failed', { issue, error_message: labelRes.stderr || labelCreate.stderr || 'gh label/issue edit failed' });
-      return;
-    }
-    writeState(guardianDirOf(repoDir), {
-      issue, state: 'DISCOVERED', claim_id: claimId, claimed_at: new Date(now).toISOString(), claim_source: 'new-open',
-    }, { touch: false });
-    logger.info('claim.accepted', { issue, claim_source: 'new-open' });
-  }
   if (plan.toRun.newRound && plan.toRun.command) {
     const current = readState(guardianDirOf(repoDir), issue);
     if (current) writeState(guardianDirOf(repoDir), startFollowupRound(current, plan.toRun.command), { touch: false });

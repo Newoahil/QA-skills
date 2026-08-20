@@ -3,10 +3,12 @@
 
 import { spawnSync } from 'node:child_process';
 import { assertActorMayPerform, EFFECTS } from './actor-routing.mjs';
+import { ACTIVE_STATES } from './state.mjs';
 
 export const PROJECTED_LABELS = Object.freeze([
   'qa-guardian:bug',
   'qa-guardian:request',
+  'qa-guardian:doing',
   'qa-guardian:risk-high',
   'qa-guardian:risk-low',
   'qa-guardian:gate-1',
@@ -18,6 +20,7 @@ export function labelsForState(record) {
   const labels = [];
   if (record?.issue_class === 'bug') labels.push('qa-guardian:bug');
   if (record?.issue_class === 'request') labels.push('qa-guardian:request');
+  if (ACTIVE_STATES.includes(record?.state)) labels.push('qa-guardian:doing');
   if (record?.risk === 'HIGH') labels.push('qa-guardian:risk-high');
   if (record?.risk === 'LOW') labels.push('qa-guardian:risk-low');
   if (record?.state === 'GATE_1_WAIT') labels.push('qa-guardian:gate-1');

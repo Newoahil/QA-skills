@@ -3,11 +3,22 @@ import test from 'node:test';
 
 import { labelsForState, projectLabels } from '../../tools/guardian/label-io.mjs';
 import { ACTORS } from '../../tools/guardian/actor-routing.mjs';
+import { ACTIVE_STATES } from '../../tools/guardian/state.mjs';
 
 test('labelsForState projects class, risk, and gate without replacing JSON authority', () => {
   assert.deepEqual(labelsForState({ issue_class: 'bug', risk: 'HIGH', state: 'GATE_1_WAIT' }), [
     'qa-guardian:bug', 'qa-guardian:risk-high', 'qa-guardian:gate-1',
   ]);
+});
+
+test('labelsForState projects qa-guardian:doing for active Guardian states only', () => {
+  for (const state of ACTIVE_STATES) {
+    assert.equal(labelsForState({ state }).includes('qa-guardian:doing'), true, state);
+  }
+
+  for (const state of ['DISCOVERED', 'GATE_1_WAIT', 'GATE_2_WAIT', 'STALLED', 'HANDED_BACK', 'DONE']) {
+    assert.equal(labelsForState({ state }).includes('qa-guardian:doing'), false, state);
+  }
 });
 
 test('projectLabels performs scheduler-owned add/remove operations', () => {
