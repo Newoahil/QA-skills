@@ -1,4 +1,17 @@
 {
-  "_comment": "Optional launcher config for scheduler-start.ps1/.sh. Copy to scheduler.config.json (gitignored) to avoid passing --repo each time. Precedence: CLI arg > env QA_GUARDIAN_REPO > this file > cwd.",
-  "target_repo": "D:\\tuantuanrent"
+  "_comment": "Local-only launcher binding. Copy/edit as tools/guardian/scheduler.config.json; the file is gitignored and must never contain secrets.",
+  "_usage": "First scheduler start is interactive and persists one mode: strict keeps the canonical target clean; worktree creates a persistent clean control worktree plus a separate QA snapshot for tracked dirty diff and explicitly selected runtime inputs. Later starts do not ask again. -Yes cannot invent a missing choice; -DryRun fails closed without prompting or creating paths.",
+  "version": 1,
+  "target_repo": "D:\\tuantuanrent",
+  "canonical_target_path": "D:\\tuantuanrent",
+  "mode": "worktree",
+  "control_worktree_path": "D:\\tuantuanrent.qa-guardian-control",
+  "qa_snapshot_path": "D:\\tuantuanrent.qa-guardian-qa",
+  "qa_managed_root": null,
+  "selected_runtime_input_paths": [
+    ".env.test"
+  ],
+  "base_branch": "dev",
+  "guardian_repo_path": "D:\\QA-skills",
+  "git_identity": "repository identity metadata"
 }

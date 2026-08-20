@@ -87,6 +87,7 @@ if (-not $TargetRepo) {
   if (Test-Path -LiteralPath $schedCfg) {
     $sc = Get-Content -LiteralPath $schedCfg -Raw | ConvertFrom-Json
     if ($sc.target_repo) { $TargetRepo = $sc.target_repo }
+    elseif ($sc.canonical_target_path) { $TargetRepo = $sc.canonical_target_path }
   }
 }
 if (-not $TargetRepo) {
@@ -187,6 +188,124 @@ function Confirm-Start($message) {
   if ($ans -notmatch '^(y|yes|是|确认)$') { throw "已取消：未确认启动。" }
 }
 
+function Write-JsonUtf8([string]$Path, $Value) {
+  [System.IO.File]::WriteAllText($Path, (($Value | ConvertTo-Json -Depth 12) + "`n"), (New-Object System.Text.UTF8Encoding($false)))
+}
+
+function Read-LauncherBinding([string]$Path) {
+  if (-not (Test-Path -LiteralPath $Path)) { return $null }
+  $value = Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json
+  if (-not $value.version -or -not $value.mode) { return $null }
+  return $value
+}
+
+function Canonical-LauncherPath([string]$Value) {
+  if (-not $Value) { return "" }
+  return ([IO.Path]::GetFullPath($Value)).TrimEnd('\').ToLowerInvariant()
+}
+
+function Assert-PersistedBinding($Binding, [string]$CanonicalTarget, [string]$GuardianRepoPath) {
+  if (-not $Binding) { throw "未找到启动绑定，请先交互式运行 scheduler-start.ps1 完成一次模式选择。" }
+  if ([int]$Binding.version -ne 1) { throw "启动绑定版本无效，请删除本地 scheduler.config.json 后重新交互式启动。" }
+  if (@('strict', 'worktree') -notcontains [string]$Binding.mode) { throw "启动绑定模式无效，请删除本地 scheduler.config.json 后重新交互式启动。" }
+  if ((Canonical-LauncherPath $Binding.canonical_target_path) -ne (Canonical-LauncherPath $CanonicalTarget)) { throw "启动绑定与当前 canonical target 不匹配，请删除本地 scheduler.config.json 后重新交互式启动。" }
+  if ($Binding.target_repo -and (Canonical-LauncherPath $Binding.target_repo) -ne (Canonical-LauncherPath $CanonicalTarget)) { throw "启动绑定 target_repo 与当前 canonical target 不匹配，请删除本地 scheduler.config.json 后重新交互式启动。" }
+  if ((Canonical-LauncherPath $Binding.guardian_repo_path) -ne (Canonical-LauncherPath $GuardianRepoPath)) { throw "启动绑定与当前 Guardian 工具仓库不匹配，请删除本地 scheduler.config.json 后重新交互式启动。" }
+  if (-not $Binding.base_branch) { throw "启动绑定缺少 base_branch，请删除本地 scheduler.config.json 后重新交互式启动。" }
+  if ($null -eq $Binding.selected_runtime_input_paths -or @($Binding.selected_runtime_input_paths).Count -eq 0) { $Binding.selected_runtime_input_paths = @() }
+  foreach ($input in @($Binding.selected_runtime_input_paths)) { Assert-RelativeRuntimeInput ([string]$input) | Out-Null }
+  if ([string]$Binding.mode -eq 'worktree') {
+    if (-not $Binding.control_worktree_path -or -not $Binding.qa_snapshot_path) { throw "worktree 启动绑定缺少 control worktree 或 QA snapshot 路径。" }
+    if ((Canonical-LauncherPath $Binding.control_worktree_path) -eq (Canonical-LauncherPath $CanonicalTarget) -or (Canonical-LauncherPath $Binding.qa_snapshot_path) -eq (Canonical-LauncherPath $CanonicalTarget)) { throw "control worktree 和 QA snapshot 不能等于 canonical target。" }
+    if ((Canonical-LauncherPath $Binding.control_worktree_path) -eq (Canonical-LauncherPath $Binding.qa_snapshot_path)) { throw "control worktree 和 QA snapshot 不能使用同一路径。" }
+  }
+  if ($Binding.git_identity -and ([string]$Binding.git_identity).Trim() -eq '') { throw "启动绑定 git_identity 无效，请删除本地 scheduler.config.json 后重新交互式启动。" }
+  return $Binding
+}
+
+function Assert-RelativeRuntimeInput([string]$Value) {
+  $v = $Value.Trim().Replace('\', '/')
+  if (-not $v -or $v.StartsWith('/') -or $v -match '^[A-Za-z]:/' -or $v -match '(^|/)\.\.?(/|$)' -or $v -match '(^|/)(\.git|\.qa|node_modules)(/|$)') {
+    throw "runtime 输入路径不安全：必须是仓库相对路径，且不能 traversal、.git、.qa 或 node_modules。"
+  }
+  return $v
+}
+
+function Assert-NoSymlinkEscape([string]$Repo, [string]$RelativePath) {
+  $source = Join-Path $Repo ($RelativePath -replace '/', '\')
+  if (-not (Test-Path -LiteralPath $source -PathType Leaf)) { throw "选定 runtime 输入不存在或不是普通文件：$RelativePath" }
+  $item = Get-Item -LiteralPath $source -Force
+  if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { throw "选定 runtime 输入不能是符号链接或 reparse point：$RelativePath" }
+  return $source
+}
+
+function Copy-SelectedRuntimeInput([string]$SourceRepo, [string]$DestinationRepo, [string[]]$RelativePaths) {
+  foreach ($relative in $RelativePaths) {
+    $safe = Assert-RelativeRuntimeInput $relative
+    $source = Assert-NoSymlinkEscape $SourceRepo $safe
+    $destination = Join-Path $DestinationRepo ($safe -replace '/', '\')
+    if (Test-Path -LiteralPath $destination) {
+      $sourceHash = (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash
+      $destinationHash = (Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash
+      if ($sourceHash -ne $destinationHash) { throw "QA snapshot 已存在不同的 runtime 输入：$safe。请删除该 snapshot 后重新交互式绑定；未覆盖任何文件。" }
+      continue
+    }
+    $parent = Split-Path -Parent $destination
+    New-Item -ItemType Directory -Force -Path $parent | Out-Null
+    Copy-Item -LiteralPath $source -Destination $destination
+  }
+}
+
+function Ensure-ControlWorktree([string]$SourceRepo, [string]$Destination, [string]$Base) {
+  if (-not (Test-Path -LiteralPath $Destination)) {
+    Invoke-Git $SourceRepo @('fetch', 'origin', $Base) | Out-Null
+    $added = Invoke-Git $SourceRepo @('worktree', 'add', '--detach', $Destination, "origin/$Base")
+    if ($added.code -ne 0) { throw "无法创建 Guardian control worktree，请检查 base 分支和路径权限。" }
+  }
+  $inside = Invoke-Git $Destination @('rev-parse', '--is-inside-work-tree')
+  if ($inside.code -ne 0 -or $inside.output -ne 'true') { throw "已存在的 control worktree 路径不是有效 git worktree：$Destination" }
+  $status = Invoke-Git $Destination @('status', '--porcelain')
+  if ($status.output) { throw "control worktree 不干净，已停止以避免覆盖现有修改：$Destination" }
+}
+
+function Ensure-QaSnapshot([string]$SourceRepo, [string]$Destination, [string]$Base) {
+  if (-not (Test-Path -LiteralPath $Destination)) {
+    Invoke-Git $SourceRepo @('fetch', 'origin', $Base) | Out-Null
+    $added = Invoke-Git $SourceRepo @('worktree', 'add', '--detach', $Destination, "origin/$Base")
+    if ($added.code -ne 0) { throw "无法创建 QA snapshot，请检查 base 分支和路径权限。" }
+  }
+  $inside = Invoke-Git $Destination @('rev-parse', '--is-inside-work-tree')
+  if ($inside.code -ne 0 -or $inside.output -ne 'true') { throw "已存在的 QA snapshot 路径不是有效 git worktree：$Destination" }
+  $reset = Invoke-Git $Destination @('reset', '--hard', "origin/$Base")
+  if ($reset.code -ne 0) { throw "无法将 QA snapshot 重置到 clean origin/$Base。" }
+}
+
+function Initialize-WorktreeBinding([string]$CanonicalRepo, [string]$Base, [string]$BindingPath, [switch]$ForDryRun) {
+  $controlDefault = "$CanonicalRepo.qa-guardian-control"
+  $snapshotDefault = "$CanonicalRepo.qa-guardian-qa"
+  $control = Read-Host "    控制 worktree 路径（回车使用 $controlDefault）"
+  if (-not $control) { $control = $controlDefault }
+  $snapshot = Read-Host "    QA snapshot 路径（回车使用 $snapshotDefault）"
+  if (-not $snapshot) { $snapshot = $snapshotDefault }
+  $rawInputs = Read-Host "    选择要复制到 QA snapshot 的仓库相对文件（逗号/空格分隔；无则回车）"
+  $inputs = @($rawInputs -split '[,\s]+' | Where-Object { $_ } | ForEach-Object { Assert-RelativeRuntimeInput $_ })
+  $binding = [ordered]@{
+    version = 1
+    target_repo = (Resolve-Path $CanonicalRepo).Path
+    canonical_target_path = (Resolve-Path $CanonicalRepo).Path
+    mode = 'worktree'
+    control_worktree_path = $control
+    qa_snapshot_path = $snapshot
+    qa_managed_root = $null
+    selected_runtime_input_paths = $inputs
+    base_branch = $Base
+    guardian_repo_path = $GuardianRepo
+    git_identity = (Invoke-Git $CanonicalRepo @('rev-parse', '--show-toplevel')).output
+  }
+  if (-not $ForDryRun) { Write-JsonUtf8 $BindingPath $binding }
+  return $binding
+}
+
 $nodeExe = Find-Node
 Ensure-OnPath (Split-Path $nodeExe -Parent)
 Ensure-OnPath "C:\Program Files\GitHub CLI"
@@ -206,6 +325,29 @@ if ((Test-Path $packageRoot) -and -not (Test-Path $sdkPath)) {
 
 if (-not (Test-Path -LiteralPath $TargetRepo)) { throw "目标项目目录不存在: $TargetRepo" }
 
+$bindingPath = Join-Path $PSScriptRoot "scheduler.config.json"
+$binding = Read-LauncherBinding $bindingPath
+if (-not $Dashboard -and $DryRun -and -not $binding) {
+  throw "DryRun 不会进行首次模式选择，也不会写入启动绑定或创建 worktree。请先不带 -DryRun、-Yes 交互式运行 scheduler-start.ps1 一次。"
+}
+if ($binding) { $binding = Assert-PersistedBinding $binding (Resolve-Path $TargetRepo).Path $GuardianRepo }
+if ($binding -and [string]$binding.mode -eq 'worktree' -and -not $DryRun) {
+  Ensure-ControlWorktree $TargetRepo ([string]$binding.control_worktree_path) ([string]$binding.base_branch)
+}
+
+if ($Dashboard) {
+  $dashboardBinding = $binding
+  $dashboardRepo = $TargetRepo
+  if ($dashboardBinding -and [string]$dashboardBinding.mode -eq 'worktree' -and [string]$dashboardBinding.canonical_target_path -eq (Resolve-Path $TargetRepo).Path) {
+    $dashboardRepo = [string]$dashboardBinding.control_worktree_path
+  }
+  Write-Host "==> 正在打开 Guardian 只读仪表盘" -ForegroundColor Cyan
+  Write-Host "    Control : $dashboardRepo" -ForegroundColor Green
+  Write-Host "    提示：按 Ctrl+C 可停止刷新。" -ForegroundColor Gray
+  & $nodeExe (Join-Path $GuardianRepo "tools\guardian\dashboard.mjs") --repo $dashboardRepo --watch 5
+  return
+}
+
 $targetGithub = if ($GitHubRepo) { Normalize-GitHubRepo $GitHubRepo } else { Infer-GitHubRepo $TargetRepo }
 if (-not $targetGithub) {
   $inputGithub = Read-Host "    请输入目标 GitHub 仓库（owner/repo 或 https://github.com/owner/repo，直接回车取消）"
@@ -213,17 +355,34 @@ if (-not $targetGithub) {
   if (-not $targetGithub) { throw "已取消：缺少目标 GitHub 仓库。" }
 }
 
-# gh must be authenticated (the scheduler runs gh under the hood).
-$gh = Get-Command gh -ErrorAction SilentlyContinue
-if (-not $gh) { throw "未找到 gh，请先安装 GitHub CLI 并执行 gh auth login。" }
-& gh auth status *> $null
-if ($LASTEXITCODE -ne 0) { throw "gh 尚未登录，请先执行 gh auth login。" }
-& gh repo view $targetGithub *> $null
-if ($LASTEXITCODE -ne 0) { throw "无法访问 GitHub 仓库 $targetGithub，请检查 repo 名称和 gh 权限。" }
+# gh is required only by scheduler startup. Dashboard remains read-only and skips GitHub preflight.
+if (-not $Dashboard) {
+  $gh = Get-Command gh -ErrorAction SilentlyContinue
+  if (-not $gh) { throw "未找到 gh，请先安装 GitHub CLI 并执行 gh auth login。" }
+  & gh auth status *> $null
+  if ($LASTEXITCODE -ne 0) { throw "gh 尚未登录，请先执行 gh auth login。" }
+  & gh repo view $targetGithub *> $null
+  if ($LASTEXITCODE -ne 0) { throw "无法访问 GitHub 仓库 $targetGithub，请检查 repo 名称和 gh 权限。" }
+}
+
+if (-not $Dashboard -and -not $DryRun -and -not $binding) {
+  if ($Yes) { throw "首次启动尚未选择模式。请先不带 -Yes 交互式运行一次，选择 strict 或 worktree/current-snapshot 模式。" }
+  Write-Host "    首次启动需要选择目标仓库模式（选择会保存到 gitignored scheduler.config.json）。" -ForegroundColor Yellow
+  $modeInput = Read-Host "    输入 1=严格模式（目标必须 clean）或 2=worktree/current-snapshot 模式"
+  if ($modeInput -eq '1' -or $modeInput -match '^(strict|严格)$') {
+    $binding = [ordered]@{ version = 1; target_repo = (Resolve-Path $TargetRepo).Path; canonical_target_path = (Resolve-Path $TargetRepo).Path; mode = 'strict'; control_worktree_path = (Resolve-Path $TargetRepo).Path; qa_snapshot_path = $null; qa_managed_root = $null; selected_runtime_input_paths = @(); base_branch = $BaseBranch; guardian_repo_path = $GuardianRepo; git_identity = (Invoke-Git $TargetRepo @('rev-parse', '--show-toplevel')).output }
+    Write-JsonUtf8 $bindingPath $binding
+  } elseif ($modeInput -eq '2' -or $modeInput -match '^(worktree|snapshot)$') {
+    $binding = Initialize-WorktreeBinding $TargetRepo $BaseBranch $bindingPath
+    Invoke-Git $TargetRepo @('fetch', 'origin', $BaseBranch) | Out-Null
+    Ensure-ControlWorktree $TargetRepo ([string]$binding.control_worktree_path) $BaseBranch
+  } else { throw "选择无效：请输入 1 或 2。" }
+}
 
 # config + command_authors (fail-closed security key). If it already exists, start directly.
-# If it is missing: create it via -Init (or an interactive prompt), then start.
+# In worktree mode, bootstrap authoritative config in the control worktree.
 $configPath = Join-Path $TargetRepo ".qa\guardian\config.json"
+if ($binding -and [string]$binding.mode -eq 'worktree') { $configPath = Join-Path ([string]$binding.control_worktree_path) ".qa\guardian\config.json" }
 if (-not (Test-Path -LiteralPath $configPath)) {
   $authors = $CommandAuthors
   if (-not $Init -and -not $authors) {
@@ -237,7 +396,7 @@ if (-not (Test-Path -LiteralPath $configPath)) {
     throw "缺少 $configPath，且没有指定可信 GitHub 登录名。请使用 -Init -CommandAuthors goudaren0528 重新运行。"
   }
   $list = @($authors -split '[,\s]+' | Where-Object { $_ })
-  $guardianDir = Join-Path $TargetRepo ".qa\guardian"
+   $guardianDir = Split-Path -Parent $configPath
   New-Item -ItemType Directory -Force -Path $guardianDir | Out-Null
   $newCfg = [ordered]@{
     github_repo      = $targetGithub
@@ -269,33 +428,70 @@ if (-not $cfg.command_authors -or @($cfg.command_authors).Count -eq 0) {
 
 $base = if ($cfg.base_branch) { [string]$cfg.base_branch } else { $BaseBranch }
 $guardianFacts = Assert-CleanAndUpstreamLatest $GuardianRepo 'Guardian工具仓库'
-$targetFacts = Assert-CleanAndLatest $TargetRepo $base '目标值守仓库'
+$bindingMode = [string]$binding.mode
+
+$targetFacts = $null
+$controlRepo = $TargetRepo
+$qaRuntimeRepo = $TargetRepo
+if ($bindingMode -eq 'strict') {
+  $targetFacts = Assert-CleanAndLatest $TargetRepo $base '目标值守仓库'
+} else {
+  $controlRepo = [string]$binding.control_worktree_path
+  $qaRuntimeRepo = [string]$binding.qa_snapshot_path
+  if (-not $controlRepo -or -not $qaRuntimeRepo) { throw "worktree 绑定缺少 control worktree 或 QA snapshot 路径，请删除绑定后重新选择。" }
+  if ($controlRepo -eq $TargetRepo -or $qaRuntimeRepo -eq $TargetRepo) { throw "worktree 路径不能指向 canonical target；已停止。" }
+  if (-not $DryRun -and -not $Dashboard) {
+    Ensure-ControlWorktree $TargetRepo $controlRepo $base
+    Ensure-QaSnapshot $TargetRepo $qaRuntimeRepo $base
+    $patchFile = Join-Path ([IO.Path]::GetTempPath()) ("qa-guardian-" + [Guid]::NewGuid().ToString('N') + '.patch')
+    try {
+      & git -C $TargetRepo diff HEAD --binary --output="$patchFile" 2>$null
+      if ($LASTEXITCODE -ne 0) { throw "无法读取 canonical target 的 tracked diff；已停止。" }
+      if ((Test-Path -LiteralPath $patchFile) -and (Get-Item -LiteralPath $patchFile).Length -gt 0) {
+        & git -C $qaRuntimeRepo apply --binary -- "$patchFile" 2>$null
+        if ($LASTEXITCODE -ne 0) { throw "无法将 tracked diff 应用到 QA snapshot；已停止，未修改 canonical target。" }
+      }
+    } finally { Remove-Item -LiteralPath $patchFile -Force -ErrorAction SilentlyContinue }
+    Copy-SelectedRuntimeInput $TargetRepo $qaRuntimeRepo @($binding.selected_runtime_input_paths)
+    $sourceGuardianConfig = Join-Path $TargetRepo '.qa\guardian\config.json'
+    $controlGuardianConfig = Join-Path $controlRepo '.qa\guardian\config.json'
+    if (Test-Path -LiteralPath $controlGuardianConfig) {
+      # The control worktree is authoritative. A first-run -Init may intentionally create this
+      # file here while leaving the canonical target untouched.
+      if (Test-Path -LiteralPath $sourceGuardianConfig -and (Get-FileHash $sourceGuardianConfig -Algorithm SHA256).Hash -ne (Get-FileHash $controlGuardianConfig -Algorithm SHA256).Hash) { throw "control worktree 已有不同的 Guardian config，已停止以避免覆盖。" }
+    } elseif (Test-Path -LiteralPath $sourceGuardianConfig) {
+      New-Item -ItemType Directory -Force -Path (Split-Path -Parent $controlGuardianConfig) | Out-Null
+      Copy-Item -LiteralPath $sourceGuardianConfig -Destination $controlGuardianConfig
+    } else {
+      throw "control worktree 缺少 .qa/guardian/config.json，且 canonical target 也未提供配置。请先使用 -Init 或交互式启动。"
+    }
+  }
+  $targetFacts = [ordered]@{ label = 'canonical target'; repo = $TargetRepo; mode = 'worktree'; status = (Invoke-Git $TargetRepo @('status', '--porcelain') -AllowFailure).output }
+  $controlFacts = [ordered]@{ repo = $controlRepo; base_branch = $base; qa_runtime_repo = $qaRuntimeRepo }
+}
 Write-Host "    GitHub仓库 : $targetGithub" -ForegroundColor Green
 Write-Host "    值守模式    : $($cfg.watch_mode)" -ForegroundColor Green
 Write-Host "    PR目标分支  : $base" -ForegroundColor Green
-Write-Host "    目标仓库    : clean/latest $($targetFacts.commit.Substring(0, 8))" -ForegroundColor Green
+Write-Host "    启动绑定    : $bindingMode" -ForegroundColor Green
+if ($bindingMode -eq 'worktree') { Write-Host "    Control     : $controlRepo" -ForegroundColor Green; Write-Host "    QA snapshot : $qaRuntimeRepo" -ForegroundColor Green }
+if ($targetFacts.commit) { Write-Host "    目标仓库    : clean/latest $($targetFacts.commit.Substring(0, 8))" -ForegroundColor Green }
 Write-Host "    Guardian   : clean/latest $($guardianFacts.commit.Substring(0, 8))" -ForegroundColor Green
 
 if ($DryRun) {
   [ordered]@{
     target_repo = $TargetRepo
     github_repo = $targetGithub
-    base_branch = $base
-    watch_mode = $cfg.watch_mode
+     base_branch = $base
+     watch_mode = $cfg.watch_mode
+     binding = $binding
+     control_repo = $controlRepo
+     qa_runtime_repo = $qaRuntimeRepo
     command_authors = @($cfg.command_authors)
     target = $targetFacts
     guardian = $guardianFacts
     scheduler_only = [bool]$SchedulerOnly
     dashboard = [bool]$Dashboard
   } | ConvertTo-Json -Depth 8
-  return
-}
-
-if ($Dashboard) {
-  Write-Host "==> 正在打开 Guardian 只读仪表盘" -ForegroundColor Cyan
-  Write-Host "    提示：按 Ctrl+C 可停止刷新。查看某个 agent 对话：" -ForegroundColor Gray
-  Write-Host "    node tools/guardian/session-view.mjs --repo `"$TargetRepo`" --issue <编号> --agent fixer" -ForegroundColor Gray
-  & $nodeExe (Join-Path $GuardianRepo "tools\guardian\dashboard.mjs") --repo $TargetRepo --watch 5
   return
 }
 
@@ -322,9 +518,11 @@ if ($SchedulerOnly) {
   }
   Write-Host "==> 正在启动 Guardian scheduler（polling only）" -ForegroundColor Cyan
   Write-Host "    提示：按 Ctrl+C 可停止。" -ForegroundColor Gray
-  & $nodeExe (Join-Path $GuardianRepo "tools\guardian\scheduler.mjs") --repo $TargetRepo
+   $env:QA_GUARDIAN_QA_RUNTIME_DIR = $qaRuntimeRepo
+   & $nodeExe (Join-Path $GuardianRepo "tools\guardian\scheduler.mjs") --repo $controlRepo
 } else {
   Write-Host "==> 正在启动 Guardian 组合服务（scheduler + 飞书长连接）" -ForegroundColor Cyan
   Write-Host "    提示：按 Ctrl+C 可停止；首次启动前请确认已执行 npm install 并配置飞书凭证。" -ForegroundColor Gray
-  & $nodeExe (Join-Path $GuardianRepo "tools\guardian\guardian-runtime.mjs") --repo $TargetRepo
+   $env:QA_GUARDIAN_QA_RUNTIME_DIR = $qaRuntimeRepo
+   & $nodeExe (Join-Path $GuardianRepo "tools\guardian\guardian-runtime.mjs") --repo $controlRepo
 }
