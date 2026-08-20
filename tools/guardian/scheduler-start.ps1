@@ -506,9 +506,8 @@ if ($bindingMode -eq 'strict') {
     $sourceGuardianConfig = Join-Path $TargetRepo '.qa\guardian\config.json'
     $controlGuardianConfig = Join-Path $controlRepo '.qa\guardian\config.json'
     if (Test-Path -LiteralPath $controlGuardianConfig) {
-      # The control worktree is authoritative. A first-run -Init may intentionally create this
-      # file here while leaving the canonical target untouched.
-      if ((Test-Path -LiteralPath $sourceGuardianConfig) -and ((Get-FileHash $sourceGuardianConfig -Algorithm SHA256).Hash -ne (Get-FileHash $controlGuardianConfig -Algorithm SHA256).Hash)) { throw "control worktree 已有不同的 Guardian config，已停止以避免覆盖。" }
+      # The control worktree is authoritative. Its command authors and runtime settings may
+      # intentionally differ from the developer checkout after first-run setup.
     } elseif (Test-Path -LiteralPath $sourceGuardianConfig) {
       New-Item -ItemType Directory -Force -Path (Split-Path -Parent $controlGuardianConfig) | Out-Null
       Copy-Item -LiteralPath $sourceGuardianConfig -Destination $controlGuardianConfig

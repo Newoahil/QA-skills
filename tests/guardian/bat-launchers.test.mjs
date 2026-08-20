@@ -170,6 +170,12 @@ test('scheduler captures snapshot git diff and apply exit codes under Continue',
 
 test('scheduler parenthesizes PowerShell cmdlets before boolean operators', () => {
   const text = readFileSync('tools/guardian/scheduler-start.ps1', 'utf8');
-  assert.match(text, /if \(\(Test-Path -LiteralPath \$sourceGuardianConfig\) -and/);
-  assert.doesNotMatch(text, /if \(Test-Path -LiteralPath \$sourceGuardianConfig -and/);
+  assert.doesNotMatch(text, /if \(Test-Path -LiteralPath [^)]* -and/);
+});
+
+test('scheduler preserves an existing authoritative control config without comparing it to canonical config', () => {
+  const text = readFileSync('tools/guardian/scheduler-start.ps1', 'utf8');
+  assert.match(text, /if \(Test-Path -LiteralPath \$controlGuardianConfig\)/);
+  assert.doesNotMatch(text, /Get-FileHash \$sourceGuardianConfig/);
+  assert.match(text, /control worktree is authoritative/);
 });
