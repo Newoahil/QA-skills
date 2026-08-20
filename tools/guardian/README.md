@@ -119,8 +119,8 @@ The write-capable agent itself is [`qa-skill/agents/qa-guardian.md`](../../qa-sk
     | key | meaning | default |
     |---|---|---|
     | `github_repo` | GitHub repository in `owner/name` form; the launcher infers it from `origin` or asks interactively | inferred/required |
-    | `watch_mode` | `labeled` or `new-open` (discover issues created after watch baseline) | labeled |
-   | `command_authors` | **trusted `/guardian` command authors (security, required).** Only these GitHub logins can drive commands; **unset = every command is ignored (fail-closed)** | none |
+     | `watch_mode` | deprecated compatibility field; all OPEN issues are now candidates | ignored |
+    | `command_authors` | **trusted `/guardian` command authors (security, required).** Entered once in the per-project launcher binding and propagated to control config; **unset = every command is ignored (fail-closed)** | none |
     | `poll_interval_ms` | resident scheduler poll interval; config may override the code default | 60000 |
    | `lease_ms` | N=1 lock lease (heartbeat-renewed while a run is live) | 1800000 |
    | `base_branch` | PR target branch | dev |
@@ -132,14 +132,15 @@ The write-capable agent itself is [`qa-skill/agents/qa-guardian.md`](../../qa-sk
     | `memory` | optional engineering-memory provider settings; SyberMem is opt-in | disabled |
     | `skills.disabled` | names of optional Guardian agents/skills to exclude from selection | none |
 
-   > Set `command_authors` or **nothing will be approvable** — this is the deliberate fail-closed
-    > guard against an arbitrary or forged comment approving a HIGH-risk plan.
-    In `new-open` mode, historical unlabeled issues are not claimed. Newly claimed issues receive
-    `qa-guardian` and `qa-guardian-claimed`; `.qa/guardian/<n>.json` remains authoritative.
+    > Set `command_authors` in the per-project launcher binding or **nothing will be approvable** —
+     > this is the deliberate fail-closed guard against an arbitrary or forged comment approving a
+     > HIGH-risk plan. Every OPEN issue is eligible; no `qa-guardian` discovery label is required.
+     > Active issues receive visible `qa-guardian:doing`; state JSON and the N=1 lock remain authoritative.
+     > `.qa/guardian/<n>.json` remains authoritative.
     The stronger investigation phases write `.qa/guardian/<n>/dossier.json` and `plan.json`;
     use `shadow` before `enforced`, and use `legacy` as rollback.
-5. **Label an issue.** Put the `qa-guardian` label on the GitHub issue you want handled (one-time
-   human authorization).
+5. **Open issues are discovered automatically.** No label is required. `qa-guardian:doing` is only a
+    visible projection; state JSON and the N=1 lock remain authoritative.
 
 ### Optional capabilities and memory
 

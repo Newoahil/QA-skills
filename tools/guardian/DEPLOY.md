@@ -47,10 +47,10 @@
 | 键 | 含义 | 默认 |
 |---|---|---|
 | `poll_interval_ms` | 轮询间隔（毫秒） | 60000 |
-| `watch_mode` | `labeled` 或 `new-open`；后者只自动发现值守启动后新建的 Open issue | labeled |
+ | `watch_mode` | 已废弃的兼容字段；现在所有 OPEN issue 都进入候选 | ignored |
 | `lease_ms` | N=1 锁租约（毫秒），运行中每 30s 心跳续租 | 1800000（30 分钟） |
 | `base_branch` | PR 目标分支 | dev |
-| `command_authors` | **可信命令作者白名单（安全必填）**。只有名单内 GitHub 登录名发的 `/guardian` 命令才生效；**未配置则任何命令都不生效（fail-closed）** | 无 |
+ | `command_authors` | **可信命令作者白名单（安全必填）**。首次启动时输入并保存到项目 binding，再同步到 control config；**未配置则任何命令都不生效（fail-closed）** | 无 |
 | `FEISHU_APP_ID` | 本机 WebSocket 模式的飞书自建应用 App ID | 无（无则 scheduler-only） |
 | `FEISHU_APP_SECRET` | 本机 WebSocket 模式的飞书自建应用 App Secret（只放环境变量/本地 secrets） | 无（无则 scheduler-only） |
 | `FEISHU_WS_ENABLED` | `true`/`false`，显式关闭可只跑 scheduler | credentials 存在时启用 |
@@ -63,8 +63,8 @@
 
 > ⚠️ **`command_authors` 不配 = 所有 `/guardian` 命令失效**。这是有意的安全默认，防止任意评论（含伪造回调）批准 HIGH 风险方案。至少填入你自己的 GitHub 登录名。
 
-`new-open` 首次启动建立 baseline，不会接管启动前的历史未标记 issue。已带 `qa-guardian`
-的 issue 仍兼容处理；新 issue 会由 scheduler 添加 `qa-guardian` 和 `qa-guardian-claimed`。
+所有 OPEN issue 都会进入候选，不再要求 `qa-guardian` 标签。活跃处理中的 issue 会显示
+`qa-guardian:doing`，但真正的幂等权威仍是 `.qa/guardian/<n>.json` 和 N=1 锁。
 
 已处理 issue 的新验收问题使用可信作者评论：
 
