@@ -12,6 +12,7 @@
       "qa_snapshot_path": null,
       "qa_managed_root": null,
       "selected_runtime_input_paths": [],
+      "command_authors": ["goudaren0528"],
       "base_branch": "dev",
       "guardian_repo_path": "D:\\QA-skills",
       "git_identity": "repository identity metadata"
@@ -24,6 +25,7 @@
       "qa_snapshot_path": "D:\\project-two.qa-guardian-qa",
       "qa_managed_root": null,
       "selected_runtime_input_paths": [".env.test"],
+      "command_authors": ["goudaren0528"],
       "base_branch": "dev",
       "guardian_repo_path": "D:\\QA-skills",
       "git_identity": "repository identity metadata"

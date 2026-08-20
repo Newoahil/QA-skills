@@ -138,6 +138,24 @@ test('scheduler launcher repairs an existing config with empty command authors',
   assert.match(text, /Add-Member -NotePropertyName command_authors -NotePropertyValue \$authors -Force/);
 });
 
+test('scheduler launcher prompts once for missing binding authors and propagates them to runtime config', () => {
+  const text = readFileSync('tools/guardian/scheduler-start.ps1', 'utf8');
+  const bindingAuthors = text.slice(text.indexOf('if (-not $Dashboard -and -not $DryRun) {'), text.indexOf('# config + command_authors'));
+  assert.match(bindingAuthors, /\$binding\.PSObject\.Properties\.Name -contains 'command_authors'/);
+  assert.match(bindingAuthors, /启动绑定缺少 command_authors/);
+  assert.match(bindingAuthors, /Add-Member -NotePropertyName command_authors -NotePropertyValue \$bindingAuthors -Force/);
+  assert.match(text, /if \(\$bindingAuthors\.Count -gt 0\)/);
+  assert.match(text, /\$cfg \| Add-Member -NotePropertyName command_authors -NotePropertyValue \$bindingAuthors -Force/);
+  assert.ok(text.indexOf('if (-not $Dashboard -and -not $DryRun) {') < text.indexOf('# config + command_authors'));
+});
+
+test('scheduler launcher keeps binding author authorization fail-closed under -Yes', () => {
+  const text = readFileSync('tools/guardian/scheduler-start.ps1', 'utf8');
+  assert.match(text, /if \(\$Yes -and -not \$CommandAuthors\) \{ throw "启动绑定缺少 command_authors/);
+  assert.match(text, /请先不带 -Yes 运行一次，输入可信 GitHub 登录名/);
+  assert.match(text, /Normalize-CommandAuthors \$Binding\.command_authors/);
+});
+
 test('launcher docs and config describe explicit project switching and independent bindings', () => {
   const scheduler = readFileSync('tools/guardian/scheduler-start.ps1', 'utf8');
   const dashboard = readFileSync('tools/guardian/dashboard-start.ps1', 'utf8');

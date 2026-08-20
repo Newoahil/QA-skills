@@ -3,11 +3,13 @@ import { unlinkSync, writeFileSync } from 'node:fs';
 import test from 'node:test';
 
 import {
+  makeStrictBinding,
   makeWorktreeBinding,
   readLauncherConfig,
   resolveAuthoritativeControlRepo,
   resolveLauncherBinding,
   resolveViewerRepo,
+  validateCommandAuthors,
   validateBinding,
   validateRepositoryRelativePath,
   validateRuntimeInputPaths,
@@ -29,6 +31,25 @@ test('validates persisted binding metadata and canonical target identity', () =>
   assert.equal(validateBinding(binding, { canonicalTargetPath: 'D:/tuantuanrent', guardianRepoPath: 'D:/QA-skills' }).ok, true);
   assert.equal(validateBinding(binding, { canonicalTargetPath: 'D:/other' }).ok, false);
   assert.equal(resolveAuthoritativeControlRepo('D:/tuantuanrent', binding), 'D:/tuantuanrent.qa-guardian-control');
+});
+
+test('supports optional non-empty command authors in binding builders and validation', () => {
+  const strictBinding = makeStrictBinding({
+    canonicalTargetPath: 'D:/strict-authors-project', guardianRepoPath: 'D:/QA-skills', baseBranch: 'dev',
+    commandAuthors: ['strict-owner'],
+  });
+  assert.deepEqual(strictBinding.command_authors, ['strict-owner']);
+  const binding = makeWorktreeBinding({
+    canonicalTargetPath: 'D:/authors-project', guardianRepoPath: 'D:/QA-skills', baseBranch: 'dev',
+    controlWorktreePath: 'D:/authors-project.control', qaSnapshotPath: 'D:/authors-project.qa',
+    selectedRuntimeInputPaths: [], commandAuthors: [' alice ', 'bob'],
+  });
+  assert.deepEqual(binding.command_authors, ['alice', 'bob']);
+  assert.deepEqual(validateBinding(binding, { canonicalTargetPath: 'D:/authors-project' }).binding.command_authors, ['alice', 'bob']);
+  assert.equal(validateCommandAuthors(undefined).ok, true);
+  assert.equal(validateCommandAuthors([]).ok, false);
+  assert.equal(validateCommandAuthors([' ']).ok, false);
+  assert.equal(validateCommandAuthors('alice').ok, false);
 });
 
 test('rejects malformed selected runtime input lists', () => {

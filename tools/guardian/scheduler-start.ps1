@@ -243,7 +243,17 @@ function Assert-PersistedBinding($Binding, [string]$CanonicalTarget, [string]$Gu
     if ((Canonical-LauncherPath $Binding.control_worktree_path) -eq (Canonical-LauncherPath $Binding.qa_snapshot_path)) { throw "control worktree 和 QA snapshot 不能使用同一路径。" }
   }
   if ($Binding.git_identity -and ([string]$Binding.git_identity).Trim() -eq '') { throw "启动绑定 git_identity 无效，请删除本地 scheduler.config.json 后重新交互式启动。" }
+  if ($Binding.PSObject.Properties.Name -contains 'command_authors') { Normalize-CommandAuthors $Binding.command_authors | Out-Null }
   return $Binding
+}
+
+function Normalize-CommandAuthors($Value) {
+  if ($null -eq $Value) { return @() }
+  if ($Value -isnot [System.Array]) { throw "command_authors 必须是非空登录名数组。" }
+  if (@($Value | Where-Object { $_ -isnot [string] }).Count -gt 0) { throw "command_authors 必须是非空登录名数组。" }
+  $authors = @($Value | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+  if ($authors.Count -eq 0 -or $authors.Count -ne @($Value).Count) { throw "command_authors 必须是非空登录名数组。" }
+  return $authors
 }
 
 function Assert-RelativeRuntimeInput([string]$Value) {
@@ -411,12 +421,26 @@ if (-not $Dashboard -and -not $DryRun -and -not $binding) {
   } else { throw "选择无效：请输入 1 或 2。" }
 }
 
+$bindingAuthors = @()
+if (-not $Dashboard -and -not $DryRun) {
+  if ($binding.PSObject.Properties.Name -contains 'command_authors') {
+    $bindingAuthors = Normalize-CommandAuthors $binding.command_authors
+  } else {
+    if ($Yes -and -not $CommandAuthors) { throw "启动绑定缺少 command_authors。请先不带 -Yes 运行一次，输入可信 GitHub 登录名。" }
+    $authorInput = if ($CommandAuthors) { $CommandAuthors } else { Read-Host "    请输入可信 GitHub 登录名（多个用逗号或空格分隔；只需首次输入）" }
+    if (-not $authorInput) { throw "已取消：未配置可信 GitHub 登录名。" }
+    $bindingAuthors = Normalize-CommandAuthors @($authorInput -split '[,\s]+' | Where-Object { $_ })
+    $binding | Add-Member -NotePropertyName command_authors -NotePropertyValue $bindingAuthors -Force
+    Save-LauncherBinding $bindingPath $canonicalTarget $binding
+  }
+}
+
 # config + command_authors (fail-closed security key). If it already exists, start directly.
 # In worktree mode, bootstrap authoritative config in the control worktree.
 $configPath = Join-Path $TargetRepo ".qa\guardian\config.json"
 if ($binding -and [string]$binding.mode -eq 'worktree') { $configPath = Join-Path ([string]$binding.control_worktree_path) ".qa\guardian\config.json" }
 if (-not (Test-Path -LiteralPath $configPath)) {
-  $authors = $CommandAuthors
+  $authors = $bindingAuthors
   if (-not $Init -and -not $authors) {
     Write-Host "    尚未找到项目配置: $configPath" -ForegroundColor Yellow
     Write-Host "    需要创建 .qa\guardian\config.json，才能启动值守服务。" -ForegroundColor Yellow
@@ -448,7 +472,10 @@ $changedCfg = $false
 if (-not $cfg.github_repo) { $cfg | Add-Member -NotePropertyName github_repo -NotePropertyValue $targetGithub; $changedCfg = $true }
 if (-not $cfg.watch_mode) { $cfg | Add-Member -NotePropertyName watch_mode -NotePropertyValue $WatchMode; $changedCfg = $true }
 if (-not $cfg.base_branch) { $cfg | Add-Member -NotePropertyName base_branch -NotePropertyValue $BaseBranch; $changedCfg = $true }
-if (-not $cfg.command_authors -or @($cfg.command_authors).Count -eq 0) {
+if ($bindingAuthors.Count -gt 0) {
+  $cfg | Add-Member -NotePropertyName command_authors -NotePropertyValue $bindingAuthors -Force
+  $changedCfg = $true
+} elseif (-not $cfg.command_authors -or @($cfg.command_authors).Count -eq 0) {
   if ($Yes) { throw "command_authors 为空：请先不带 -Yes 运行一次，输入可信 GitHub 登录名，例如 goudaren0528。" }
   $authorInput = Read-Host "    请输入可信 GitHub 登录名（多个用逗号或空格分隔；只需首次输入）"
   if (-not $authorInput) { throw "已取消：未配置可信 GitHub 登录名。" }
