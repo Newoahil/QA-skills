@@ -66,22 +66,8 @@ function Find-Node {
   throw "node not found. Install Node.js >= 18 or run from a terminal with node on PATH."
 }
 
-if (-not $TargetRepo) { $TargetRepo = $env:QA_GUARDIAN_REPO }
 if (-not $TargetRepo) {
-  $schedulerConfig = Join-Path $GuardianRepo "tools\guardian\scheduler.config.json"
-  $saved = Read-LauncherConfig $schedulerConfig
-  if ($saved.last_target_repo) { $TargetRepo = [string]$saved.last_target_repo }
-  elseif ($saved.target_repo) { $TargetRepo = [string]$saved.target_repo }
-  elseif ($saved.canonical_target_path) { $TargetRepo = [string]$saved.canonical_target_path }
-}
-if (-not $TargetRepo) {
-  $cwd = (Get-Location).Path
-  if (Test-Path -LiteralPath (Join-Path $cwd ".qa\guardian\config.json")) {
-    $TargetRepo = $cwd
-  }
-}
-if (-not $TargetRepo) {
-  Write-Host "    Target repo is required. Dashboard is read-only and will not write state or GitHub." -ForegroundColor Yellow
+  Write-Host "    Each start requires an explicit target project. Dashboard is read-only and will not write state or GitHub." -ForegroundColor Yellow
   $TargetRepo = Read-Host "    Enter target repo path (example: D:\tuantuanrent, empty to cancel)"
   if (-not $TargetRepo) { throw "Cancelled: target repo is required." }
   $TargetRepo = $TargetRepo.Trim([char]34)

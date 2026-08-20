@@ -171,7 +171,7 @@ scheduler-start.bat D:\你的项目                 :: config 已存在则直接
 scheduler-start.bat D:\你的项目 goudaren0528     :: 首次：创建 config 再启动
 dashboard-start.bat D:\你的项目                  :: 只读查看队列和会话入口
 ```
-直接双击 `scheduler-start.bat` 或 `dashboard-start.bat`（无参）时优先使用 env `QA_GUARDIAN_REPO`，否则使用 `scheduler.config.json` 的 `last_target_repo`；目标缺失时才交互输入。显式传入项目路径会严格按该项目 key 选择 binding；脚本不会默认监控 QA-skills 工具仓库，也不会把另一项目的 binding 当作 fallback。无法从 `origin` 推断 GitHub 仓库时，scheduler 会要求输入 `owner/repo`。
+直接双击 `scheduler-start.bat` 或 `dashboard-start.bat`（无参）时会交互要求输入本次目标项目目录；建议显式传入项目路径，切换项目时不会复用上次项目。显式传入项目路径会严格按该项目 key 选择 binding；脚本不会默认监控 QA-skills 工具仓库，也不会把另一项目的 binding 当作 fallback。无法从 `origin` 推断 GitHub 仓库时，scheduler 会要求输入 `owner/repo`。
 
 ```bash
 # Linux/macOS

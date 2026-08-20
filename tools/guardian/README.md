@@ -241,7 +241,7 @@ node tools/guardian/session-view.mjs --session ses_abc123 --full
 指定地址。所有错误都会用中文给出「问题 / 原因 / 下一步」。
 
 Windows 上也可以直接双击两个 bat 分开启动，日常入口严格只有两个：`tools/guardian/scheduler-start.bat` 负责值守，
-`tools/guardian/dashboard-start.bat` 负责只读 Dashboard（内部调用 `dashboard-start.ps1` 解析 node）。两个 bat 都可传目标项目路径；显式路径只切换到该项目的 binding，不会复用另一项目的 control worktree 或配置。无参时优先使用 `QA_GUARDIAN_REPO`，否则使用持久化的 `last_target_repo`；没有可用目标时才交互输入。
+`tools/guardian/dashboard-start.bat` 负责只读 Dashboard（内部调用 `dashboard-start.ps1` 解析 node）。两个 bat 都可传目标项目路径；显式路径只切换到该项目的 binding，不会复用另一项目的 control worktree 或配置。无参启动时会交互要求输入本次目标目录，避免误监控上次项目。
 
 ## Run the single-issue chain (MVP, §15.2)
 

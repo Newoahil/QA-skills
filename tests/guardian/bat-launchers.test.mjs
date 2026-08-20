@@ -87,7 +87,6 @@ test('dashboard launcher resolves the authoritative control worktree without pre
   assert.match(text, /--repo \$controlRepo/);
   assert.doesNotMatch(text, /gh auth status/);
   assert.match(text, /Select-LauncherBinding/);
-  assert.match(text, /last_target_repo/);
 });
 
 test('scheduler launcher preserves an active control branch on reuse', () => {
@@ -134,14 +133,32 @@ test('scheduler launcher repairs an existing config with empty command authors',
   assert.match(text, /Add-Member -NotePropertyName command_authors -NotePropertyValue \$authors -Force/);
 });
 
-test('launcher docs and config describe explicit project switching and independent no-arg last target', () => {
+test('launcher docs and config describe explicit project switching and independent bindings', () => {
   const scheduler = readFileSync('tools/guardian/scheduler-start.ps1', 'utf8');
   const dashboard = readFileSync('tools/guardian/dashboard-start.ps1', 'utf8');
   const example = readFileSync('tools/guardian/scheduler.config.example.json', 'utf8');
-  for (const text of [scheduler, dashboard, example]) {
-    assert.match(text, /last_target_repo/);
+  for (const text of [scheduler, example]) {
     assert.match(text, /projects/);
   }
+  assert.match(scheduler, /每次启动都需要指定本次值守项目/);
+  assert.match(dashboard, /Each start requires an explicit target project/);
   assert.match(scheduler, /never a fallback for another project/);
   assert.match(dashboard, /never a fallback for another project/);
+});
+
+test('scheduler and dashboard prompt for a target on every no-argument start', () => {
+  const scheduler = readFileSync('tools/guardian/scheduler-start.ps1', 'utf8');
+  const dashboard = readFileSync('tools/guardian/dashboard-start.ps1', 'utf8');
+  assert.match(scheduler, /每次启动都需要指定本次值守项目/);
+  assert.doesNotMatch(scheduler, /\$sc\.last_target_repo/);
+  assert.match(dashboard, /Each start requires an explicit target project/);
+  assert.doesNotMatch(dashboard, /\$saved\.last_target_repo/);
+});
+
+test('scheduler captures snapshot git diff and apply exit codes under Continue', () => {
+  const text = readFileSync('tools/guardian/scheduler-start.ps1', 'utf8');
+  const snapshotBlock = text.slice(text.indexOf('$patchFile ='), text.lastIndexOf('Copy-SelectedRuntimeInput'));
+  assert.match(snapshotBlock, /\$ErrorActionPreference = "Continue"/);
+  assert.match(snapshotBlock, /\$diffExitCode = \$LASTEXITCODE/);
+  assert.match(snapshotBlock, /\$applyExitCode = \$LASTEXITCODE/);
 });

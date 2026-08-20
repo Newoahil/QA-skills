@@ -126,27 +126,13 @@ function Save-LauncherBinding([string]$Path, [string]$CanonicalTarget, $Binding)
   Write-JsonUtf8 $Path $config
 }
 
-# Resolve target repo by precedence: param > env > sibling config file > current directory only
-# when it is already a configured target repo; otherwise ask instead of silently watching QA-skills.
+# Always choose the target when no explicit -TargetRepo was supplied. A project binding is
+# remembered for reuse, but it must not silently choose which project to watch.
 if (-not $TargetRepoWasExplicit) {
-  $TargetRepo = $env:QA_GUARDIAN_REPO
-  if (-not $TargetRepo) {
-    $sc = Read-LauncherConfig $bindingPath
-    if ($sc.last_target_repo) { $TargetRepo = [string]$sc.last_target_repo }
-    elseif ($sc.target_repo) { $TargetRepo = [string]$sc.target_repo }
-    elseif ($sc.canonical_target_path) { $TargetRepo = [string]$sc.canonical_target_path }
-  }
-}
-if (-not $TargetRepo) {
-  $cwd = (Get-Location).Path
-  if (Test-Path -LiteralPath (Join-Path $cwd ".qa\guardian\config.json")) {
-    $TargetRepo = $cwd
-  } else {
-    Write-Host "    未指定目标项目，不能默认监控 QA-skills 工具仓库。" -ForegroundColor Yellow
-    $inputRepo = Read-Host "    请输入要监控的项目目录（例如 D:\tuantuanrent，直接回车取消）"
-    if (-not $inputRepo) { throw "已取消：请通过 -TargetRepo、QA_GUARDIAN_REPO 或 scheduler.config.json 指定目标项目。" }
-    $TargetRepo = $inputRepo.Trim('"')
-  }
+  Write-Host "    每次启动都需要指定本次值守项目，不能默认使用上次项目。" -ForegroundColor Yellow
+  $inputRepo = Read-Host "    请输入要监控的项目目录（例如 D:\tuantuanrent，直接回车取消）"
+  if (-not $inputRepo) { throw "已取消：请通过 -TargetRepo 指定本次值守项目。" }
+  $TargetRepo = $inputRepo.Trim('"')
 }
 
 function Find-Node {
@@ -499,11 +485,21 @@ if ($bindingMode -eq 'strict') {
     Ensure-QaSnapshot $TargetRepo $qaRuntimeRepo $base
     $patchFile = Join-Path ([IO.Path]::GetTempPath()) ("qa-guardian-" + [Guid]::NewGuid().ToString('N') + '.patch')
     try {
-      & git -C $TargetRepo diff HEAD --binary --output="$patchFile" 2>$null
-      if ($LASTEXITCODE -ne 0) { throw "无法读取 canonical target 的 tracked diff；已停止。" }
+      $previousErrorActionPreference = $ErrorActionPreference
+      $ErrorActionPreference = "Continue"
+      try {
+        & git -C $TargetRepo diff HEAD --binary --output="$patchFile" 2>$null
+        $diffExitCode = $LASTEXITCODE
+      } finally { $ErrorActionPreference = $previousErrorActionPreference }
+      if ($diffExitCode -ne 0) { throw "无法读取 canonical target 的 tracked diff；已停止。" }
       if ((Test-Path -LiteralPath $patchFile) -and (Get-Item -LiteralPath $patchFile).Length -gt 0) {
-        & git -C $qaRuntimeRepo apply --binary -- "$patchFile" 2>$null
-        if ($LASTEXITCODE -ne 0) { throw "无法将 tracked diff 应用到 QA snapshot；已停止，未修改 canonical target。" }
+        $previousErrorActionPreference = $ErrorActionPreference
+        $ErrorActionPreference = "Continue"
+        try {
+          & git -C $qaRuntimeRepo apply --binary -- "$patchFile" 2>$null
+          $applyExitCode = $LASTEXITCODE
+        } finally { $ErrorActionPreference = $previousErrorActionPreference }
+        if ($applyExitCode -ne 0) { throw "无法将 tracked diff 应用到 QA snapshot；已停止，未修改 canonical target。" }
       }
     } finally { Remove-Item -LiteralPath $patchFile -Force -ErrorAction SilentlyContinue }
     Copy-SelectedRuntimeInput $TargetRepo $qaRuntimeRepo @($binding.selected_runtime_input_paths)
