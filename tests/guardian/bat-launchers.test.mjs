@@ -56,3 +56,48 @@ test('scheduler-start.ps1 accepts GitHub URL input by normalizing it to owner re
   assert.match(text, /Normalize-GitHubRepo \$GitHubRepo/);
   assert.match(text, /Normalize-GitHubRepo \$inputGithub/);
 });
+
+test('scheduler launcher persists one-time binding and sends control repo plus QA runtime dir', () => {
+  const text = readFileSync('tools/guardian/scheduler-start.ps1', 'utf8');
+  assert.match(text, /scheduler\.config\.json/);
+  assert.match(text, /首次启动尚未选择模式/);
+  assert.match(text, /control_worktree_path/);
+  assert.match(text, /qa_snapshot_path/);
+  assert.match(text, /QA_GUARDIAN_QA_RUNTIME_DIR/);
+  assert.match(text, /--repo \$controlRepo/);
+});
+
+test('dashboard launcher resolves the authoritative control worktree without preflight', () => {
+  const text = readFileSync('tools/guardian/dashboard-start.ps1', 'utf8');
+  assert.match(text, /Resolve-ControlRepo/);
+  assert.match(text, /scheduler\.config\.json/);
+  assert.match(text, /--repo \$controlRepo/);
+  assert.doesNotMatch(text, /gh auth status/);
+});
+
+test('scheduler launcher preserves an active control branch on reuse', () => {
+  const text = readFileSync('tools/guardian/scheduler-start.ps1', 'utf8');
+  const controlFunction = text.slice(text.indexOf('function Ensure-ControlWorktree'), text.indexOf('function Ensure-QaSnapshot'));
+  assert.match(text, /function Ensure-ControlWorktree/);
+  assert.match(text, /control worktree 不干净/);
+  assert.doesNotMatch(controlFunction, /rev-parse.*origin/);
+  assert.match(text, /function Ensure-QaSnapshot/);
+  assert.match(text, /Ensure-QaSnapshot \$TargetRepo \$qaRuntimeRepo \$base/);
+});
+
+test('scheduler DryRun fails before first-run binding prompt or write', () => {
+  const text = readFileSync('tools/guardian/scheduler-start.ps1', 'utf8');
+  assert.match(text, /if \(-not \$Dashboard -and \$DryRun -and -not \$binding\)/);
+  assert.match(text, /DryRun 不会进行首次模式选择/);
+  assert.match(text, /if \(-not \$Dashboard -and -not \$DryRun -and -not \$binding\)/);
+});
+
+test('scheduler binding example documents the complete local-only shape', () => {
+  const text = readFileSync('tools/guardian/scheduler.config.example.json', 'utf8');
+  for (const field of ['version', 'canonical_target_path', 'mode', 'control_worktree_path', 'qa_snapshot_path', 'selected_runtime_input_paths', 'base_branch', 'guardian_repo_path']) {
+    assert.match(text, new RegExp(`"${field}"`));
+  }
+  assert.match(text, /gitignored/);
+  assert.match(text, /strict/);
+  assert.match(text, /worktree/);
+});

@@ -1,9 +1,11 @@
 #!/usr/bin/env node
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { guardianDirFor, hasGuardianDir } from './dashboard-model.mjs';
 import { guidedError } from './dashboard-errors.mjs';
 import { fetchTranscript, formatTranscript, resolveSessionId } from './session-transcript.mjs';
+import { resolveViewerRepo } from './worktree-binding.mjs';
 
 const DEFAULT_BASE_URL = process.env.OPENCODE_BASE_URL ?? 'http://localhost:3000';
 
@@ -61,7 +63,8 @@ async function main() {
       console.error(guidedError('missing-argument', { reason: '请提供 --session，或同时提供 --repo、--issue、--agent。' }));
       process.exit(2);
     }
-    const repoDir = path.resolve(args.repo);
+    const requestedRepo = path.resolve(args.repo);
+    const repoDir = resolveViewerRepo(requestedRepo, path.join(path.dirname(fileURLToPath(import.meta.url)), 'scheduler.config.json'));
     if (!hasGuardianDir(repoDir)) {
       console.error(guidedError('no-guardian-dir'));
       process.exit(2);

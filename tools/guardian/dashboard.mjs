@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { parseArgs } from 'node:util';
 import {
@@ -13,6 +14,7 @@ import {
   loadIssueState,
 } from './dashboard-model.mjs';
 import { guidedError } from './dashboard-errors.mjs';
+import { resolveViewerRepo } from './worktree-binding.mjs';
 
 function usage() {
   return `QA Guardian 仪表盘（只读）
@@ -59,7 +61,8 @@ function parseCli(argv) {
 }
 
 function renderOnce(args, now = Date.now()) {
-  const repoDir = path.resolve(args.repo);
+  const requestedRepo = path.resolve(args.repo);
+  const repoDir = resolveViewerRepo(requestedRepo, path.join(path.dirname(fileURLToPath(import.meta.url)), 'scheduler.config.json'));
   if (!hasGuardianDir(repoDir)) return { kind: 'error', text: guidedError('no-guardian-dir') };
   const guardianDir = guardianDirFor(repoDir);
   if (args.issue) {
