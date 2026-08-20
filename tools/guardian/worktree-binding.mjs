@@ -5,6 +5,7 @@ const BINDING_VERSION = 1;
 const FORBIDDEN_SEGMENTS = new Set(['.git', '.qa', 'node_modules']);
 
 export const WORKTREE_BINDING_VERSION = BINDING_VERSION;
+export const LAUNCHER_CONFIG_VERSION = 2;
 
 export function canonicalPath(value) {
   if (typeof value !== 'string' || value.trim() === '') return null;
@@ -109,8 +110,25 @@ export function readBindingFile(file) {
   try { return JSON.parse(readFileSync(file, 'utf8').replace(/^\uFEFF/, '')); } catch { return null; }
 }
 
+export function readLauncherConfig(file) {
+  const value = readBindingFile(file);
+  return value && typeof value === 'object' ? value : null;
+}
+
+export function resolveLauncherBinding(config, repoDir) {
+  const canonical = canonicalPath(repoDir);
+  if (!canonical || !config || typeof config !== 'object') return null;
+  if (config.projects && typeof config.projects === 'object' && !Array.isArray(config.projects)) {
+    for (const [key, binding] of Object.entries(config.projects)) {
+      if (canonicalPath(key) === canonical) return binding;
+    }
+  }
+  if (canonicalPath(config.canonical_target_path) === canonical) return config;
+  return null;
+}
+
 export function resolveViewerRepo(repoDir, bindingFile) {
-  const binding = readBindingFile(bindingFile);
+  const binding = resolveLauncherBinding(readLauncherConfig(bindingFile), repoDir);
   if (!binding || binding.mode !== 'worktree') return repoDir;
   if (canonicalPath(binding.canonical_target_path) !== canonicalPath(repoDir)) return repoDir;
   return binding.control_worktree_path || repoDir;
