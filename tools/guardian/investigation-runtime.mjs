@@ -7,11 +7,11 @@ import { validatePlan } from './plan-validator.mjs';
 import { resolveBudgets } from './budgets.mjs';
 import { randomUUID } from 'node:crypto';
 
-export async function prepareInvestigation({ issue, issueData, repoDir, guardianDir, issueClass, complexity, capabilities, config = {}, runSpecialist, buildPlan, state = null, round = 1 }) {
+export async function prepareInvestigation({ issue, issueData, repoDir, guardianDir, issueClass, complexity, capabilities, config = {}, memoryContext = null, runSpecialist, buildPlan, state = null, round = 1 }) {
   const paths = artifactPaths(guardianDir, issue);
   const budgets = resolveBudgets(config, complexity);
   const investigationId = randomUUID();
-  const roles = selectSpecialists({ issueClass, complexity, capabilities });
+  const roles = selectSpecialists({ issueClass, complexity, capabilities, config });
   if (typeof runSpecialist !== 'function') throw new Error('investigation specialist runner is not configured');
   if (typeof buildPlan !== 'function') throw new Error('investigation plan builder is not configured');
 
@@ -31,13 +31,14 @@ export async function prepareInvestigation({ issue, issueData, repoDir, guardian
       timeout_ms: budgets.specialist_timeout_ms,
       state,
       round,
+      memoryContext,
     }),
   ));
-  const synthesis = synthesizeDossier({ issue, issueClass, specialistResults: results, capabilities });
+  const synthesis = synthesizeDossier({ issue, issueClass, specialistResults: results, capabilities, memoryContext });
   const dossier = { ...synthesis.dossier, investigation_id: investigationId };
   writeArtifact(guardianDir, issue, 'dossier', dossier);
 
-  const plan = { ...(await buildPlan({ issue, dossier, hypotheses: synthesis.ranked_hypotheses })), investigation_id: investigationId };
+  const plan = { ...(await buildPlan({ issue, dossier, hypotheses: synthesis.ranked_hypotheses, memoryContext })), investigation_id: investigationId };
   const planResult = validatePlan(plan, dossier);
   writeArtifact(guardianDir, issue, 'plan', plan);
 

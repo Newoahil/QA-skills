@@ -40,6 +40,7 @@ import { buildGate1Comment } from './gate1-comment.mjs';
 import { createSupervisorExecutor } from './supervisor-exec.mjs';
 import { ACTORS, assertActorMayPerform, EFFECTS } from './actor-routing.mjs';
 import { atomicWriteJson } from './atomic-io.mjs';
+import { recallEngineeringMemory, recordEngineeringMemory } from './memory-provider.mjs';
 
 export function sessionStatusAction(status) {
   if (status === 'ok') return { continue: true, retry: false, failClosed: false };
@@ -284,13 +285,17 @@ async function tick(repoDir, config, logger) {
       if (dossier || planArtifact) quarantineArtifacts(guardianDir, issue);
       try {
         const investigationState = readState(guardianDir, issue) ?? { issue };
+        const issueData = { title: plan.toRun.issueTitle ?? '', body: plan.toRun.issueBody ?? '' };
+        const memoryContext = recallEngineeringMemory({ config, repoDir, issue, issueData });
+        if (memoryContext.status === 'unavailable') logger.warn('memory.recall_unavailable', { issue, provider: memoryContext.provider, reason: memoryContext.reason });
         const prepared = await prepareInvestigation({
           issue,
-          issueData: { title: plan.toRun.issueTitle ?? '', body: plan.toRun.issueBody ?? '' },
+          issueData,
           repoDir, guardianDir, issueClass: config.default_issue_class ?? 'bug',
           complexity: config.investigation_complexity ?? 'complex',
-          capabilities: discoverCapabilities({ env: process.env }),
+          capabilities: discoverCapabilities({ env: process.env, config }),
           config,
+          memoryContext,
           state: investigationState,
           round: investigationState.processing_round ?? 1,
           runSpecialist: (args) => processSpecialistRunner({ ...args, opencodeClient }),
@@ -570,6 +575,13 @@ async function tick(repoDir, config, logger) {
           last_phase: 'pr-opened',
         }, { touch: false });
         logger.info('pr.opened_gate2', { issue });
+        const memoryRecord = recordEngineeringMemory({
+          config,
+          repoDir,
+          issue,
+          summary: `Issue #${issue}\nPR: ${pr.url}\nBranch: ${currentBranch}\nQA: ${qaVerdict?.status ?? 'PASS'}\n${qaAcceptance}`,
+        });
+        if (memoryRecord.status === 'unavailable') logger.warn('memory.record_unavailable', { issue, provider: memoryRecord.provider, reason: memoryRecord.reason });
         // Supervisor writes the authoritative [QA_VERIFIED] verification comment (§3A).
         writeVerdictComment(guardianDir, issue, {
           approved: true,
