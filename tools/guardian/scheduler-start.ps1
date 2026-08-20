@@ -210,7 +210,7 @@ function Current-GitBranch([string]$Repo) {
   return $branch.output
 }
 
-function Assert-CleanAndLatest([string]$Repo, [string]$Branch, [string]$Label) {
+function Assert-CleanAndLatest([string]$Repo, [string]$Branch, [string]$Label, [switch]$AllowBehind) {
   $inside = Invoke-Git $Repo @('rev-parse', '--is-inside-work-tree')
   if ($inside.output -ne 'true') { throw "$Label 不是 git 仓库: $Repo" }
   $status = Invoke-Git $Repo @('status', '--porcelain')
@@ -220,13 +220,15 @@ function Assert-CleanAndLatest([string]$Repo, [string]$Branch, [string]$Label) {
   Invoke-Git $Repo @('fetch', 'origin', $Branch) | Out-Null
   $local = Invoke-Git $Repo @('rev-parse', $Branch)
   $upstream = Invoke-Git $Repo @('rev-parse', "origin/$Branch")
-  if ($local.output -ne $upstream.output) { throw "$Label 本地 $Branch 与 origin/$Branch 不一致，请先同步到远端最新主分支。" }
-  return [ordered]@{ label = $Label; repo = $Repo; branch = $Branch; remote = $remote.output; commit = $local.output }
+  $inSync = $local.output -eq $upstream.output
+  if (-not $inSync -and -not $AllowBehind) { throw "$Label 本地 $Branch 与 origin/$Branch 不一致，请先同步到远端最新主分支。" }
+  if (-not $inSync) { Write-Host "    [提示] $Label 本地版本不是远端最新，将继续使用本地版本运行。" -ForegroundColor Yellow }
+  return [ordered]@{ label = $Label; repo = $Repo; branch = $Branch; remote = $remote.output; commit = $local.output; upstream_commit = $upstream.output; in_sync = $inSync }
 }
 
 function Assert-CleanAndUpstreamLatest([string]$Repo, [string]$Label) {
   $branch = Current-GitBranch $Repo
-  return Assert-CleanAndLatest $Repo $branch $Label
+  return Assert-CleanAndLatest $Repo $branch $Label -AllowBehind
 }
 
 function Confirm-Start($message) {

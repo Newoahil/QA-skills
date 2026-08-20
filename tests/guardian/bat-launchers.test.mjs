@@ -45,7 +45,16 @@ test('scheduler-start.ps1 checks the Guardian tools repository against its curre
   assert.match(text, /function Current-GitBranch/);
   assert.match(text, /function Assert-CleanAndUpstreamLatest/);
   assert.match(text, /\$guardianFacts = Assert-CleanAndUpstreamLatest \$GuardianRepo 'Guardian工具仓库'/);
+  assert.match(text, /Assert-CleanAndLatest \$Repo \$branch \$Label -AllowBehind/);
+  assert.match(text, /本地版本不是远端最新，将继续使用本地版本运行/);
   assert.doesNotMatch(text, /Assert-CleanAndLatest \$GuardianRepo 'main' 'Guardian工具仓库'/);
+});
+
+test('scheduler-start.ps1 warns but continues when Guardian tools are not upstream latest', () => {
+  const text = readFileSync('tools/guardian/scheduler-start.ps1', 'utf8');
+  assert.match(text, /AllowBehind/);
+  assert.match(text, /本地版本不是远端最新，将继续使用本地版本运行/);
+  assert.match(text, /目标值守仓库/);
 });
 
 test('scheduler-start.ps1 accepts GitHub URL input by normalizing it to owner repo form', () => {

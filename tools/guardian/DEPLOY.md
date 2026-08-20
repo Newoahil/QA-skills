@@ -115,7 +115,7 @@ npm install
 一键脚本会自动补 node/gh/git 到 PATH、引导确认目标项目/GitHub 仓库、校验 config +
 `command_authors`，并在启动前 fetch 校验两个仓库都与远端主分支一致：目标项目的
 `base_branch` 必须等于 `origin/<base_branch>`，QA Guardian 工具仓库的 `main` 必须等于
-`origin/main`，且两个 worktree 都必须干净。**config 已存在 → 确认后启动；不存在 → 用
+`origin/main`，且两个 worktree 都必须干净。Guardian 工具仓库如果本地不是远端最新，只提示并继续使用本地版本；**config 已存在 → 确认后启动；不存在 → 用
 `-Init` 一步创建再启动（或交互提示创建）。**
 
 首次为某个项目启动 scheduler 会交互式选择一次严格模式或 worktree/current-snapshot 模式，并将

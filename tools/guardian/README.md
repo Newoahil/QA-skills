@@ -194,7 +194,8 @@ single-binding JSON remains readable and is migrated into the project map on the
 Strict mode blocks startup unless both repositories are safe:
 
 - the target repository is a clean git worktree and local `base_branch` equals `origin/<base_branch>`;
-- this QA Guardian tools repository is a clean git worktree and local `main` equals `origin/main`;
+- this QA Guardian tools repository is a clean git worktree; if its active branch is behind or differs
+  from its upstream, the launcher prints a warning and continues with the local tool version;
 - `gh auth status` succeeds and `gh repo view <github_repo>` is accessible.
 
 Worktree mode uses a persistent clean control worktree for authoritative `.qa/guardian` state and a
