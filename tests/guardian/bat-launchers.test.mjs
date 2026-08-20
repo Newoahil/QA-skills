@@ -65,6 +65,10 @@ test('scheduler launcher persists one-time binding and sends control repo plus Q
   assert.match(text, /qa_snapshot_path/);
   assert.match(text, /QA_GUARDIAN_QA_RUNTIME_DIR/);
   assert.match(text, /--repo \$controlRepo/);
+  assert.match(text, /last_target_repo/);
+  assert.match(text, /projects/);
+  assert.match(text, /Select-LauncherBinding/);
+  assert.match(text, /Save-LauncherBinding/);
 });
 
 test('dashboard launcher resolves the authoritative control worktree without preflight', () => {
@@ -73,6 +77,8 @@ test('dashboard launcher resolves the authoritative control worktree without pre
   assert.match(text, /scheduler\.config\.json/);
   assert.match(text, /--repo \$controlRepo/);
   assert.doesNotMatch(text, /gh auth status/);
+  assert.match(text, /Select-LauncherBinding/);
+  assert.match(text, /last_target_repo/);
 });
 
 test('scheduler launcher preserves an active control branch on reuse', () => {
@@ -104,7 +110,7 @@ test('scheduler DryRun fails before first-run binding prompt or write', () => {
 
 test('scheduler binding example documents the complete local-only shape', () => {
   const text = readFileSync('tools/guardian/scheduler.config.example.json', 'utf8');
-  for (const field of ['version', 'canonical_target_path', 'mode', 'control_worktree_path', 'qa_snapshot_path', 'selected_runtime_input_paths', 'base_branch', 'guardian_repo_path']) {
+  for (const field of ['version', 'last_target_repo', 'projects', 'canonical_target_path', 'mode', 'control_worktree_path', 'qa_snapshot_path', 'selected_runtime_input_paths', 'base_branch', 'guardian_repo_path']) {
     assert.match(text, new RegExp(`"${field}"`));
   }
   assert.match(text, /gitignored/);
@@ -117,4 +123,16 @@ test('scheduler launcher repairs an existing config with empty command authors',
   assert.match(text, /if \(-not \$cfg\.command_authors -or @\(\$cfg\.command_authors\)\.Count -eq 0\)/);
   assert.match(text, /请输入可信 GitHub 登录名/);
   assert.match(text, /Add-Member -NotePropertyName command_authors -NotePropertyValue \$authors -Force/);
+});
+
+test('launcher docs and config describe explicit project switching and independent no-arg last target', () => {
+  const scheduler = readFileSync('tools/guardian/scheduler-start.ps1', 'utf8');
+  const dashboard = readFileSync('tools/guardian/dashboard-start.ps1', 'utf8');
+  const example = readFileSync('tools/guardian/scheduler.config.example.json', 'utf8');
+  for (const text of [scheduler, dashboard, example]) {
+    assert.match(text, /last_target_repo/);
+    assert.match(text, /projects/);
+  }
+  assert.match(scheduler, /never a fallback for another project/);
+  assert.match(dashboard, /never a fallback for another project/);
 });

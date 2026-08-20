@@ -118,9 +118,12 @@ npm install
 `origin/main`，且两个 worktree 都必须干净。**config 已存在 → 确认后启动；不存在 → 用
 `-Init` 一步创建再启动（或交互提示创建）。**
 
-首次 scheduler 启动会交互式选择一次严格模式或 worktree/current-snapshot 模式，并将
-`version`、canonical target、模式、control worktree、QA snapshot、base branch、Guardian 工具仓库
-及显式 runtime 输入路径保存到 gitignored 的 `tools/guardian/scheduler.config.json`。后续启动不会重复询问。
+首次为某个项目启动 scheduler 会交互式选择一次严格模式或 worktree/current-snapshot 模式，并将
+该项目的 `version`、canonical target、模式、control worktree、QA snapshot、base branch、Guardian 工具仓库
+及显式 runtime 输入路径保存到 gitignored 的 `tools/guardian/scheduler.config.json` 的 `projects` map。
+配置同时保存 `last_target_repo` 供无参启动使用；显式 `-TargetRepo` 永远只选择对应项目，不会复用其他项目的
+control worktree 或配置。两个 BAT 是唯一日常入口：scheduler 值守和 dashboard 只读；每个项目只询问一次并独立记忆。
+已有 v1 单绑定配置会在目标匹配时继续读取，并在下一次写入时迁移到 `projects`。
 严格模式要求 canonical target clean；worktree 模式让 control worktree 保存权威 `.qa/guardian`，让
 QA snapshot 承载 canonical target 的 tracked binary diff 与显式选择的 runtime 输入。canonical target
 不会被 reset、stash、commit 或 push；control worktree 已进入 `fix/issue-*` 等活动分支后，后续启动只要求
@@ -168,7 +171,7 @@ scheduler-start.bat D:\你的项目                 :: config 已存在则直接
 scheduler-start.bat D:\你的项目 goudaren0528     :: 首次：创建 config 再启动
 dashboard-start.bat D:\你的项目                  :: 只读查看队列和会话入口
 ```
-直接双击 `scheduler-start.bat`（无参）则按 env `QA_GUARDIAN_REPO` / 旁置 `scheduler.config.json` 解析目标，缺 config 时交互提示创建；直接双击 `dashboard-start.bat`（无参）则按 `QA_GUARDIAN_REPO` / 当前目录 `.qa/guardian/config.json` / 交互输入解析目标。脚本不会默认监控 QA-skills 工具仓库；无法从 `origin` 推断 GitHub 仓库时会要求输入 `owner/repo`。
+直接双击 `scheduler-start.bat` 或 `dashboard-start.bat`（无参）时优先使用 env `QA_GUARDIAN_REPO`，否则使用 `scheduler.config.json` 的 `last_target_repo`；目标缺失时才交互输入。显式传入项目路径会严格按该项目 key 选择 binding；脚本不会默认监控 QA-skills 工具仓库，也不会把另一项目的 binding 当作 fallback。无法从 `origin` 推断 GitHub 仓库时，scheduler 会要求输入 `owner/repo`。
 
 ```bash
 # Linux/macOS

@@ -183,10 +183,13 @@ of silently watching the wrong checkout:
 ```
 
 Before starting, the launcher confirms the target directory, target GitHub repository, watch mode,
-trusted command authors, and PR base branch. On the first interactive scheduler start, it asks once
-for strict clean-target mode or worktree/current-snapshot mode and persists the binding in the
-gitignored `tools/guardian/scheduler.config.json`; later starts do not ask again. `-Yes` never invents
-the choice and fails with Chinese guidance when no choice is saved.
+trusted command authors, and PR base branch. The gitignored
+`tools/guardian/scheduler.config.json` stores independent bindings under `projects`, keyed by
+canonical target path, plus `last_target_repo` for no-argument launches. An explicit
+`-TargetRepo D:\your-project` always selects only that project's binding; each project asks once for
+strict clean-target mode or worktree/current-snapshot mode and remembers it independently. `-Yes`
+never invents a missing choice, and `-DryRun` fails closed without prompting or writing. Legacy v1
+single-binding JSON remains readable and is migrated into the project map on the next write.
 
 Strict mode blocks startup unless both repositories are safe:
 
@@ -237,8 +240,7 @@ node tools/guardian/session-view.mjs --session ses_abc123 --full
 指定地址。所有错误都会用中文给出「问题 / 原因 / 下一步」。
 
 Windows 上也可以直接双击两个 bat 分开启动，日常入口严格只有两个：`tools/guardian/scheduler-start.bat` 负责值守，
-`tools/guardian/dashboard-start.bat` 负责只读 Dashboard（内部调用 `dashboard-start.ps1` 解析 node）。两个 bat 都可传目标项目路径；无参时
-按 `QA_GUARDIAN_REPO` / 当前目录 `.qa/guardian/config.json` / 交互输入解析目标项目。
+`tools/guardian/dashboard-start.bat` 负责只读 Dashboard（内部调用 `dashboard-start.ps1` 解析 node）。两个 bat 都可传目标项目路径；显式路径只切换到该项目的 binding，不会复用另一项目的 control worktree 或配置。无参时优先使用 `QA_GUARDIAN_REPO`，否则使用持久化的 `last_target_repo`；没有可用目标时才交互输入。
 
 ## Run the single-issue chain (MVP, §15.2)
 
