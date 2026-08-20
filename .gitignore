@@ -50,8 +50,15 @@ desktop.ini
 *~
 
 # >>> SyberMem >>>
-# Machine-local runtime and scripts (do not share); records/digests/analysis/templates/INDEX.md/project.yaml stay committable.
+# SyberMem machine-local runtime, scripts, and hook wiring (not shareable memory).
 /.sybermem/hooks/
-/.sybermem/.*
+/.sybermem/.recall-debug.jsonl
+/.sybermem/.recall-outcomes.jsonl
+/.sybermem/.auto-trail.jsonl
+/.sybermem/.nudge-state.json
+/.sybermem/.opencode-nudge-state.json
+/.sybermem/.record-intent.json
+/.sybermem/.auto-change-state.json
+/.sybermem/.codex-compact-marker.json
 /.claude/settings.json
 # <<< SyberMem <<<
