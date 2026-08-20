@@ -40,6 +40,14 @@ test('scheduler-start.ps1 captures benign git stderr without promoting it to a t
   assert.match(text, /& git -C \$Repo @GitArgs 2>&1/);
 });
 
+test('scheduler-start.ps1 checks the Guardian tools repository against its current upstream branch', () => {
+  const text = readFileSync('tools/guardian/scheduler-start.ps1', 'utf8');
+  assert.match(text, /function Current-GitBranch/);
+  assert.match(text, /function Assert-CleanAndUpstreamLatest/);
+  assert.match(text, /\$guardianFacts = Assert-CleanAndUpstreamLatest \$GuardianRepo 'Guardian工具仓库'/);
+  assert.doesNotMatch(text, /Assert-CleanAndLatest \$GuardianRepo 'main' 'Guardian工具仓库'/);
+});
+
 test('scheduler-start.ps1 accepts GitHub URL input by normalizing it to owner repo form', () => {
   const text = readFileSync('tools/guardian/scheduler-start.ps1', 'utf8');
   assert.match(text, /function Normalize-GitHubRepo/);

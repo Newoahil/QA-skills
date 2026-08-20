@@ -156,6 +156,12 @@ function Infer-GitHubRepo([string]$Repo) {
   return Normalize-GitHubRepo $value
 }
 
+function Current-GitBranch([string]$Repo) {
+  $branch = Invoke-Git $Repo @('branch', '--show-current')
+  if (-not $branch.output) { throw "无法确定当前 git 分支: $Repo" }
+  return $branch.output
+}
+
 function Assert-CleanAndLatest([string]$Repo, [string]$Branch, [string]$Label) {
   $inside = Invoke-Git $Repo @('rev-parse', '--is-inside-work-tree')
   if ($inside.output -ne 'true') { throw "$Label 不是 git 仓库: $Repo" }
@@ -168,6 +174,11 @@ function Assert-CleanAndLatest([string]$Repo, [string]$Branch, [string]$Label) {
   $upstream = Invoke-Git $Repo @('rev-parse', "origin/$Branch")
   if ($local.output -ne $upstream.output) { throw "$Label 本地 $Branch 与 origin/$Branch 不一致，请先同步到远端最新主分支。" }
   return [ordered]@{ label = $Label; repo = $Repo; branch = $Branch; remote = $remote.output; commit = $local.output }
+}
+
+function Assert-CleanAndUpstreamLatest([string]$Repo, [string]$Label) {
+  $branch = Current-GitBranch $Repo
+  return Assert-CleanAndLatest $Repo $branch $Label
 }
 
 function Confirm-Start($message) {
@@ -257,7 +268,7 @@ if (-not $cfg.command_authors -or @($cfg.command_authors).Count -eq 0) {
 }
 
 $base = if ($cfg.base_branch) { [string]$cfg.base_branch } else { $BaseBranch }
-$guardianFacts = Assert-CleanAndLatest $GuardianRepo 'main' 'Guardian工具仓库'
+$guardianFacts = Assert-CleanAndUpstreamLatest $GuardianRepo 'Guardian工具仓库'
 $targetFacts = Assert-CleanAndLatest $TargetRepo $base '目标值守仓库'
 Write-Host "    GitHub仓库 : $targetGithub" -ForegroundColor Green
 Write-Host "    值守模式    : $($cfg.watch_mode)" -ForegroundColor Green
