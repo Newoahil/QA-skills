@@ -183,16 +183,30 @@ of silently watching the wrong checkout:
 ```
 
 Before starting, the launcher confirms the target directory, target GitHub repository, watch mode,
-trusted command authors, and PR base branch. It then blocks startup unless both repositories are safe:
+trusted command authors, and PR base branch. On the first interactive scheduler start, it asks once
+for strict clean-target mode or worktree/current-snapshot mode and persists the binding in the
+gitignored `tools/guardian/scheduler.config.json`; later starts do not ask again. `-Yes` never invents
+the choice and fails with Chinese guidance when no choice is saved.
+
+Strict mode blocks startup unless both repositories are safe:
 
 - the target repository is a clean git worktree and local `base_branch` equals `origin/<base_branch>`;
 - this QA Guardian tools repository is a clean git worktree and local `main` equals `origin/main`;
 - `gh auth status` succeeds and `gh repo view <github_repo>` is accessible.
 
-`-DryRun` prints the resolved launch plan and preflight facts as JSON, then exits without starting the
-scheduler. `guardian-runtime.mjs` and `scheduler.mjs` remain non-interactive lower-level entrypoints.
-`-Dashboard` runs the same safety preflight, then opens the read-only Chinese dashboard instead of
-starting the scheduler or Feishu runtime.
+Worktree mode uses a persistent clean control worktree for authoritative `.qa/guardian` state and a
+separate clean QA snapshot. The snapshot receives `git diff HEAD --binary` plus only explicitly selected
+repository-relative runtime input files. It never copies `.git`, `.qa/guardian`, `node_modules`, or
+arbitrary untracked/ignored files; differing destination files fail closed. Fixer, Supervisor, state,
+PR, GitHub comments, and dashboard/session resolution use control; read-only investigation specialists
+use the QA snapshot. The canonical target checkout is never modified.
+
+`-DryRun` prints the resolved launch plan and current dirty status without creating worktrees/snapshots.
+If no persisted binding exists, `-DryRun` exits immediately with Chinese guidance to run the scheduler
+once interactively; it never prompts or writes the binding.
+`guardian-runtime.mjs` and `scheduler.mjs` remain non-interactive lower-level entrypoints.
+`-Dashboard` is read-only: it resolves the authoritative control worktree, does not create
+worktrees/snapshots, and skips GitHub preflight.
 
 ## 查看值守进度（中文只读仪表盘）
 
@@ -222,7 +236,7 @@ node tools/guardian/session-view.mjs --session ses_abc123 --full
 `getMessages(sessionId)` 读取；如果服务没启动，请先运行 `opencode serve`，或用 `--base-url`
 指定地址。所有错误都会用中文给出「问题 / 原因 / 下一步」。
 
-Windows 上也可以直接双击两个 bat 分开启动：`tools/guardian/scheduler-start.bat` 负责值守，
+Windows 上也可以直接双击两个 bat 分开启动，日常入口严格只有两个：`tools/guardian/scheduler-start.bat` 负责值守，
 `tools/guardian/dashboard-start.bat` 负责只读 Dashboard（内部调用 `dashboard-start.ps1` 解析 node）。两个 bat 都可传目标项目路径；无参时
 按 `QA_GUARDIAN_REPO` / 当前目录 `.qa/guardian/config.json` / 交互输入解析目标项目。
 

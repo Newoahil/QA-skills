@@ -118,6 +118,15 @@ npm install
 `origin/main`，且两个 worktree 都必须干净。**config 已存在 → 确认后启动；不存在 → 用
 `-Init` 一步创建再启动（或交互提示创建）。**
 
+首次 scheduler 启动会交互式选择一次严格模式或 worktree/current-snapshot 模式，并将
+`version`、canonical target、模式、control worktree、QA snapshot、base branch、Guardian 工具仓库
+及显式 runtime 输入路径保存到 gitignored 的 `tools/guardian/scheduler.config.json`。后续启动不会重复询问。
+严格模式要求 canonical target clean；worktree 模式让 control worktree 保存权威 `.qa/guardian`，让
+QA snapshot 承载 canonical target 的 tracked binary diff 与显式选择的 runtime 输入。canonical target
+不会被 reset、stash、commit 或 push；control worktree 已进入 `fix/issue-*` 等活动分支后，后续启动只要求
+control worktree 是有效且 clean 的 git worktree，不会强制回到 `origin/<base>`。QA snapshot 才会在每次
+启动前回到 clean `origin/<base>` 再应用当前快照。`-DryRun` 在没有绑定时直接中文失败，不会提示选择、写绑定或创建 worktree。
+
 ```powershell
 # Windows（config 已存在，直接启动）
 .\tools\guardian\scheduler-start.ps1 -TargetRepo D:\你的项目
@@ -149,7 +158,7 @@ node tools/guardian/session-view.mjs --session ses_abc123 --full
 不会写状态、不会发 GitHub 评论、不会执行 approve/rework/retry。若 OpenCode 服务不可达，
 会话查看器会用中文打印「问题 / 原因 / 下一步」引导你启动 `opencode serve` 或修正 `--base-url`。
 
-**双击启动（Windows，免手敲执行策略）**：常用两个 bat 分开开两个窗口：
+**双击启动（Windows，免手敲执行策略）**：日常入口严格只有两个 bat，分开开两个窗口：
 
 1. `scheduler-start.bat`：启动真正的 Guardian 值守。
 2. `dashboard-start.bat`：调用 `dashboard-start.ps1` 直接启动只读中文 Dashboard，不做 GitHub preflight，不会启动 scheduler，也不会写 GitHub 或状态。
