@@ -265,7 +265,12 @@ function Ensure-ControlWorktree([string]$SourceRepo, [string]$Destination, [stri
   $inside = Invoke-Git $Destination @('rev-parse', '--is-inside-work-tree')
   if ($inside.code -ne 0 -or $inside.output -ne 'true') { throw "已存在的 control worktree 路径不是有效 git worktree：$Destination" }
   $status = Invoke-Git $Destination @('status', '--porcelain')
-  if ($status.output) { throw "control worktree 不干净，已停止以避免覆盖现有修改：$Destination" }
+  $unownedDirty = @(($status.output -split "`r?`n") | Where-Object {
+    if ($_.Length -lt 4) { return $false }
+    $p = $_.Substring(3).Trim().Replace('\', '/')
+    $p -and -not ($p -match '^(\.qa/guardian/|\.sybermem/|\.scheduler\.lock$|watch-state\.json$)')
+  })
+  if ($unownedDirty.Count -gt 0) { throw "control worktree 存在 Guardian 状态之外的工作区修改，已停止以避免覆盖现有修改：$Destination" }
 }
 
 function Ensure-QaSnapshot([string]$SourceRepo, [string]$Destination, [string]$Base) {

@@ -79,10 +79,18 @@ test('scheduler launcher preserves an active control branch on reuse', () => {
   const text = readFileSync('tools/guardian/scheduler-start.ps1', 'utf8');
   const controlFunction = text.slice(text.indexOf('function Ensure-ControlWorktree'), text.indexOf('function Ensure-QaSnapshot'));
   assert.match(text, /function Ensure-ControlWorktree/);
-  assert.match(text, /control worktree 不干净/);
+  assert.match(text, /Guardian 状态之外/);
   assert.doesNotMatch(controlFunction, /rev-parse.*origin/);
   assert.match(text, /function Ensure-QaSnapshot/);
   assert.match(text, /Ensure-QaSnapshot \$TargetRepo \$qaRuntimeRepo \$base/);
+});
+
+test('scheduler launcher ignores Guardian-owned state when checking control worktree cleanliness', () => {
+  const text = readFileSync('tools/guardian/scheduler-start.ps1', 'utf8');
+  const controlFunction = text.slice(text.indexOf('function Ensure-ControlWorktree'), text.indexOf('function Ensure-QaSnapshot'));
+  assert.match(controlFunction, /\.qa\/guardian\//);
+  assert.match(controlFunction, /\.sybermem\//);
+  assert.match(controlFunction, /unownedDirty/);
 });
 
 test('scheduler DryRun fails before first-run binding prompt or write', () => {
