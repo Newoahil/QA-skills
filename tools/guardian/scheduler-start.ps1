@@ -126,8 +126,12 @@ function Ensure-OnPath($dir) {
 }
 
 function Invoke-Git([string]$Repo, [string[]]$GitArgs, [switch]$AllowFailure) {
-  $out = & git -C $Repo @GitArgs 2>&1
-  $code = $LASTEXITCODE
+  $previousErrorActionPreference = $ErrorActionPreference
+  $ErrorActionPreference = "Continue"
+  try {
+    $out = & git -C $Repo @GitArgs 2>&1
+    $code = $LASTEXITCODE
+  } finally { $ErrorActionPreference = $previousErrorActionPreference }
   if ($code -ne 0 -and -not $AllowFailure) { throw "git $($GitArgs -join ' ') failed in ${Repo}: $out" }
   return [ordered]@{ code = $code; output = ($out -join "`n").Trim() }
 }

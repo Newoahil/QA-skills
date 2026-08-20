@@ -32,6 +32,14 @@ test('scheduler-start.ps1 avoids the PowerShell $Args automatic-variable trap fo
   assert.doesNotMatch(text, /\[string\[\]\]\$Args/);
 });
 
+test('scheduler-start.ps1 captures benign git stderr without promoting it to a terminating error', () => {
+  const text = readFileSync('tools/guardian/scheduler-start.ps1', 'utf8');
+  assert.match(text, /\$previousErrorActionPreference = \$ErrorActionPreference/);
+  assert.match(text, /\$ErrorActionPreference = "Continue"/);
+  assert.match(text, /finally \{ \$ErrorActionPreference = \$previousErrorActionPreference \}/);
+  assert.match(text, /& git -C \$Repo @GitArgs 2>&1/);
+});
+
 test('scheduler-start.ps1 accepts GitHub URL input by normalizing it to owner repo form', () => {
   const text = readFileSync('tools/guardian/scheduler-start.ps1', 'utf8');
   assert.match(text, /function Normalize-GitHubRepo/);
