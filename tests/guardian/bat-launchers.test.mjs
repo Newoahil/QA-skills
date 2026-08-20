@@ -116,5 +116,5 @@ test('scheduler launcher repairs an existing config with empty command authors',
   const text = readFileSync('tools/guardian/scheduler-start.ps1', 'utf8');
   assert.match(text, /if \(-not \$cfg\.command_authors -or @\(\$cfg\.command_authors\)\.Count -eq 0\)/);
   assert.match(text, /请输入可信 GitHub 登录名/);
-  assert.match(text, /\$cfg\.command_authors = @\(\$authorInput/);
+  assert.match(text, /Add-Member -NotePropertyName command_authors -NotePropertyValue \$authors -Force/);
 });

@@ -426,7 +426,8 @@ if (-not $cfg.command_authors -or @($cfg.command_authors).Count -eq 0) {
   if ($Yes) { throw "command_authors 为空：请先不带 -Yes 运行一次，输入可信 GitHub 登录名，例如 goudaren0528。" }
   $authorInput = Read-Host "    请输入可信 GitHub 登录名（多个用逗号或空格分隔；只需首次输入）"
   if (-not $authorInput) { throw "已取消：未配置可信 GitHub 登录名。" }
-  $cfg.command_authors = @($authorInput -split '[,\s]+' | Where-Object { $_ })
+  $authors = @($authorInput -split '[,\s]+' | Where-Object { $_ })
+  $cfg | Add-Member -NotePropertyName command_authors -NotePropertyValue $authors -Force
   $changedCfg = $true
 }
 if ($changedCfg) {
