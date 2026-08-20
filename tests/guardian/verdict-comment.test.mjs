@@ -36,6 +36,7 @@ test('QA_VERIFIED comment: marker on line 1, sentence, fenced json with pr_url',
     status: 'PASS',
     branch: 'fix/issue-191',
     prUrl: 'https://github.com/x/y/pull/5',
+    prTitle: 'Fix issue 191',
     runId: 'run-abc',
     attempt: 1,
     reportHash: 'sha256:deadbeef',
@@ -52,6 +53,10 @@ test('QA_VERIFIED comment: marker on line 1, sentence, fenced json with pr_url',
   assert.equal(meta.branch, 'fix/issue-191');
   assert.equal(meta.pr_url, 'https://github.com/x/y/pull/5');
   assert.equal(meta.report_hash, 'sha256:deadbeef');
+  assert.equal('pr_title' in meta, false);
+  assert.match(body, /## QA 验收结论/);
+  assert.match(body, /PR 标题：Fix issue 191/);
+  assert.match(body, /QA 报告指纹：sha256:deadbeef/);
 });
 
 test('QA_FAILED comment: marker QA_FAILED, reason keyword, null pr_url', () => {
@@ -67,6 +72,8 @@ test('QA_FAILED comment: marker QA_FAILED, reason keyword, null pr_url', () => {
   assert.equal(meta.marker, 'QA_FAILED');
   assert.equal(meta.status, 'FAIL');
   assert.equal(meta.pr_url, null);
+  assert.match(body, /## QA 验收结论/);
+  assert.match(body, /未开 PR，原因：qa-status-FAIL/);
 });
 
 test('BLOCKED / NEEDS_HUMAN_REVIEW status still produce a valid QA_FAILED comment', () => {
