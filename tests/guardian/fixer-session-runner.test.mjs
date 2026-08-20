@@ -11,7 +11,7 @@ function fakeClient() {
   const calls = { create: [], prompt: [], abort: [] };
   const client = {
     createSession: async ({ title, agent }) => { calls.create.push({ title, agent }); return 'ses_fixer'; },
-    prompt: async (params) => { calls.prompt.push(params); return { kind: 'ok', result: { structured: { status: 'READY_FOR_FINALIZATION', summary: 'fix applied', changed_files: ['tools/guardian/fix.mjs'] } } }; },
+    prompt: async (params) => { calls.prompt.push(params); return { kind: 'ok', result: { structured: { status: 'READY_FOR_FINALIZATION', summary: 'fix applied', pr_summary_markdown: '## PR 概述\n\n中文摘要\n\n## 本次变更内容\n\n中文内容\n\n## SQL / 数据库影响\n\n无\n\n## 关联脚本与配置文件\n\n无\n\n## 测试与验证说明\n\n通过', changed_files: ['tools/guardian/fix.mjs'] } } }; },
     abort: async (id) => { calls.abort.push(id); },
     getSession: async () => ({ kind: 'ok', session: { id: 'ses_fixer', agent: 'qa-guardian', directory: 'D:/repo' } }),
   };
@@ -79,6 +79,7 @@ test('passes dossier/plan paths and human note as untrusted data in the prompt',
   assert.equal(text.includes('please also fix the color'), true);
   assert.equal(prompt.system, undefined, 'human note must never be injected into system');
   assert.equal(text.includes('READY_FOR_FINALIZATION'), true);
+  assert.equal(text.includes('pr_summary_markdown'), true);
   assert.equal(text.includes('supervisor'), true);
   assert.equal(text.includes('commit and push'), true);
   assert.equal(text.includes('Do not create a PR'), true);

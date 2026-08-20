@@ -21,6 +21,7 @@ function buildQaPrompt({ issue, repoDir, branch, diffSummary, intendedBehavior, 
     `Intended behavior (DATA): ${JSON.stringify(intendedBehavior)}.`,
     `QA_OPERATION_MARKER=${operationMarker}`,
     'Use the supervisor-provided status/diff/test evidence; do not run shell commands. Check the diff against the intended behavior and emit exactly one line: Overall Status: PASS|FAIL|BLOCKED|NEEDS_HUMAN_REVIEW.',
+    'Write the report in Chinese. It MUST include these Markdown sections: ## QA 验收结论, ## 验收依据, ## 风险与未覆盖项, ## 下一步. The prose must explain the evidence semantically, not as a mechanical template.',
     'You are read-only. Do not edit files, install dependencies, commit, push, or open a PR.',
   ].join('\n');
 }
@@ -28,6 +29,7 @@ function buildQaPrompt({ issue, repoDir, branch, diffSummary, intendedBehavior, 
 export async function runQaSession({
   client, state, issue, repoDir, branch, diffSummary, intendedBehavior, round = 1,
   deadlineMs = 20 * 60 * 1000, pollIntervalMs = 1000,
+  writeQaAcceptance = null,
 }) {
   const startedAt = Date.now();
   const opencode = state.opencode ?? { schema_version: 1, fixer: null, qa: null, specialists: {}, inflight: null };
@@ -58,6 +60,9 @@ export async function runQaSession({
   const status = normalizeOutcomeStatus(outcome);
   const text = typeof outcome?.result?.text === 'string' ? outcome.result.text : '';
   const verdict = status === 'ok' ? parseOverallStatus(text) : null;
+  if (status === 'ok' && text.trim() && typeof writeQaAcceptance === 'function') {
+    writeQaAcceptance(text);
+  }
   const nextState = {
     ...state,
     opencode: {
