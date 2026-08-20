@@ -222,6 +222,10 @@ node tools/guardian/session-view.mjs --session ses_abc123 --full
 `getMessages(sessionId)` 读取；如果服务没启动，请先运行 `opencode serve`，或用 `--base-url`
 指定地址。所有错误都会用中文给出「问题 / 原因 / 下一步」。
 
+Windows 上也可以直接双击两个 bat 分开启动：`tools/guardian/scheduler-start.bat` 负责值守，
+`tools/guardian/dashboard-start.bat` 负责只读 Dashboard（内部调用 `dashboard-start.ps1` 解析 node）。两个 bat 都可传目标项目路径；无参时
+按 `QA_GUARDIAN_REPO` / 当前目录 `.qa/guardian/config.json` / 交互输入解析目标项目。
+
 ## Run the single-issue chain (MVP, §15.2)
 
 Drive one issue directly through the guardian agent:

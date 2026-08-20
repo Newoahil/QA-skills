@@ -149,12 +149,17 @@ node tools/guardian/session-view.mjs --session ses_abc123 --full
 不会写状态、不会发 GitHub 评论、不会执行 approve/rework/retry。若 OpenCode 服务不可达，
 会话查看器会用中文打印「问题 / 原因 / 下一步」引导你启动 `opencode serve` 或修正 `--base-url`。
 
-**双击启动（Windows，免手敲执行策略）**：用 `scheduler-start.bat`
+**双击启动（Windows，免手敲执行策略）**：常用两个 bat 分开开两个窗口：
+
+1. `scheduler-start.bat`：启动真正的 Guardian 值守。
+2. `dashboard-start.bat`：调用 `dashboard-start.ps1` 直接启动只读中文 Dashboard，不做 GitHub preflight，不会启动 scheduler，也不会写 GitHub 或状态。
+
 ```bat
 scheduler-start.bat D:\你的项目                 :: config 已存在则直接启动
 scheduler-start.bat D:\你的项目 goudaren0528     :: 首次：创建 config 再启动
+dashboard-start.bat D:\你的项目                  :: 只读查看队列和会话入口
 ```
-直接双击 `scheduler-start.bat`（无参）则按 env `QA_GUARDIAN_REPO` / 旁置 `scheduler.config.json` 解析目标，缺 config 时交互提示创建。脚本不会默认监控 QA-skills 工具仓库；无法从 `origin` 推断 GitHub 仓库时会要求输入 `owner/repo`。
+直接双击 `scheduler-start.bat`（无参）则按 env `QA_GUARDIAN_REPO` / 旁置 `scheduler.config.json` 解析目标，缺 config 时交互提示创建；直接双击 `dashboard-start.bat`（无参）则按 `QA_GUARDIAN_REPO` / 当前目录 `.qa/guardian/config.json` / 交互输入解析目标。脚本不会默认监控 QA-skills 工具仓库；无法从 `origin` 推断 GitHub 仓库时会要求输入 `owner/repo`。
 
 ```bash
 # Linux/macOS
