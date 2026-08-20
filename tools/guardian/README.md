@@ -42,6 +42,8 @@ It does **not** modify `qa` / `qa-facet` / `SKILL.md` / `references/*` — it di
 | `poll.mjs` | single-issue entry: read state → route → print action/invocation | §15.2 |
 | `scheduler.mjs` | resident watch loop: list → poll → planTick → notify + run (N=1) | §15.1 |
 | `scheduler-core.mjs` | pure N=1 tick planning (which issue to run, which to notify) | §15.1 |
+| `dashboard.mjs` | 只读中文仪表盘：查看当前队列、状态、下一步会话查看命令 | — |
+| `session-view.mjs` | 只读中文 OpenCode 会话查看器：按 session 或 issue/agent 查看真实对话 | — |
 | `lock.mjs` | atomic N=1 lock (exclusive-create + heartbeat + owner release) | §11B.4 |
 | `feishu-callback.mjs` | Feishu signature verify + card-action parse + verb whitelist | §11B.5 |
 | `callback-handler.mjs` | callback request handling (verify → parse → comment, dedup) | §11B.5 |
@@ -177,6 +179,7 @@ of silently watching the wrong checkout:
 ```powershell
 .\tools\guardian\scheduler-start.ps1 -TargetRepo D:\your-project -Init -CommandAuthors your-login -GitHubRepo owner/repo
 .\tools\guardian\scheduler-start.ps1 -TargetRepo D:\your-project -DryRun -Yes
+.\tools\guardian\scheduler-start.ps1 -TargetRepo D:\your-project -Dashboard -Yes
 ```
 
 Before starting, the launcher confirms the target directory, target GitHub repository, watch mode,
@@ -188,6 +191,36 @@ trusted command authors, and PR base branch. It then blocks startup unless both 
 
 `-DryRun` prints the resolved launch plan and preflight facts as JSON, then exits without starting the
 scheduler. `guardian-runtime.mjs` and `scheduler.mjs` remain non-interactive lower-level entrypoints.
+`-Dashboard` runs the same safety preflight, then opens the read-only Chinese dashboard instead of
+starting the scheduler or Feishu runtime.
+
+## 查看值守进度（中文只读仪表盘）
+
+当常驻 scheduler 在跑时，另开一个终端查看队列和会话入口：
+
+```bash
+node tools/guardian/dashboard.mjs --repo <repo>
+node tools/guardian/dashboard.mjs --repo <repo> --watch 5
+node tools/guardian/dashboard.mjs --repo <repo> --issue 42
+```
+
+仪表盘只读取 `<repo>/.qa/guardian/*.json`，不会写状态、不会发 GitHub 评论、不会批准或打回
+任何闸门。它会显示每个 issue 的状态、风险、轮次、分支、更新时间，并在底部提示下一步查看会
+话的命令。
+
+要看具体 agent 的真实 OpenCode 对话，使用会话查看器：
+
+```bash
+node tools/guardian/session-view.mjs --repo <repo> --issue 42 --agent fixer
+node tools/guardian/session-view.mjs --repo <repo> --issue 42 --agent qa
+node tools/guardian/session-view.mjs --repo <repo> --issue 42 --agent code
+node tools/guardian/session-view.mjs --session ses_abc123 --full
+```
+
+`--agent` 支持 `fixer`、`qa`，也支持 `.qa/guardian/<issue>.json` 里记录的专家角色名，例如
+`code`、`business`、`runtime`、`docs`、`history`、`plan-critic`。会话内容通过 OpenCode SDK
+`getMessages(sessionId)` 读取；如果服务没启动，请先运行 `opencode serve`，或用 `--base-url`
+指定地址。所有错误都会用中文给出「问题 / 原因 / 下一步」。
 
 ## Run the single-issue chain (MVP, §15.2)
 

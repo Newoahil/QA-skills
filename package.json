@@ -4,7 +4,8 @@
   "type": "module",
   "scripts": {
     "test:guardian": "node --test tests/guardian/*.test.mjs",
-    "guardian:start": "node tools/guardian/guardian-runtime.mjs"
+    "guardian:start": "node tools/guardian/guardian-runtime.mjs",
+    "guardian:dashboard": "node tools/guardian/dashboard.mjs"
   },
   "dependencies": {
     "@larksuiteoapi/node-sdk": "1.73.0",

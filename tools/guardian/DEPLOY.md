@@ -127,7 +127,27 @@ npm install
 
 # Windows（只检查解析、GitHub 仓库和双仓库 clean/latest，不启动）
 .\tools\guardian\scheduler-start.ps1 -TargetRepo D:\你的项目 -GitHubRepo owner/repo -DryRun -Yes
+
+# Windows（只读查看队列，不启动 scheduler / 飞书 runtime）
+.\tools\guardian\scheduler-start.ps1 -TargetRepo D:\你的项目 -Dashboard -Yes
 ```
+
+### 2a. 查看进度与 agent 对话（只读）
+
+常驻值守运行时，可以另开终端查看当前处理顺序、每个 issue 状态，以及具体 agent 的 OpenCode
+对话内容：
+
+```powershell
+node tools/guardian/dashboard.mjs --repo D:\你的项目 --watch 5
+node tools/guardian/dashboard.mjs --repo D:\你的项目 --issue 42
+node tools/guardian/session-view.mjs --repo D:\你的项目 --issue 42 --agent fixer
+node tools/guardian/session-view.mjs --repo D:\你的项目 --issue 42 --agent qa
+node tools/guardian/session-view.mjs --session ses_abc123 --full
+```
+
+这些命令都是只读：只读取 `.qa/guardian/*.json` 和 OpenCode SDK 的 `getMessages(sessionId)`，
+不会写状态、不会发 GitHub 评论、不会执行 approve/rework/retry。若 OpenCode 服务不可达，
+会话查看器会用中文打印「问题 / 原因 / 下一步」引导你启动 `opencode serve` 或修正 `--base-url`。
 
 **双击启动（Windows，免手敲执行策略）**：用 `scheduler-start.bat`
 ```bat

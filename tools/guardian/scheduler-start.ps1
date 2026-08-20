@@ -36,6 +36,9 @@
 .PARAMETER DryRun
   Render the resolved launch plan and preflight facts as JSON, then exit without starting scheduler.
 
+.PARAMETER Dashboard
+  Run the read-only Chinese dashboard after preflight instead of starting scheduler or Feishu runtime.
+
 .PARAMETER SchedulerOnly
   Start only scheduler.mjs. Skips the optional Feishu WebSocket runtime; useful for local polling
   runs and visible E2E monitoring.
@@ -64,6 +67,7 @@ param(
   [switch]$SchedulerOnly,
   [string]$OpenCodeServerUrl = "",
   [string]$ProgressDir = "",
+  [switch]$Dashboard,
   [switch]$DryRun,
   [switch]$Yes
 )
@@ -256,7 +260,16 @@ if ($DryRun) {
     target = $targetFacts
     guardian = $guardianFacts
     scheduler_only = [bool]$SchedulerOnly
+    dashboard = [bool]$Dashboard
   } | ConvertTo-Json -Depth 8
+  return
+}
+
+if ($Dashboard) {
+  Write-Host "==> 正在打开 Guardian 只读仪表盘" -ForegroundColor Cyan
+  Write-Host "    提示：按 Ctrl+C 可停止刷新。查看某个 agent 对话：" -ForegroundColor Gray
+  Write-Host "    node tools/guardian/session-view.mjs --repo `"$TargetRepo`" --issue <编号> --agent fixer" -ForegroundColor Gray
+  & $nodeExe (Join-Path $GuardianRepo "tools\guardian\dashboard.mjs") --repo $TargetRepo --watch 5
   return
 }
 
