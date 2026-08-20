@@ -40,6 +40,11 @@ test('scheduler-start.ps1 captures benign git stderr without promoting it to a t
   assert.match(text, /& git -C \$Repo @GitArgs 2>&1/);
 });
 
+test('scheduler-start.ps1 does not use stale NewerThan-based launcher discovery', () => {
+  const text = readFileSync('tools/guardian/scheduler-start.ps1', 'utf8');
+  assert.doesNotMatch(text, /NewerThan/);
+});
+
 test('scheduler-start.ps1 checks the Guardian tools repository against its current upstream branch', () => {
   const text = readFileSync('tools/guardian/scheduler-start.ps1', 'utf8');
   assert.match(text, /function Current-GitBranch/);
