@@ -12,7 +12,7 @@
   The repository the scheduler watches. If omitted, resolved by precedence:
     1. -TargetRepo argument
     2. env QA_GUARDIAN_REPO
-    3. tools/guardian/scheduler.config.json  { "target_repo": "..." }  (gitignored)
+    3. persisted last_target_repo in tools/guardian/scheduler.config.json (gitignored)
     4. current directory
 
 .PARAMETER Init
@@ -78,16 +78,63 @@ $utf8 = New-Object System.Text.UTF8Encoding($false)
 [Console]::OutputEncoding = $utf8
 $OutputEncoding = $utf8
 $GuardianRepo = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
+$bindingPath = Join-Path $PSScriptRoot "scheduler.config.json"
+$TargetRepoWasExplicit = -not [string]::IsNullOrWhiteSpace($TargetRepo)
+
+function Read-LauncherConfig([string]$Path) {
+  if (-not (Test-Path -LiteralPath $Path)) { return $null }
+  try { return Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json } catch { return $null }
+}
+
+function Read-LauncherBinding([string]$Path) {
+  return Read-LauncherConfig $Path
+}
+
+function Canonical-LauncherPath([string]$Value) {
+  if (-not $Value) { return "" }
+  return ([IO.Path]::GetFullPath($Value)).TrimEnd('\').ToLowerInvariant()
+}
+
+function Select-LauncherBinding($Config, [string]$CanonicalTarget) {
+  if (-not $Config) { return $null }
+  $canonical = Canonical-LauncherPath $CanonicalTarget
+  if ($Config.projects) {
+    foreach ($property in $Config.projects.PSObject.Properties) {
+      if ((Canonical-LauncherPath ([string]$property.Name)) -eq $canonical) { return $property.Value }
+    }
+  }
+  # Legacy v1 is readable only for its exact canonical target; it is never a fallback for another project.
+  if ((Canonical-LauncherPath ([string]$Config.canonical_target_path)) -eq $canonical) { return $Config }
+  return $null
+}
+
+function Save-LauncherBinding([string]$Path, [string]$CanonicalTarget, $Binding) {
+  $existing = Read-LauncherConfig $Path
+  $projects = [ordered]@{}
+  if ($existing -and $existing.projects) {
+    foreach ($property in $existing.projects.PSObject.Properties) {
+      $projectKey = Canonical-LauncherPath ([string]$property.Name)
+      if ($projectKey) { $projects[$projectKey] = $property.Value }
+    }
+  }
+  $projects[$CanonicalTarget] = $Binding
+  $config = [ordered]@{
+    version = 2
+    last_target_repo = $CanonicalTarget
+    projects = $projects
+  }
+  Write-JsonUtf8 $Path $config
+}
 
 # Resolve target repo by precedence: param > env > sibling config file > current directory only
 # when it is already a configured target repo; otherwise ask instead of silently watching QA-skills.
-if (-not $TargetRepo) { $TargetRepo = $env:QA_GUARDIAN_REPO }
-if (-not $TargetRepo) {
-  $schedCfg = Join-Path $PSScriptRoot "scheduler.config.json"
-  if (Test-Path -LiteralPath $schedCfg) {
-    $sc = Get-Content -LiteralPath $schedCfg -Raw | ConvertFrom-Json
-    if ($sc.target_repo) { $TargetRepo = $sc.target_repo }
-    elseif ($sc.canonical_target_path) { $TargetRepo = $sc.canonical_target_path }
+if (-not $TargetRepoWasExplicit) {
+  $TargetRepo = $env:QA_GUARDIAN_REPO
+  if (-not $TargetRepo) {
+    $sc = Read-LauncherConfig $bindingPath
+    if ($sc.last_target_repo) { $TargetRepo = [string]$sc.last_target_repo }
+    elseif ($sc.target_repo) { $TargetRepo = [string]$sc.target_repo }
+    elseif ($sc.canonical_target_path) { $TargetRepo = [string]$sc.canonical_target_path }
   }
 }
 if (-not $TargetRepo) {
@@ -190,18 +237,6 @@ function Confirm-Start($message) {
 
 function Write-JsonUtf8([string]$Path, $Value) {
   [System.IO.File]::WriteAllText($Path, (($Value | ConvertTo-Json -Depth 12) + "`n"), (New-Object System.Text.UTF8Encoding($false)))
-}
-
-function Read-LauncherBinding([string]$Path) {
-  if (-not (Test-Path -LiteralPath $Path)) { return $null }
-  $value = Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json
-  if (-not $value.version -or -not $value.mode) { return $null }
-  return $value
-}
-
-function Canonical-LauncherPath([string]$Value) {
-  if (-not $Value) { return "" }
-  return ([IO.Path]::GetFullPath($Value)).TrimEnd('\').ToLowerInvariant()
 }
 
 function Assert-PersistedBinding($Binding, [string]$CanonicalTarget, [string]$GuardianRepoPath) {
@@ -331,12 +366,14 @@ if ((Test-Path $packageRoot) -and -not (Test-Path $sdkPath)) {
 
 if (-not (Test-Path -LiteralPath $TargetRepo)) { throw "目标项目目录不存在: $TargetRepo" }
 
-$bindingPath = Join-Path $PSScriptRoot "scheduler.config.json"
-$binding = Read-LauncherBinding $bindingPath
+$launcherConfig = Read-LauncherConfig $bindingPath
+$canonicalTarget = Canonical-LauncherPath ((Resolve-Path $TargetRepo).Path)
+$binding = Select-LauncherBinding $launcherConfig $canonicalTarget
 if (-not $Dashboard -and $DryRun -and -not $binding) {
   throw "DryRun 不会进行首次模式选择，也不会写入启动绑定或创建 worktree。请先不带 -DryRun、-Yes 交互式运行 scheduler-start.ps1 一次。"
 }
-if ($binding) { $binding = Assert-PersistedBinding $binding (Resolve-Path $TargetRepo).Path $GuardianRepo }
+if ($binding) { $binding = Assert-PersistedBinding $binding $canonicalTarget $GuardianRepo }
+if ($binding -and -not $DryRun) { Save-LauncherBinding $bindingPath $canonicalTarget $binding }
 if ($binding -and [string]$binding.mode -eq 'worktree' -and -not $DryRun) {
   Ensure-ControlWorktree $TargetRepo ([string]$binding.control_worktree_path) ([string]$binding.base_branch)
 }
@@ -344,7 +381,7 @@ if ($binding -and [string]$binding.mode -eq 'worktree' -and -not $DryRun) {
 if ($Dashboard) {
   $dashboardBinding = $binding
   $dashboardRepo = $TargetRepo
-  if ($dashboardBinding -and [string]$dashboardBinding.mode -eq 'worktree' -and [string]$dashboardBinding.canonical_target_path -eq (Resolve-Path $TargetRepo).Path) {
+  if ($dashboardBinding -and [string]$dashboardBinding.mode -eq 'worktree' -and (Canonical-LauncherPath ([string]$dashboardBinding.canonical_target_path)) -eq (Canonical-LauncherPath $canonicalTarget)) {
     $dashboardRepo = [string]$dashboardBinding.control_worktree_path
   }
   Write-Host "==> 正在打开 Guardian 只读仪表盘" -ForegroundColor Cyan
@@ -377,9 +414,10 @@ if (-not $Dashboard -and -not $DryRun -and -not $binding) {
   $modeInput = Read-Host "    输入 1=严格模式（目标必须 clean）或 2=worktree/current-snapshot 模式"
   if ($modeInput -eq '1' -or $modeInput -match '^(strict|严格)$') {
     $binding = [ordered]@{ version = 1; target_repo = (Resolve-Path $TargetRepo).Path; canonical_target_path = (Resolve-Path $TargetRepo).Path; mode = 'strict'; control_worktree_path = (Resolve-Path $TargetRepo).Path; qa_snapshot_path = $null; qa_managed_root = $null; selected_runtime_input_paths = @(); base_branch = $BaseBranch; guardian_repo_path = $GuardianRepo; git_identity = (Invoke-Git $TargetRepo @('rev-parse', '--show-toplevel')).output }
-    Write-JsonUtf8 $bindingPath $binding
+    Save-LauncherBinding $bindingPath $canonicalTarget $binding
   } elseif ($modeInput -eq '2' -or $modeInput -match '^(worktree|snapshot)$') {
-    $binding = Initialize-WorktreeBinding $TargetRepo $BaseBranch $bindingPath
+    $binding = Initialize-WorktreeBinding $TargetRepo $BaseBranch $bindingPath -ForDryRun
+    Save-LauncherBinding $bindingPath $canonicalTarget $binding
     Invoke-Git $TargetRepo @('fetch', 'origin', $BaseBranch) | Out-Null
     Ensure-ControlWorktree $TargetRepo ([string]$binding.control_worktree_path) $BaseBranch
   } else { throw "选择无效：请输入 1 或 2。" }

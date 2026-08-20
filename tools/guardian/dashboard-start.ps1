@@ -17,11 +17,33 @@ $utf8 = New-Object System.Text.UTF8Encoding($false)
 $OutputEncoding = $utf8
 $GuardianRepo = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 
+function Canonical-LauncherPath([string]$Value) {
+  if (-not $Value) { return "" }
+  return ([IO.Path]::GetFullPath($Value)).TrimEnd('\').ToLowerInvariant()
+}
+
+function Read-LauncherConfig([string]$Path) {
+  if (-not (Test-Path -LiteralPath $Path)) { return $null }
+  try { return Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json } catch { return $null }
+}
+
+function Select-LauncherBinding($Config, [string]$CanonicalTarget) {
+  if (-not $Config) { return $null }
+  $canonical = Canonical-LauncherPath $CanonicalTarget
+  if ($Config.projects) {
+    foreach ($property in $Config.projects.PSObject.Properties) {
+      if ((Canonical-LauncherPath ([string]$property.Name)) -eq $canonical) { return $property.Value }
+    }
+  }
+  # Legacy v1 is readable only for its exact canonical target; it is never a fallback for another project.
+  if ((Canonical-LauncherPath ([string]$Config.canonical_target_path)) -eq $canonical) { return $Config }
+  return $null
+}
+
 function Resolve-ControlRepo([string]$CanonicalRepo) {
   $bindingPath = Join-Path $GuardianRepo "tools\guardian\scheduler.config.json"
-  if (-not (Test-Path -LiteralPath $bindingPath)) { return $CanonicalRepo }
-  $binding = Get-Content -LiteralPath $bindingPath -Raw | ConvertFrom-Json
-  if ($binding.mode -eq 'worktree' -and $binding.canonical_target_path -eq (Resolve-Path $CanonicalRepo).Path -and $binding.control_worktree_path) {
+  $binding = Select-LauncherBinding (Read-LauncherConfig $bindingPath) (Resolve-Path $CanonicalRepo).Path
+  if ($binding -and $binding.mode -eq 'worktree' -and $binding.control_worktree_path) {
     return [string]$binding.control_worktree_path
   }
   return $CanonicalRepo
@@ -47,11 +69,10 @@ function Find-Node {
 if (-not $TargetRepo) { $TargetRepo = $env:QA_GUARDIAN_REPO }
 if (-not $TargetRepo) {
   $schedulerConfig = Join-Path $GuardianRepo "tools\guardian\scheduler.config.json"
-  if (Test-Path -LiteralPath $schedulerConfig) {
-    $saved = Get-Content -LiteralPath $schedulerConfig -Raw | ConvertFrom-Json
-    if ($saved.target_repo) { $TargetRepo = [string]$saved.target_repo }
-    elseif ($saved.canonical_target_path) { $TargetRepo = [string]$saved.canonical_target_path }
-  }
+  $saved = Read-LauncherConfig $schedulerConfig
+  if ($saved.last_target_repo) { $TargetRepo = [string]$saved.last_target_repo }
+  elseif ($saved.target_repo) { $TargetRepo = [string]$saved.target_repo }
+  elseif ($saved.canonical_target_path) { $TargetRepo = [string]$saved.canonical_target_path }
 }
 if (-not $TargetRepo) {
   $cwd = (Get-Location).Path

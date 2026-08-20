@@ -1,17 +1,32 @@
 {
-  "_comment": "Local-only launcher binding. Copy/edit as tools/guardian/scheduler.config.json; the file is gitignored and must never contain secrets.",
-  "_usage": "First scheduler start is interactive and persists one mode: strict keeps the canonical target clean; worktree creates a persistent clean control worktree plus a separate QA snapshot for tracked dirty diff and explicitly selected runtime inputs. Later starts do not ask again. -Yes cannot invent a missing choice; -DryRun fails closed without prompting or creating paths.",
-  "version": 1,
-  "target_repo": "D:\\tuantuanrent",
-  "canonical_target_path": "D:\\tuantuanrent",
-  "mode": "worktree",
-  "control_worktree_path": "D:\\tuantuanrent.qa-guardian-control",
-  "qa_snapshot_path": "D:\\tuantuanrent.qa-guardian-qa",
-  "qa_managed_root": null,
-  "selected_runtime_input_paths": [
-    ".env.test"
-  ],
-  "base_branch": "dev",
-  "guardian_repo_path": "D:\\QA-skills",
-  "git_identity": "repository identity metadata"
+  "_comment": "Local-only launcher bindings. Copy/edit as tools/guardian/scheduler.config.json; the file is gitignored and must never contain secrets.",
+  "_usage": "Version 2 keeps independent bindings under projects keyed by canonical target path. Explicit -TargetRepo selects only that project; no-arg launch uses last_target_repo. Each project asks once for strict/worktree mode and remembers it independently. Legacy v1 single-binding JSON remains readable and migrates on the next write. -Yes cannot invent a missing choice; -DryRun fails closed.",
+  "version": 2,
+  "last_target_repo": "d:\\project-two",
+  "projects": {
+    "d:\\project-one": {
+      "version": 1,
+      "canonical_target_path": "D:\\project-one",
+      "mode": "strict",
+      "control_worktree_path": "D:\\project-one",
+      "qa_snapshot_path": null,
+      "qa_managed_root": null,
+      "selected_runtime_input_paths": [],
+      "base_branch": "dev",
+      "guardian_repo_path": "D:\\QA-skills",
+      "git_identity": "repository identity metadata"
+    },
+    "d:\\project-two": {
+      "version": 1,
+      "canonical_target_path": "D:\\project-two",
+      "mode": "worktree",
+      "control_worktree_path": "D:\\project-two.qa-guardian-control",
+      "qa_snapshot_path": "D:\\project-two.qa-guardian-qa",
+      "qa_managed_root": null,
+      "selected_runtime_input_paths": [".env.test"],
+      "base_branch": "dev",
+      "guardian_repo_path": "D:\\QA-skills",
+      "git_identity": "repository identity metadata"
+    }
+  }
 }
