@@ -168,6 +168,7 @@ function runInvocation(repoDir, invokeArgv, lockFile, handle, leaseMs, timeoutMs
 }
 
 async function tick(repoDir, config, logger) {
+  const qaRuntimeDir = config.qa_runtime_dir ?? repoDir;
   const leaseMs = Number(config.lease_ms ?? DEFAULT_LEASE_MS);
   const now = Date.now();
   const issues = listCandidates(repoDir, config, new Date(now));
@@ -222,7 +223,7 @@ async function tick(repoDir, config, logger) {
   }
 
   if (!plan.toRun) {
-    logger.info('tick.idle', { polled: decisions.length });
+    logger.info('tick.idle', { polled: decisions.length, qa_runtime_dir: qaRuntimeDir });
     return;
   }
 
@@ -263,9 +264,11 @@ async function tick(repoDir, config, logger) {
     const gateApproved = plan.toRun.command.verb === 'approve' || plan.toRun.command.verb === 'revise';
     const currentPair = readArtifactPair(guardianDirOf(repoDir), issue);
     const currentIdentity = artifactIdentity(currentPair);
-    writeState(guardianDirOf(repoDir), {
-      ...currentBeforeRun,
-      state: gateApproved ? 'FIXING' : currentBeforeRun.state,
+      writeState(guardianDirOf(repoDir), {
+        ...currentBeforeRun,
+        control_repo_dir: repoDir,
+        qa_runtime_dir: qaRuntimeDir,
+        state: gateApproved ? 'FIXING' : currentBeforeRun.state,
       last_consumed_comment_id: plan.toRun.command.commentId,
       gate_1_approved_comment_id: gateApproved ? plan.toRun.command.commentId : currentBeforeRun.gate_1_approved_comment_id,
       gate_1_approved_plan_hash: gateApproved ? currentIdentity.plan_hash : currentBeforeRun.gate_1_approved_plan_hash,
@@ -291,7 +294,7 @@ async function tick(repoDir, config, logger) {
         const prepared = await prepareInvestigation({
           issue,
           issueData,
-          repoDir, guardianDir, issueClass: config.default_issue_class ?? 'bug',
+           repoDir, qaRuntimeDir, guardianDir, issueClass: config.default_issue_class ?? 'bug',
           complexity: config.investigation_complexity ?? 'complex',
           capabilities: discoverCapabilities({ env: process.env, config }),
           config,
@@ -299,7 +302,7 @@ async function tick(repoDir, config, logger) {
           state: investigationState,
           round: investigationState.processing_round ?? 1,
           runSpecialist: (args) => processSpecialistRunner({ ...args, opencodeClient }),
-          buildPlan: (args) => processPlanBuilder({ ...args, repoDir, opencodeClient }),
+           buildPlan: (args) => processPlanBuilder({ ...args, repoDir, qaRuntimeDir, opencodeClient }),
         });
         const state = readState(guardianDir, issue) ?? { issue };
         writeState(guardianDir, {
@@ -673,6 +676,9 @@ export function assertTargetRepoConfigured(repoDir) {
 
 export async function runScheduler({ repoDir, config = readConfig(repoDir), signal } = {}) {
   if (!repoDir) throw new Error('scheduler requires repoDir');
+  if (!config.qa_runtime_dir && process.env.QA_GUARDIAN_QA_RUNTIME_DIR) {
+    config = { ...config, qa_runtime_dir: process.env.QA_GUARDIAN_QA_RUNTIME_DIR };
+  }
   const interval = Number(config.poll_interval_ms ?? DEFAULT_INTERVAL_MS);
   const logger = createLogger({ component: 'scheduler' });
 

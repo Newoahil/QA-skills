@@ -28,6 +28,9 @@ export async function startGuardianRuntime(options = {}) {
   const env = options.env ?? process.env;
   const logger = options.logger ?? createLogger({ component: 'runtime' });
   const config = options.config ?? readConfig(repoDir);
+  const runtimeConfig = config.qa_runtime_dir || env.QA_GUARDIAN_QA_RUNTIME_DIR
+    ? { ...config, qa_runtime_dir: config.qa_runtime_dir ?? env.QA_GUARDIAN_QA_RUNTIME_DIR }
+    : config;
   const secrets = options.secrets ?? loadSecrets({ repoDir, env });
   const controller = options.controller ?? new AbortController();
   const seen = options.seen ?? new Set();
@@ -60,7 +63,7 @@ export async function startGuardianRuntime(options = {}) {
   }
 
   const schedulerRunner = options.runScheduler ?? runScheduler;
-  const schedulerPromise = schedulerRunner({ repoDir, config, signal: controller.signal });
+  const schedulerPromise = schedulerRunner({ repoDir, config: runtimeConfig, signal: controller.signal });
   logger.info('scheduler.starting', { repo_dir: repoDir });
   const shutdown = async () => {
     controller.abort();

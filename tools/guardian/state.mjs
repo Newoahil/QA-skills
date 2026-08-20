@@ -91,6 +91,8 @@ export function newState(issueNumber, now = new Date().toISOString()) {
     claim_id: null,
     claimed_at: null,
     claim_source: null, // labeled | new-open | followup
+    control_repo_dir: null,
+    qa_runtime_dir: null,
     dossier_path: null,
     plan_path: null,
     dossier_revision: null,

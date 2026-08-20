@@ -7,7 +7,7 @@ import { validatePlan } from './plan-validator.mjs';
 import { resolveBudgets } from './budgets.mjs';
 import { randomUUID } from 'node:crypto';
 
-export async function prepareInvestigation({ issue, issueData, repoDir, guardianDir, issueClass, complexity, capabilities, config = {}, memoryContext = null, runSpecialist, buildPlan, state = null, round = 1 }) {
+export async function prepareInvestigation({ issue, issueData, repoDir, qaRuntimeDir = repoDir, guardianDir, issueClass, complexity, capabilities, config = {}, memoryContext = null, runSpecialist, buildPlan, state = null, round = 1 }) {
   const paths = artifactPaths(guardianDir, issue);
   const budgets = resolveBudgets(config, complexity);
   const investigationId = randomUUID();
@@ -26,7 +26,8 @@ export async function prepareInvestigation({ issue, issueData, repoDir, guardian
       issue,
       issueData,
       issueDataPath: paths.issue_data_path,
-      repoDir,
+       repoDir,
+       qaRuntimeDir,
       dossierPath: paths.dossier_path,
       timeout_ms: budgets.specialist_timeout_ms,
       state,
@@ -38,7 +39,7 @@ export async function prepareInvestigation({ issue, issueData, repoDir, guardian
   const dossier = { ...synthesis.dossier, investigation_id: investigationId };
   writeArtifact(guardianDir, issue, 'dossier', dossier);
 
-  const plan = { ...(await buildPlan({ issue, dossier, hypotheses: synthesis.ranked_hypotheses, memoryContext })), investigation_id: investigationId };
+  const plan = { ...(await buildPlan({ issue, dossier, hypotheses: synthesis.ranked_hypotheses, repoDir, qaRuntimeDir, memoryContext })), investigation_id: investigationId };
   const planResult = validatePlan(plan, dossier);
   writeArtifact(guardianDir, issue, 'plan', plan);
 

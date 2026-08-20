@@ -6,7 +6,7 @@ import path from 'node:path';
 import { PassThrough } from 'node:stream';
 import test from 'node:test';
 
-import { createProgressSink, runAgentJson } from '../../tools/guardian/investigation-process.mjs';
+import { createProgressSink, processSpecialistRunner, runAgentJson } from '../../tools/guardian/investigation-process.mjs';
 
 function fakeChild() {
   const child = new EventEmitter();
@@ -136,6 +136,19 @@ test('processSpecialistRunner uses the SDK client to create and prompt a session
     'id', 'kind', 'source', 'observation', 'supports', 'contradicts',
   ]);
   assert.equal(result.specialist, 'guardian-code');
+});
+
+test('processSpecialistRunner uses QA runtime path while preserving control state path metadata', async () => {
+  const created = [];
+  const client = {
+    createSession: async ({ directory }) => { created.push(directory); return 'ses_runtime'; },
+    prompt: async () => ({ kind: 'ok', result: { text: '{"specialist":"guardian-runtime","hypotheses":[],"evidence":[],"unresolved_facts":[],"acceptance_criteria":[]}' } }),
+    getSession: async () => ({ kind: 'ok', session: { id: 'ses_runtime', agent: 'guardian-runtime', directory: 'D:/qa-snapshot' } }),
+  };
+  const state = { opencode: { specialists: {} } };
+  await processSpecialistRunner({ role: 'guardian-runtime', issue: 1, repoDir: 'D:/control', qaRuntimeDir: 'D:/qa-snapshot', issueDataPath: 'D:/control/issue.json', dossierPath: 'D:/control/dossier.json', opencodeClient: client, state });
+  assert.deepEqual(created, ['D:/qa-snapshot']);
+  assert.equal(state.opencode.specialists['guardian-runtime'].repo_dir, 'D:/qa-snapshot');
 });
 
 test('processPlanBuilder uses the SDK client instead of spawning an attach process', async () => {
