@@ -112,8 +112,11 @@ npm install
 
 启动脚本现在启动的是**单进程组合 runtime**：一个 scheduler + 一个 Feishu WebSocket；不会再分别启动两个 scheduler。若不设置 `FEISHU_APP_ID`/`FEISHU_APP_SECRET`，会退化为 scheduler-only。
 
-一键脚本会自动补 node/gh/git 到 PATH、校验 config + `command_authors`，再启动 scheduler + Feishu WS。
-**config 已存在 → 直接启动；不存在 → 用 `-Init` 一步创建再启动（或交互提示创建）。**
+一键脚本会自动补 node/gh/git 到 PATH、引导确认目标项目/GitHub 仓库、校验 config +
+`command_authors`，并在启动前 fetch 校验两个仓库都与远端主分支一致：目标项目的
+`base_branch` 必须等于 `origin/<base_branch>`，QA Guardian 工具仓库的 `main` 必须等于
+`origin/main`，且两个 worktree 都必须干净。**config 已存在 → 确认后启动；不存在 → 用
+`-Init` 一步创建再启动（或交互提示创建）。**
 
 ```powershell
 # Windows（config 已存在，直接启动）
@@ -121,6 +124,9 @@ npm install
 
 # Windows（首次：一步创建 config 再启动）
 .\tools\guardian\scheduler-start.ps1 -TargetRepo D:\你的项目 -Init -CommandAuthors goudaren0528
+
+# Windows（只检查解析、GitHub 仓库和双仓库 clean/latest，不启动）
+.\tools\guardian\scheduler-start.ps1 -TargetRepo D:\你的项目 -GitHubRepo owner/repo -DryRun -Yes
 ```
 
 **双击启动（Windows，免手敲执行策略）**：用 `scheduler-start.bat`
@@ -128,7 +134,7 @@ npm install
 scheduler-start.bat D:\你的项目                 :: config 已存在则直接启动
 scheduler-start.bat D:\你的项目 goudaren0528     :: 首次：创建 config 再启动
 ```
-直接双击 `scheduler-start.bat`（无参）则按 env `QA_GUARDIAN_REPO` / 旁置 `scheduler.config.json` 解析目标，缺 config 时交互提示创建。
+直接双击 `scheduler-start.bat`（无参）则按 env `QA_GUARDIAN_REPO` / 旁置 `scheduler.config.json` 解析目标，缺 config 时交互提示创建。脚本不会默认监控 QA-skills 工具仓库；无法从 `origin` 推断 GitHub 仓库时会要求输入 `owner/repo`。
 
 ```bash
 # Linux/macOS
@@ -161,6 +167,7 @@ tools/guardian/scheduler-start.sh --target /path/to/repo
 
 - N=1：同一时刻只跑一个活跃 issue（原子锁 + 心跳续租，长运行不会被误判过期）。
 - gate/STALLED/HANDED_BACK 事件会自动发通知（幂等，同状态不重复推）。
+- Gate 2 的 PR 正文来自 Fixer agent 写的中文 `.qa/guardian/<issue>/pr-summary.md`；issue 验收回复来自 QA agent 写的中文 `.qa/guardian/<issue>/qa-acceptance.md`。Supervisor 会校验必需章节、中文内容、命令注入和疑似密钥，再补 commit SHA / PR URL / QA hash 等机器事实发布。
 - 优雅退出：Ctrl-C / SIGTERM；进程被强杀时锁按租约自动回收。
 
 ### 3. 常驻化（可选）

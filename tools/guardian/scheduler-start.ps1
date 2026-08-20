@@ -26,6 +26,16 @@
 .PARAMETER BaseBranch
   PR base branch written into config on init. Default: dev.
 
+.PARAMETER GitHubRepo
+  GitHub repository in owner/name form. If omitted, inferred from git remote origin or requested
+  interactively when config is created/refreshed.
+
+.PARAMETER WatchMode
+  Watch strategy written into config on init. Default: new-open.
+
+.PARAMETER DryRun
+  Render the resolved launch plan and preflight facts as JSON, then exit without starting scheduler.
+
 .PARAMETER SchedulerOnly
   Start only scheduler.mjs. Skips the optional Feishu WebSocket runtime; useful for local polling
   runs and visible E2E monitoring.
@@ -48,9 +58,14 @@ param(
   [switch]$Init,
   [string]$CommandAuthors = "",
   [string]$BaseBranch = "dev",
+  [string]$GitHubRepo = "",
+  [ValidateSet("new-open", "labeled")]
+  [string]$WatchMode = "new-open",
   [switch]$SchedulerOnly,
   [string]$OpenCodeServerUrl = "",
-  [string]$ProgressDir = ""
+  [string]$ProgressDir = "",
+  [switch]$DryRun,
+  [switch]$Yes
 )
 
 $ErrorActionPreference = "Stop"
@@ -106,6 +121,43 @@ function Ensure-OnPath($dir) {
   }
 }
 
+function Invoke-Git([string]$Repo, [string[]]$Args, [switch]$AllowFailure) {
+  $out = & git -C $Repo @Args 2>&1
+  $code = $LASTEXITCODE
+  if ($code -ne 0 -and -not $AllowFailure) { throw "git $($Args -join ' ') failed in ${Repo}: $out" }
+  return [ordered]@{ code = $code; output = ($out -join "`n").Trim() }
+}
+
+function Infer-GitHubRepo([string]$Repo) {
+  $remote = Invoke-Git $Repo @('remote', 'get-url', 'origin') -AllowFailure
+  if ($remote.code -ne 0 -or -not $remote.output) { return "" }
+  $value = $remote.output.Trim()
+  if ($value -match 'github\.com[:/](?<owner>[^/]+)/(?<name>[^/]+?)(?:\.git)?$') {
+    return "$($Matches.owner)/$($Matches.name)"
+  }
+  return ""
+}
+
+function Assert-CleanAndLatest([string]$Repo, [string]$Branch, [string]$Label) {
+  $inside = Invoke-Git $Repo @('rev-parse', '--is-inside-work-tree')
+  if ($inside.output -ne 'true') { throw "$Label 不是 git 仓库: $Repo" }
+  $status = Invoke-Git $Repo @('status', '--porcelain')
+  if ($status.output) { throw "$Label 工作区不干净，请先提交/暂存/清理后再启动: $Repo" }
+  $remote = Invoke-Git $Repo @('remote', 'get-url', 'origin')
+  if (-not $remote.output) { throw "$Label 缺少 origin remote: $Repo" }
+  Invoke-Git $Repo @('fetch', 'origin', $Branch) | Out-Null
+  $local = Invoke-Git $Repo @('rev-parse', $Branch)
+  $upstream = Invoke-Git $Repo @('rev-parse', "origin/$Branch")
+  if ($local.output -ne $upstream.output) { throw "$Label 本地 $Branch 与 origin/$Branch 不一致，请先同步到远端最新主分支。" }
+  return [ordered]@{ label = $Label; repo = $Repo; branch = $Branch; remote = $remote.output; commit = $local.output }
+}
+
+function Confirm-Start($message) {
+  if ($Yes -or $DryRun) { return }
+  $ans = Read-Host $message
+  if ($ans -notmatch '^(y|yes|是|确认)$') { throw "已取消：未确认启动。" }
+}
+
 $nodeExe = Find-Node
 Ensure-OnPath (Split-Path $nodeExe -Parent)
 Ensure-OnPath "C:\Program Files\GitHub CLI"
@@ -125,10 +177,19 @@ if ((Test-Path $packageRoot) -and -not (Test-Path $sdkPath)) {
 
 if (-not (Test-Path -LiteralPath $TargetRepo)) { throw "目标项目目录不存在: $TargetRepo" }
 
+$targetGithub = if ($GitHubRepo) { $GitHubRepo } else { Infer-GitHubRepo $TargetRepo }
+if (-not $targetGithub) {
+  $targetGithub = Read-Host "    请输入目标 GitHub 仓库（owner/repo，直接回车取消）"
+  if (-not $targetGithub) { throw "已取消：缺少目标 GitHub 仓库。" }
+}
+
 # gh must be authenticated (the scheduler runs gh under the hood).
 $gh = Get-Command gh -ErrorAction SilentlyContinue
-if (-not $gh) { Write-Host "    [提示] 未找到 gh，请先安装 GitHub CLI 并执行 gh auth login。" -ForegroundColor Yellow }
-else { & gh auth status *> $null; if ($LASTEXITCODE -ne 0) { Write-Host "    [提示] gh 尚未登录，请先执行 gh auth login。" -ForegroundColor Yellow } }
+if (-not $gh) { throw "未找到 gh，请先安装 GitHub CLI 并执行 gh auth login。" }
+& gh auth status *> $null
+if ($LASTEXITCODE -ne 0) { throw "gh 尚未登录，请先执行 gh auth login。" }
+& gh repo view $targetGithub *> $null
+if ($LASTEXITCODE -ne 0) { throw "无法访问 GitHub 仓库 $targetGithub，请检查 repo 名称和 gh 权限。" }
 
 # config + command_authors (fail-closed security key). If it already exists, start directly.
 # If it is missing: create it via -Init (or an interactive prompt), then start.
@@ -149,6 +210,8 @@ if (-not (Test-Path -LiteralPath $configPath)) {
   $guardianDir = Join-Path $TargetRepo ".qa\guardian"
   New-Item -ItemType Directory -Force -Path $guardianDir | Out-Null
   $newCfg = [ordered]@{
+    github_repo      = $targetGithub
+    watch_mode       = $WatchMode
     command_authors  = $list
     base_branch      = $BaseBranch
     poll_interval_ms = 60000
@@ -160,11 +223,44 @@ if (-not (Test-Path -LiteralPath $configPath)) {
   Write-Host "    可信命令作者: $($list -join ', ')" -ForegroundColor Green
 }
 $cfg = Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json
+$changedCfg = $false
+if (-not $cfg.github_repo) { $cfg | Add-Member -NotePropertyName github_repo -NotePropertyValue $targetGithub; $changedCfg = $true }
+if (-not $cfg.watch_mode) { $cfg | Add-Member -NotePropertyName watch_mode -NotePropertyValue $WatchMode; $changedCfg = $true }
+if (-not $cfg.base_branch) { $cfg | Add-Member -NotePropertyName base_branch -NotePropertyValue $BaseBranch; $changedCfg = $true }
+if ($changedCfg) {
+  [System.IO.File]::WriteAllText($configPath, (($cfg | ConvertTo-Json -Depth 8) + "`n"), (New-Object System.Text.UTF8Encoding($false)))
+  $cfg = Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json
+}
 if (-not $cfg.command_authors -or @($cfg.command_authors).Count -eq 0) {
-  Write-Host "    [提示] command_authors 为空：所有 /guardian 命令都会被拒绝（安全保护）。" -ForegroundColor Yellow
+  throw "command_authors 为空：所有 /guardian 命令都会被拒绝。请配置可信 GitHub 用户后再启动。"
 } else {
   Write-Host "    可信命令作者: $($cfg.command_authors -join ', ')" -ForegroundColor Green
 }
+
+$base = if ($cfg.base_branch) { [string]$cfg.base_branch } else { $BaseBranch }
+$guardianFacts = Assert-CleanAndLatest $GuardianRepo 'main' 'Guardian工具仓库'
+$targetFacts = Assert-CleanAndLatest $TargetRepo $base '目标值守仓库'
+Write-Host "    GitHub仓库 : $targetGithub" -ForegroundColor Green
+Write-Host "    值守模式    : $($cfg.watch_mode)" -ForegroundColor Green
+Write-Host "    PR目标分支  : $base" -ForegroundColor Green
+Write-Host "    目标仓库    : clean/latest $($targetFacts.commit.Substring(0, 8))" -ForegroundColor Green
+Write-Host "    Guardian   : clean/latest $($guardianFacts.commit.Substring(0, 8))" -ForegroundColor Green
+
+if ($DryRun) {
+  [ordered]@{
+    target_repo = $TargetRepo
+    github_repo = $targetGithub
+    base_branch = $base
+    watch_mode = $cfg.watch_mode
+    command_authors = @($cfg.command_authors)
+    target = $targetFacts
+    guardian = $guardianFacts
+    scheduler_only = [bool]$SchedulerOnly
+  } | ConvertTo-Json -Depth 8
+  return
+}
+
+Confirm-Start "    确认启动上述值守配置？输入 yes/确认 继续"
 
 if ($SchedulerOnly) {
   if ($OpenCodeServerUrl) {

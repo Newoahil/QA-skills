@@ -74,6 +74,7 @@ The write-capable agent itself is [`qa-skill/agents/qa-guardian.md`](../../qa-sk
     Configure `.qa/guardian/config.json`:
     ```json
     {
+      "github_repo": "owner/repo",
       "watch_mode": "new-open",
       "command_authors": ["your-github-login"],
      "poll_interval_ms": 60000,
@@ -87,6 +88,7 @@ The write-capable agent itself is [`qa-skill/agents/qa-guardian.md`](../../qa-sk
 
     | key | meaning | default |
     |---|---|---|
+    | `github_repo` | GitHub repository in `owner/name` form; the launcher infers it from `origin` or asks interactively | inferred/required |
     | `watch_mode` | `labeled` or `new-open` (discover issues created after watch baseline) | labeled |
    | `command_authors` | **trusted `/guardian` command authors (security, required).** Only these GitHub logins can drive commands; **unset = every command is ignored (fail-closed)** | none |
     | `poll_interval_ms` | resident scheduler poll interval; config may override the code default | 60000 |
@@ -104,6 +106,26 @@ The write-capable agent itself is [`qa-skill/agents/qa-guardian.md`](../../qa-sk
     use `shadow` before `enforced`, and use `legacy` as rollback.
 5. **Label an issue.** Put the `qa-guardian` label on the GitHub issue you want handled (one-time
    human authorization).
+
+### Windows launcher startup checks
+
+Use `tools/guardian/scheduler-start.ps1` for resident runs on Windows. It guides missing setup instead
+of silently watching the wrong checkout:
+
+```powershell
+.\tools\guardian\scheduler-start.ps1 -TargetRepo D:\your-project -Init -CommandAuthors your-login -GitHubRepo owner/repo
+.\tools\guardian\scheduler-start.ps1 -TargetRepo D:\your-project -DryRun -Yes
+```
+
+Before starting, the launcher confirms the target directory, target GitHub repository, watch mode,
+trusted command authors, and PR base branch. It then blocks startup unless both repositories are safe:
+
+- the target repository is a clean git worktree and local `base_branch` equals `origin/<base_branch>`;
+- this QA Guardian tools repository is a clean git worktree and local `main` equals `origin/main`;
+- `gh auth status` succeeds and `gh repo view <github_repo>` is accessible.
+
+`-DryRun` prints the resolved launch plan and preflight facts as JSON, then exits without starting the
+scheduler. `guardian-runtime.mjs` and `scheduler.mjs` remain non-interactive lower-level entrypoints.
 
 ## Run the single-issue chain (MVP, §15.2)
 
@@ -127,9 +149,10 @@ The guardian will, per its contract:
 6. Dispatch read-only `qa` for independent verification (**low-risk is verified too**). `FAIL` → fix
    again (≤1–2 rounds); a `FAIL` never opens a PR.
     7. On `PASS`: the Supervisor finalizes the scoped commit (`fixes #<n>`), pushes the branch,
-    creates the PR, dual-writes the trace (issue comment + `.qa/` objective case), writes
-    `GATE_2_WAIT`, notifies, and **exits**. The Fixer only edits and reports; in enforced mode the
-    scheduler/Supervisor owns the QA gate, verdict comment, and PR.
+    creates the PR from the Fixer-authored Chinese `pr-summary.md`, writes the issue verdict from the
+    QA-authored Chinese `qa-acceptance.md`, dual-writes the trace (issue comment + `.qa/` objective
+    case), writes `GATE_2_WAIT`, notifies, and **exits**. The Fixer only edits and reports; in
+    enforced mode the scheduler/Supervisor owns the QA gate, verdict comment, and PR.
 8. **Never** merges, **never** closes the issue — the human's merge does that.
 
 ### Resuming after a gate (comment commands, §11.2)
@@ -207,3 +230,7 @@ command above against a real repo to validate the full chain.
   opening the PR), with `gh pr merge/close: deny` as a second line of defense.
 - **Never idle-hangs.** Any need for human input becomes an explicit waiting/terminal state + comment
   + notification + exit — never a silent stall (§11B.6).
+- **Agent-written prose, supervisor-checked.** The Fixer writes `.qa/guardian/<n>/pr-summary.md` and
+  QA writes `.qa/guardian/<n>/qa-acceptance.md` in Chinese. Gate 2 refuses to publish missing,
+  non-Chinese, incomplete, command-injecting, or secret-looking prose; the Supervisor only appends
+  machine facts such as commit SHAs, PR URL, status, and report hash.
