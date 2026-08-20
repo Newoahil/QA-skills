@@ -25,11 +25,12 @@ import { projectLabels } from './label-io.mjs';
 import { prepareInvestigation } from './investigation-runtime.mjs';
 import { processPlanBuilder, processSpecialistRunner } from './investigation-process.mjs';
 import { discoverCapabilities } from './capabilities.mjs';
-import { artifactIdentity, quarantineArtifacts, readArtifact, readArtifactPair, writeArtifact } from './artifacts.mjs';
+import { artifactIdentity, quarantineArtifacts, readArtifact, readArtifactPair, writeArtifact, writeMarkdownArtifact } from './artifacts.mjs';
 import { assessFixingEntry } from './plan-gate.mjs';
 import { auditQaVerdict } from './qa-verdict.mjs';
 import { canCreatePr } from './qa-gate.mjs';
-import { createPullRequest } from './pr-io.mjs';
+import { openGate2PullRequest } from './gate2-pr.mjs';
+import { readRequiredQaAcceptance } from './content-artifacts.mjs';
 import { buildVerdictComment, markerForApproval, hashVerdictComment } from './verdict-comment.mjs';
 import { resolveOpencodeBin } from './opencode-bin.mjs';
 import { createOpencodeClient } from './opencode-client.mjs';
@@ -440,9 +441,10 @@ async function tick(repoDir, config, logger) {
         planPath: path.join(guardianDir, String(issue), 'plan.json'),
         humanNote,
          round: currentState.processing_round ?? 1,
-         plan: readArtifactPair(guardianDir, issue).plan,
-         mode: investigationMode,
-          deadlineMs: Number(config.child_timeout_ms ?? 20 * 60 * 1000),
+          plan: readArtifactPair(guardianDir, issue).plan,
+          mode: investigationMode,
+           deadlineMs: Number(config.child_timeout_ms ?? 20 * 60 * 1000),
+          writePrSummary: (content) => writeMarkdownArtifact(guardianDir, issue, 'pr-summary', content),
        });
        writeState(guardianDir, fixerRun.state, { touch: false });
        const fixerAction = sessionStatusAction(fixerRun.status);
@@ -471,6 +473,7 @@ async function tick(repoDir, config, logger) {
         intendedBehavior: plan.toRun.issueTitle ?? `issue #${issue}`,
         round: afterFix.processing_round ?? 1,
         deadlineMs: Number(config.child_timeout_ms ?? 20 * 60 * 1000),
+        writeQaAcceptance: (content) => writeMarkdownArtifact(guardianDir, issue, 'qa-acceptance', content),
       });
        writeState(guardianDir, qaRun.state, { touch: false });
        const qaAction = sessionStatusAction(qaRun.status);
@@ -547,19 +550,23 @@ async function tick(repoDir, config, logger) {
       } else if (!currentBranch) {
         logger.warn('pr.blocked_missing_branch', { issue });
       } else {
-        const prUrl = createPullRequest({
+        const baseBranch = config.base_branch ?? 'dev';
+        const qaAcceptance = readRequiredQaAcceptance(guardianDir, issue);
+        const pr = openGate2PullRequest({
           repoDir,
-          head: currentBranch,
-          base: config.base_branch ?? 'dev',
-          title: plan.toRun.issueTitle ?? `修复 issue #${issue}`,
-           actor: ACTORS.SUPERVISOR,
-           body: `## QA Guardian 自动验证\n\nIssue #${issue}\n\n独立 QA 结论：Overall Status: PASS\n\n请人工评审后合并。`,
+          guardianDir,
+          issue,
+          issueTitle: plan.toRun.issueTitle ?? null,
+          baseBranch,
+          currentBranch,
+          verdict: qaVerdict,
+          actor: ACTORS.SUPERVISOR,
         });
         const gate2State = readState(guardianDir, issue) ?? afterRun;
         writeState(guardianDir, {
           ...gate2State,
           state: 'GATE_2_WAIT',
-          pr_url: prUrl,
+          pr_url: pr.url,
           last_phase: 'pr-opened',
         }, { touch: false });
         logger.info('pr.opened_gate2', { issue });
@@ -568,7 +575,9 @@ async function tick(repoDir, config, logger) {
           approved: true,
           status: qaVerdict?.status ?? 'PASS',
           branch: currentBranch,
-          prUrl,
+          prUrl: pr.url,
+          prTitle: pr.title,
+          qaAcceptanceMarkdown: qaAcceptance,
           reportHash: qaVerdict?.report_hash ?? null,
           attempt: afterRun.fix_rounds ?? 1,
         }, { actor: ACTORS.SUPERVISOR, ghComment: defaultGhComment(repoDir, ACTORS.SUPERVISOR), logger });
