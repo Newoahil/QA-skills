@@ -29,6 +29,16 @@ const ERROR_CATALOG = Object.freeze({
     reason: 'OpenCode 返回错误 kind={kind}。服务可能正在重启、过载或暂时不可达。',
     next: '稍后重试；如果持续失败，检查 opencode serve 日志和 --base-url。',
   },
+  'session-message-endpoint-error': {
+    problem: 'OpenCode 会话消息接口返回 {status}',
+    reason: '会话 {sessionId} 存在，但官方 GET /session/:id/message 返回 {status}；这不是空 transcript，而是消息读取失败。',
+    next: '保留 session id 并检查 opencode serve 日志；TUI 会继续显示会话元数据和实时事件，但历史 transcript 暂不可读。',
+  },
+  'session-messages-empty-after-work': {
+    problem: 'OpenCode 会话有运行痕迹但消息列表为空',
+    reason: '会话 {sessionId} 的 token 或更新时间显示已运行，但官方 GET /session/:id/message 返回空数组；这不是“没有工作”，而是历史消息未能读取。',
+    next: '查看 Summary/Logs/Live 的状态线确认是否仍有活跃 inflight；如需完整 transcript，请保留 session id 并检查 opencode serve 日志。',
+  },
   'missing-argument': {
     problem: '命令参数不完整',
     reason: '参数缺失或组合不合法：{reason}',

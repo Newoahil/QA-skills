@@ -54,12 +54,24 @@ export function resolveSessionId(guardianDir, issueNumber, role) {
 export async function fetchTranscript(sessionId, { baseUrl, clientFactory = createOpencodeClient } = {}) {
   const client = clientFactory({ baseUrl });
   const result = await client.getMessages(sessionId);
-  if (result.kind === 'ok') return { kind: 'ok', messages: Array.isArray(result.messages) ? result.messages : [] };
+  if (result.kind === 'ok') {
+    const messages = Array.isArray(result.messages) ? result.messages : [];
+    if (messages.length === 0 && typeof client.getSession === 'function') {
+      const session = await client.getSession(sessionId);
+      const tokens = session.kind === 'ok' ? session.session?.tokens ?? null : null;
+      const tokenCount = Number(tokens?.input ?? 0) + Number(tokens?.output ?? 0) + Number(tokens?.reasoning ?? 0);
+      if (tokenCount > 0) return { kind: 'error', error: guidedError('session-messages-empty-after-work', { sessionId }) };
+    }
+    return { kind: 'ok', messages };
+  }
   if (result.kind === 'unusable-session') {
     return { kind: 'error', error: guidedError('session-not-found', { sessionId }) };
   }
   if (result.kind === 'retryable') {
     return { kind: 'error', error: guidedError('opencode-unreachable', { baseUrl: baseUrl ?? '默认地址' }) };
+  }
+  if (result.kind === 'message-endpoint-error') {
+    return { kind: 'error', error: guidedError('session-message-endpoint-error', { sessionId, status: result.status ?? '-' }) };
   }
   return { kind: 'error', error: guidedError('session-fetch-error', { kind: result.kind ?? 'unknown' }) };
 }

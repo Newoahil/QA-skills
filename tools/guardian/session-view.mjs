@@ -61,22 +61,26 @@ async function main() {
   if (!sessionId) {
     if (!args.repo || !issue || !args.agent) {
       console.error(guidedError('missing-argument', { reason: '请提供 --session，或同时提供 --repo、--issue、--agent。' }));
-      process.exit(2);
+      process.exitCode = 2;
+      return;
     }
     const requestedRepo = path.resolve(args.repo);
     const repoDir = resolveViewerRepo(requestedRepo, path.join(path.dirname(fileURLToPath(import.meta.url)), 'scheduler.config.json'));
     if (!hasGuardianDir(repoDir)) {
       console.error(guidedError('no-guardian-dir'));
-      process.exit(2);
+      process.exitCode = 2;
+      return;
     }
     const resolved = resolveSessionId(guardianDirFor(repoDir), issue, args.agent);
     if (resolved.kind === 'missing-issue') {
       console.error(guidedError('no-issue-state', { issue }));
-      process.exit(2);
+      process.exitCode = 2;
+      return;
     }
     if (resolved.kind === 'missing-session') {
       console.error(guidedError('no-session', { issue, role: resolved.role, state: resolved.record.state }));
-      process.exit(2);
+      process.exitCode = 2;
+      return;
     }
     sessionId = resolved.sessionId;
     role = resolved.role;
@@ -84,7 +88,8 @@ async function main() {
   const result = await fetchTranscript(sessionId, { baseUrl: args['base-url'] ?? DEFAULT_BASE_URL });
   if (result.kind !== 'ok') {
     console.error(result.error);
-    process.exit(1);
+    process.exitCode = 1;
+    return;
   }
   if (args.json) {
     console.log(JSON.stringify(result.messages, null, 2));
@@ -97,6 +102,6 @@ if (process.argv[1]?.endsWith('session-view.mjs')) {
   main().catch((error) => {
     const reason = error instanceof Error ? error.message : '未知错误';
     console.error(guidedError('session-fetch-error', { kind: reason }));
-    process.exit(1);
+    process.exitCode = 1;
   });
 }

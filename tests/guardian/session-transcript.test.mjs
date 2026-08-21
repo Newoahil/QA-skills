@@ -86,4 +86,21 @@ test('fetchTranscript maps OpenCode client outcomes to transcript or Chinese gui
   const retryable = await fetchTranscript('ses_retry', { baseUrl: 'http://127.0.0.1:3000', clientFactory: () => ({ getMessages: async () => ({ kind: 'retryable' }) }) });
   assert.equal(retryable.kind, 'error');
   assert.match(retryable.error, /无法连接 OpenCode 服务/);
+
+  const badMessages = await fetchTranscript('ses_bad', { clientFactory: () => ({ getMessages: async () => ({ kind: 'message-endpoint-error', status: 400 }) }) });
+  assert.equal(badMessages.kind, 'error');
+  assert.match(badMessages.error, /消息接口返回 400/);
+  assert.match(badMessages.error, /不是空 transcript/);
+});
+
+test('fetchTranscript treats empty messages after token usage as unread transcript not no work', async () => {
+  const result = await fetchTranscript('ses_worked', {
+    clientFactory: () => ({
+      getMessages: async () => ({ kind: 'ok', messages: [] }),
+      getSession: async () => ({ kind: 'ok', session: { tokens: { input: 10, output: 3, reasoning: 0 } } }),
+    }),
+  });
+  assert.equal(result.kind, 'error');
+  assert.match(result.error, /有运行痕迹但消息列表为空/);
+  assert.match(result.error, /不是“没有工作”/);
 });
