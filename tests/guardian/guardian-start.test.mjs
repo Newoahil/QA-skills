@@ -39,6 +39,28 @@ test('guardian-start.ps1 forwards a control progress dir so the TUI Logs tab sho
   assert.match(text, /-ProgressDir '\$quotedProgressDir'/);
 });
 
+test('guardian-start.ps1 starts a shared opencode serve and points scheduler + TUI at it', () => {
+  const text = readFileSync('tools/guardian/guardian-start.ps1', 'utf8');
+  assert.match(text, /function Start-SharedOpencodeServer/);
+  assert.match(text, /'serve', '--port', "\$Port", '--hostname', '127\.0\.0\.1'/);
+  assert.match(text, /global\/health/);
+  assert.match(text, /\$schedulerArguments \+= @\('-OpenCodeServerUrl', \$plannedServerUrl\)/);
+  assert.match(text, /\$tuiArguments \+= @\('--base-url', \$plannedServerUrl\)/);
+  assert.match(text, /-OpenCodeServerUrl '\$quotedServerUrl'/);
+  assert.match(text, /opencode attach \$serverUrl/);
+  // Opt-out and graceful degrade to child processes when the server is unavailable.
+  assert.match(text, /\$useSharedServer = -not \$NoSharedServer/);
+  assert.match(text, /Where-Object \{ \$_ -ne '-OpenCodeServerUrl'/);
+});
+
+test('scheduler-start.ps1 applies shared server + progress env to both polling and combined runtimes', () => {
+  const text = readFileSync('tools/guardian/scheduler-start.ps1', 'utf8');
+  // The env wiring must be ABOVE the SchedulerOnly branch so both runtimes inherit it.
+  const envIndex = text.indexOf('$env:QA_GUARDIAN_OPENCODE_SERVER_URL = $OpenCodeServerUrl');
+  const branchIndex = text.indexOf('if ($SchedulerOnly) {');
+  assert.ok(envIndex > 0 && branchIndex > 0 && envIndex < branchIndex);
+});
+
 test('guardian-start.ps1 fails closed without an existing per-project binding', () => {
   const text = readFileSync('tools/guardian/guardian-start.ps1', 'utf8');
   assert.match(text, /No Guardian binding found for this project/);

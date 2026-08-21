@@ -12,6 +12,8 @@
 param(
   [string]$TargetRepo = "",
   [switch]$SchedulerOnly,
+  [int]$ServerPort = 4096,
+  [switch]$NoSharedServer,
   [switch]$DryRun,
   [switch]$Yes
 )
@@ -24,6 +26,39 @@ $GuardianRepo = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 $bindingPath = Join-Path $PSScriptRoot "scheduler.config.json"
 $schedulerScript = Join-Path $PSScriptRoot "scheduler-start.ps1"
 $tuiScript = Join-Path $PSScriptRoot "dashboard-tui.mjs"
+
+function Resolve-OpencodeBin {
+  $command = Get-Command opencode -ErrorAction SilentlyContinue
+  if ($command) { return $command.Source }
+  $candidates = @(
+    (Join-Path $env:APPDATA 'npm\opencode.cmd'),
+    (Join-Path $env:APPDATA 'npm\node_modules\opencode-ai\bin\opencode.exe')
+  )
+  foreach ($candidate in $candidates) { if (Test-Path -LiteralPath $candidate) { return $candidate } }
+  return $null
+}
+
+# Start a shared `opencode serve` so every Guardian agent session (fixer/qa/specialists) lives on one
+# server that the read-only TUI and `opencode attach` can view natively. Returns the base URL, or
+# $null when a shared server is disabled/unavailable (scheduler then falls back to child processes).
+function Start-SharedOpencodeServer([int]$Port) {
+  $bin = Resolve-OpencodeBin
+  if (-not $bin) {
+    Write-Host "    [warn] opencode executable not found; skipping shared server (specialist sessions won't be natively viewable in the TUI)." -ForegroundColor Yellow
+    return $null
+  }
+  Start-Process -FilePath $bin -WorkingDirectory $GuardianRepo -WindowStyle Minimized -ArgumentList @('serve', '--port', "$Port", '--hostname', '127.0.0.1') -PassThru | Out-Null
+  $baseUrl = "http://127.0.0.1:$Port"
+  for ($attempt = 0; $attempt -lt 60; $attempt++) {
+    try {
+      $health = Invoke-WebRequest -UseBasicParsing -Uri "$baseUrl/global/health" -TimeoutSec 2
+      if ($health.StatusCode -eq 200) { return $baseUrl }
+    } catch {}
+    Start-Sleep -Seconds 1
+  }
+  Write-Host "    [warn] shared opencode serve did not become ready in time; falling back to child-process mode." -ForegroundColor Yellow
+  return $null
+}
 
 function Canonical-LauncherPath([string]$Value) {
   if (-not $Value) { return "" }
@@ -125,17 +160,27 @@ $commandAuthorArgument = ($commandAuthors -join ',')
 # read-only TUI Logs tab (progress/<issue>/<agent>.log) shows live progress during investigation.
 $progressDir = Join-Path (Join-Path $controlRepo '.qa\guardian') 'progress'
 
+# Plan B: a shared `opencode serve` hosts every Guardian agent session so the TUI Transcript tab and
+# `opencode attach http://127.0.0.1:<port>` can view specialist/fixer/qa work natively. The scheduler
+# runs its SDK sessions against this server; without it, it falls back to isolated child processes
+# whose conversations are not natively viewable. --NoSharedServer opts out.
+$useSharedServer = -not $NoSharedServer
+$plannedServerUrl = if ($useSharedServer) { "http://127.0.0.1:$ServerPort" } else { $null }
+
 $schedulerArguments = @(
   '-NoLogo', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $schedulerScript,
   '-TargetRepo', $TargetRepo, '-Yes', '-ProgressDir', $progressDir
 )
 if ($commandAuthorArgument) { $schedulerArguments += @('-CommandAuthors', $commandAuthorArgument) }
+if ($plannedServerUrl) { $schedulerArguments += @('-OpenCodeServerUrl', $plannedServerUrl) }
 if ($SchedulerOnly) { $schedulerArguments += '-SchedulerOnly' }
 $schedulerPreflightArguments = $schedulerArguments + '-DryRun'
 $tuiArguments = @($tuiScript, '--repo', $TargetRepo)
+if ($plannedServerUrl) { $tuiArguments += @('--base-url', $plannedServerUrl) }
 $launchPlan = [ordered]@{
   target_repo = $TargetRepo
   control_repo = $controlRepo
+  shared_server_url = $plannedServerUrl
   scheduler = [ordered]@{ file_path = 'powershell.exe'; arguments = $schedulerArguments }
   scheduler_preflight = [ordered]@{ file_path = 'powershell.exe'; arguments = $schedulerPreflightArguments }
   tui = [ordered]@{ file_path = $nodeExe; arguments = $tuiArguments }
@@ -147,6 +192,22 @@ $launchPlan = [ordered]@{
 if ($DryRun) {
   $launchPlan | ConvertTo-Json -Depth 6 -Compress
   return
+}
+
+# Start the shared server for real (only in the live path). If it fails to come up, degrade to the
+# child-process fallback by dropping the server URL from both scheduler and TUI arguments.
+$serverUrl = $null
+if ($useSharedServer) {
+  $serverUrl = Start-SharedOpencodeServer $ServerPort
+  if (-not $serverUrl) {
+    $schedulerArguments = @($schedulerArguments | Where-Object { $_ -ne '-OpenCodeServerUrl' -and $_ -ne $plannedServerUrl })
+    $tuiArguments = @($tuiArguments | Where-Object { $_ -ne '--base-url' -and $_ -ne $plannedServerUrl })
+  } else {
+    Write-Host "==> 共享 opencode 服务已就绪: $serverUrl" -ForegroundColor Green
+    Write-Host "    Run 'opencode attach $serverUrl' in another terminal to view specialist/fixer/QA sessions natively." -ForegroundColor Gray
+    # Refresh preflight args to match the (possibly adjusted) scheduler args.
+    $schedulerPreflightArguments = $schedulerArguments + '-DryRun'
+  }
 }
 
 $previousErrorActionPreference = $ErrorActionPreference
@@ -167,6 +228,10 @@ $schedulerCommand = "& '$quotedSchedulerScript' -TargetRepo '$quotedTargetRepo' 
 if ($commandAuthorArgument) {
   $quotedCommandAuthors = $commandAuthorArgument.Replace("'", "''")
   $schedulerCommand += " -CommandAuthors '$quotedCommandAuthors'"
+}
+if ($serverUrl) {
+  $quotedServerUrl = $serverUrl.Replace("'", "''")
+  $schedulerCommand += " -OpenCodeServerUrl '$quotedServerUrl'"
 }
 if ($SchedulerOnly) { $schedulerCommand += ' -SchedulerOnly' }
 $schedulerWindowArguments = @('-NoLogo', '-NoExit', '-ExecutionPolicy', 'Bypass', '-Command', $schedulerCommand)
