@@ -103,6 +103,9 @@ export function newState(issueNumber, now = new Date().toISOString()) {
     investigation_started_at: null,
     investigation_completed_at: null,
     investigation_budget_ms: null,
+    investigation_duration_ms: null, // measured wall-clock of the last investigation run (telemetry, not a limit)
+    plan_duration_ms: null, // measured wall-clock of the last plan-builder step
+    specialist_durations_ms: {}, // { <role>: ms } measured per specialist for future tuning
     investigation_attempts: 0,
     specialists_requested: [],
     specialists_completed: [],

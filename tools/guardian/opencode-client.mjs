@@ -123,11 +123,18 @@ export function createOpencodeClient({ baseUrl, sdk } = {}) {
     return result?.data?.id ?? result?.id ?? result;
   }
 
-  async function prompt({ sessionId, agent, parts, format = null, system = null }) {
+  async function prompt({ sessionId, agent, parts, format = null, system = null, signal = null }) {
     try {
       const body = { agent, parts };
       if (format) body.format = format;
       if (system) body.system = system;
+      // Cooperative abort: when the caller's signal fires, tell the server to abort the session so
+      // an in-flight investigation prompt does not keep running after Ctrl+C.
+      const onAbort = () => { abort(sessionId).catch(() => undefined); };
+      if (signal) {
+        if (signal.aborted) onAbort();
+        else signal.addEventListener('abort', onAbort, { once: true });
+      }
       // SDK 1.18.18 generated path template is broken (`/session/%7Bid%7D/message`) even when
       // path.sessionID is supplied. Use the SDK's low-level client with an explicit URL until the
       // upstream codegen bug is fixed. Still uses the official SDK transport/interceptors.
@@ -135,7 +142,8 @@ export function createOpencodeClient({ baseUrl, sdk } = {}) {
         url: `/session/${encodeURIComponent(sessionId)}/message`,
         body,
         headers: { 'Content-Type': 'application/json' },
-      });
+        ...(signal ? { signal } : {}),
+      }).finally(() => { if (signal) signal.removeEventListener('abort', onAbort); });
       const data = result?.data ?? result;
       const text = Array.isArray(data?.parts)
         ? data.parts.filter((part) => part?.type === 'text' && typeof part.text === 'string').map((part) => part.text).join('')

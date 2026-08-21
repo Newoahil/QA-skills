@@ -7,11 +7,11 @@ import { validatePlan } from './plan-validator.mjs';
 import { resolveBudgets } from './budgets.mjs';
 import { randomUUID } from 'node:crypto';
 
-export async function prepareInvestigation({ issue, issueData, repoDir, qaRuntimeDir = repoDir, guardianDir, issueClass, complexity, capabilities, config = {}, memoryContext = null, runSpecialist, buildPlan, state = null, round = 1 }) {
+export async function prepareInvestigation({ issue, issueData, repoDir, qaRuntimeDir = repoDir, guardianDir, issueClass, complexity, capabilities, config = {}, memoryContext = null, runSpecialist, buildPlan, state = null, round = 1, signal = null, now = () => Date.now() }) {
   const paths = artifactPaths(guardianDir, issue);
   const budgets = resolveBudgets(config, complexity);
   const investigationId = randomUUID();
-  const roles = selectSpecialists({ issueClass, complexity, capabilities, config });
+  const selectedRoles = selectSpecialists({ issueClass, complexity, capabilities, config }).slice(0, budgets.max_specialists);
   if (typeof runSpecialist !== 'function') throw new Error('investigation specialist runner is not configured');
   if (typeof buildPlan !== 'function') throw new Error('investigation plan builder is not configured');
 
@@ -20,28 +20,42 @@ export async function prepareInvestigation({ issue, issueData, repoDir, qaRuntim
     title: issueData?.title ?? '',
     body: issueData?.body ?? '',
   });
-  const results = await Promise.all(roles.slice(0, budgets.max_specialists).map((role) =>
-    runSpecialist({
-      role,
-      issue,
-      issueData,
-      issueDataPath: paths.issue_data_path,
-       repoDir,
-       qaRuntimeDir,
-      dossierPath: paths.dossier_path,
-      timeout_ms: budgets.specialist_timeout_ms,
-      state,
-      round,
-      memoryContext,
-    }),
-  ));
+
+  // Telemetry, not a limit: record how long the investigation actually takes so future tuning is
+  // evidence-based. No time budget is enforced here (budgets default to unlimited).
+  const investigationStartedAt = now();
+  const specialistDurations = {};
+  const results = await Promise.all(selectedRoles.map(async (role) => {
+    const startedAt = now();
+    try {
+      return await runSpecialist({
+        role,
+        issue,
+        issueData,
+        issueDataPath: paths.issue_data_path,
+        repoDir,
+        qaRuntimeDir,
+        dossierPath: paths.dossier_path,
+        timeout_ms: budgets.specialist_timeout_ms,
+        state,
+        round,
+        memoryContext,
+        signal,
+      });
+    } finally {
+      specialistDurations[role] = now() - startedAt;
+    }
+  }));
   const synthesis = synthesizeDossier({ issue, issueClass, specialistResults: results, capabilities, memoryContext });
   const dossier = { ...synthesis.dossier, investigation_id: investigationId };
   writeArtifact(guardianDir, issue, 'dossier', dossier);
 
-  const plan = { ...(await buildPlan({ issue, dossier, hypotheses: synthesis.ranked_hypotheses, repoDir, qaRuntimeDir, memoryContext })), investigation_id: investigationId };
+  const planStartedAt = now();
+  const plan = { ...(await buildPlan({ issue, dossier, hypotheses: synthesis.ranked_hypotheses, repoDir, qaRuntimeDir, memoryContext, signal })), investigation_id: investigationId };
+  const planDurationMs = now() - planStartedAt;
   const planResult = validatePlan(plan, dossier);
   writeArtifact(guardianDir, issue, 'plan', plan);
+  const investigationCompletedAt = now();
 
   return {
     ...synthesis,
@@ -50,8 +64,15 @@ export async function prepareInvestigation({ issue, issueData, repoDir, qaRuntim
     planResult,
     artifact_paths: paths,
     budgets,
-    specialists: roles,
+    specialists: selectedRoles,
     opencode: state?.opencode ?? null,
+    timing: {
+      investigation_started_at: new Date(investigationStartedAt).toISOString(),
+      investigation_completed_at: new Date(investigationCompletedAt).toISOString(),
+      investigation_duration_ms: investigationCompletedAt - investigationStartedAt,
+      plan_duration_ms: planDurationMs,
+      specialist_durations_ms: specialistDurations,
+    },
   };
 }
 

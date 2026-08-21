@@ -63,6 +63,39 @@ test('prepareInvestigation respects disabled optional specialists', async () => 
   }
 });
 
+test('prepareInvestigation records overall + per-role durations without enforcing a limit', async () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'guardian-investigation-'));
+  const seenTimeouts = [];
+  let clock = 1000;
+  const now = () => clock;
+  try {
+    const result = await prepareInvestigation({
+      issue: 205, repoDir: 'D:/repo', guardianDir: root, issueClass: 'bug', complexity: 'simple',
+      issueData: { title: 'empty state text', body: 'wrong copy' },
+      capabilities: {}, config: {}, // budgets default to unlimited (0)
+      now,
+      runSpecialist: async ({ role, timeout_ms }) => {
+        seenTimeouts.push(timeout_ms);
+        clock += 5000; // simulate 5s of work per specialist
+        return { specialist: role, hypotheses: [{ id: 'H1', statement: 'root' }], evidence: [{ id: `E-${role}`, kind: 'source_invariant', source: role, observation: 'o', supports: ['H1'], contradicts: [] }], unresolved_facts: [], acceptance_criteria: [] };
+      },
+      buildPlan: async () => { clock += 2000; return { root_cause: 'root', affected_files: ['a.mjs'], non_goals: ['b'], test_plan: ['t'], acceptance_criteria: ['works'], rollback_plan: 'revert', evidence_ids: ['E-guardian-code', 'E-guardian-runtime'], risk: 'LOW' }; },
+    });
+    // No forced timeout: specialists receive 0 (unlimited).
+    assert.equal(seenTimeouts.every((ms) => ms === 0), true);
+    // Durations are recorded (telemetry). Specialists run concurrently over a shared fake clock, so
+    // assert they are captured and positive rather than pinning exact concurrent values.
+    assert.ok(result.timing.investigation_duration_ms >= 12000);
+    assert.equal(result.timing.plan_duration_ms, 2000);
+    assert.ok(result.timing.specialist_durations_ms['guardian-code'] > 0);
+    assert.ok(result.timing.specialist_durations_ms['guardian-runtime'] > 0);
+    assert.ok(typeof result.timing.investigation_started_at === 'string');
+    assert.ok(typeof result.timing.investigation_completed_at === 'string');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('prepareInvestigation fails closed without specialist runner', async () => {
   const root = mkdtempSync(path.join(tmpdir(), 'guardian-investigation-'));
   try {

@@ -63,6 +63,52 @@ test('runAgentJson streams OpenCode tool progress and parses text events', async
   assert.equal(result.specialist, 'guardian-code');
 });
 
+test('runAgentJson with no timeout (0) never installs a killer and an abort signal kills the child', async () => {
+  const child = fakeChild();
+  let killed = false;
+  child.kill = () => { killed = true; child.emit('close', 137); };
+  const controller = new AbortController();
+  const spawnImpl = () => child;
+  const pending = runAgentJson({
+    agent: 'guardian-code',
+    repoDir: 'D:/repo',
+    prompt: 'issue data',
+    timeoutMs: 0, // unlimited: no forced kill
+    spawnImpl,
+    signal: controller.signal,
+    progressSink: () => {},
+  });
+  // The child never finishes on its own; only the abort ends it.
+  controller.abort();
+  await assert.rejects(pending);
+  assert.equal(killed, true);
+});
+
+test('processSpecialistRunner stamps duration and failed status on the session even when the run fails', async () => {
+  const child = fakeChild();
+  const spawnImpl = () => {
+    queueMicrotask(() => child.emit('close', 1)); // non-zero exit → failure
+    return child;
+  };
+  const state = { opencode: { schema_version: 1, specialists: {} } };
+  await assert.rejects(() => processSpecialistRunner({
+    role: 'guardian-code',
+    issue: 205,
+    issueDataPath: 'D:/ctrl/.qa/guardian/205/issue-data.json',
+    qaRuntimeDir: 'D:/qa',
+    dossierPath: 'D:/ctrl/.qa/guardian/205/dossier.json',
+    timeout_ms: 0,
+    spawnImpl,
+    state,
+    round: 1,
+  }));
+  const record = state.opencode.specialists['guardian-code'];
+  assert.equal(record.last_status, 'failed');
+  assert.equal(typeof record.duration_ms, 'number');
+  assert.equal(record.role, 'guardian-code');
+  assert.equal(record.issue, 205);
+});
+
 test('processSpecialistRunner keeps issue body out of the process argv', async () => {
   // Given: non-ASCII issue data and an already materialized UTF-8 issue-data path.
   const child = fakeChild();
