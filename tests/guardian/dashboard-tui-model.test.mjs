@@ -199,6 +199,39 @@ test('loadDashboardTuiSnapshot default current filter hides terminal issues', as
   }
 });
 
+test('live tab renders buffered event lines when enabled and guidance when disabled', async () => {
+  const repo = tempRepo();
+  const guardianDir = guardianDirFor(repo);
+  try {
+    mkdirSync(guardianDir, { recursive: true });
+    const record = { ...newState(205, '2026-08-20T10:00:00.000Z'), state: STATES.INVESTIGATING };
+    writeFileSync(path.join(guardianDir, '205.json'), `${JSON.stringify(record)}\n`, 'utf8');
+
+    const withLive = await loadDashboardTuiSnapshot({
+      requestedRepo: repo,
+      bindingFile: path.join('tests', 'guardian', 'does-not-exist.json'),
+      selectedIssue: 205,
+      tab: TUI_TABS.live,
+      baseUrl: 'http://127.0.0.1:4096',
+      liveLines: ['[03:00:00] 工具 grep (running) badDebtReserves'],
+    });
+    assert.match(withLive.contextLines.join('\n'), /实时事件流: http:\/\/127\.0\.0\.1:4096/);
+    assert.match(withLive.contextLines.join('\n'), /工具 grep \(running\)/);
+
+    const disabled = await loadDashboardTuiSnapshot({
+      requestedRepo: repo,
+      bindingFile: path.join('tests', 'guardian', 'does-not-exist.json'),
+      selectedIssue: 205,
+      tab: TUI_TABS.live,
+      liveLines: null,
+    });
+    assert.match(disabled.contextLines.join('\n'), /实时事件流未启用/);
+    assert.match(disabled.contextLines.join('\n'), /guardian-start\.bat/);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
 test('createInitialUiState defaults to the current filter and t cycles it', () => {
   const ui = createInitialUiState();
   assert.equal(ui.stateFilter, 'current');

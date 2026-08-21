@@ -3,13 +3,17 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { guidedError } from './dashboard-errors.mjs';
-import { createKeypressParser } from './dashboard-tui-input.mjs';
+import { createKeypressParser, TUI_TABS } from './dashboard-tui-input.mjs';
 import { loadDashboardTuiSnapshot, createInitialUiState, parseRefreshSeconds, reduceUiState, DEFAULT_STATE_FILTER } from './dashboard-tui-model.mjs';
 import { renderDashboardTui } from './dashboard-tui-render.mjs';
 import { createTerminalSession } from './dashboard-tui-terminal.mjs';
+import { createEventBuffer, eventMatchesSessions, mapEventToLine } from './dashboard-tui-events.mjs';
+import { extractSessionIds } from './dashboard-model.mjs';
+import { createOpencodeClient } from './opencode-client.mjs';
 
 const DEFAULT_BASE_URL = process.env.OPENCODE_BASE_URL ?? 'http://localhost:3000';
 const ESCAPE_FLUSH_DELAY_MS = 25;
+const EVENT_RECONNECT_MS = 3000;
 
 export function tuiUsage() {
   return `QA Guardian 单终端只读 TUI
@@ -28,7 +32,7 @@ export function tuiUsage() {
 
 键位:
   q 退出 | ↑/↓ 或 j/k 导航 | Enter 进入详情滚动 | Esc 返回队列
-  1 摘要 | 2 transcript | 3 logs | 4 产物/错误
+  1 摘要 | 2 transcript | 3 logs | 4 产物/错误 | 5 实时(需 --base-url 共享 serve)
   r 手动刷新 | a 自动刷新开关 | t 切换队列筛选 | ? 帮助 | F transcript 完整模式 | G/p logs follow
 
 安全说明:
@@ -63,6 +67,8 @@ export async function runDashboardTuiCli(argv, deps = {}) {
     setIntervalImpl = global.setInterval,
     clearIntervalImpl = global.clearInterval,
     terminalFactory = createTerminalSession,
+    eventClientFactory = createOpencodeClient,
+    eventReconnectMs = EVENT_RECONNECT_MS,
   } = deps;
   const args = parseCli(argv);
   if (args.help) {
@@ -81,6 +87,11 @@ export async function runDashboardTuiCli(argv, deps = {}) {
   const refreshSeconds = parseRefreshSeconds(args.refresh);
   const bindingFile = path.join(path.dirname(fileURLToPath(import.meta.url)), 'scheduler.config.json');
   const requestedRepo = path.resolve(args.repo);
+  // Live event view is enabled only with an explicit --base-url (a running shared serve). Without it,
+  // the live tab shows guidance and the TUI keeps working with the on-disk snapshot only.
+  const liveBaseUrl = args['base-url'] ?? null;
+  const liveEnabled = Boolean(liveBaseUrl);
+  const eventBuffer = liveEnabled ? createEventBuffer() : null;
   let ui = createInitialUiState({
     selectedIssue: args.issue ? Number(args.issue) : null,
     refreshSeconds,
@@ -124,8 +135,9 @@ export async function runDashboardTuiCli(argv, deps = {}) {
         tab: ui.tab,
         stateFilter: ui.stateFilter,
         transcriptFull: ui.transcriptFull,
-        baseUrl: args['base-url'] ?? DEFAULT_BASE_URL,
+        baseUrl: liveBaseUrl ?? DEFAULT_BASE_URL,
         transcriptFetcher,
+        liveLines: eventBuffer ? eventBuffer.lines() : null,
       });
       ui.selectedIssue = snapshot.selectedIssue;
       ui.lastRefreshAt = Date.now();
@@ -171,9 +183,61 @@ export async function runDashboardTuiCli(argv, deps = {}) {
     }, ui.refreshSeconds * 1000);
   }
 
+  // Real-time event view: subscribe once to the shared serve's official SSE stream and append mapped
+  // lines to the bounded buffer, filtered to the selected issue's session ids. No polling. Auto
+  // reconnects on stream end/error until cleanup. A repaint fires only while the live tab is visible.
+  let eventCancel = null;
+  let eventStopped = false;
+  function currentSessionIds() {
+    const record = snapshot?.record;
+    if (!record) return [];
+    const ids = extractSessionIds(record).map((session) => session.session_id).filter(Boolean);
+    if (record.opencode?.inflight?.session_id) ids.push(record.opencode.inflight.session_id);
+    return ids;
+  }
+  async function runEventSubscription() {
+    if (!liveEnabled) return;
+    const client = eventClientFactory({ baseUrl: liveBaseUrl });
+    while (!cleaned && !eventStopped) {
+      let subscription;
+      try {
+        subscription = await client.subscribeEvents();
+      } catch {
+        subscription = { kind: 'error' };
+      }
+      if (cleaned || eventStopped) return;
+      if (subscription.kind !== 'ok' || !subscription.stream) {
+        eventBuffer.push(`[连接] 无法连接实时事件流，${Math.round(eventReconnectMs / 1000)}s 后重试…`);
+        if (ui.tab === TUI_TABS.live) repaint();
+        await new Promise((resolve) => setTimeout(resolve, eventReconnectMs));
+        continue;
+      }
+      eventCancel = subscription.cancel ?? null;
+      try {
+        for await (const event of subscription.stream) {
+          if (cleaned || eventStopped) break;
+          if (!eventMatchesSessions(event, currentSessionIds())) continue;
+          const line = mapEventToLine(event);
+          if (!line) continue;
+          eventBuffer.push(line);
+          // Rebuild the snapshot (cheap, reads the buffer) so the live tab reflects the new line
+          // immediately without any polling timer.
+          if (ui.tab === TUI_TABS.live) refreshNow('live').catch(() => undefined);
+        }
+      } catch {
+        // stream error → fall through to reconnect
+      }
+      eventCancel = null;
+      if (cleaned || eventStopped) return;
+      await new Promise((resolve) => setTimeout(resolve, eventReconnectMs));
+    }
+  }
+
   function cleanup(code, error) {
     if (cleaned) return;
     cleaned = true;
+    eventStopped = true;
+    if (typeof eventCancel === 'function') { try { eventCancel(); } catch { /* best-effort */ } }
     if (intervalId) clearIntervalImpl(intervalId);
     if (escapeFlushTimer) clearTimeout(escapeFlushTimer);
     stdin.removeListener('data', onData);
@@ -256,6 +320,7 @@ export async function runDashboardTuiCli(argv, deps = {}) {
     repaint();
     await refreshNow('manual');
     installAutoRefresh();
+    if (liveEnabled) { runEventSubscription().catch(() => undefined); }
     return exitPromise;
   } catch (error) {
     cleanup(undefined);

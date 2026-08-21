@@ -22,6 +22,7 @@ export const TUI_TABS = Object.freeze({
   transcript: 'transcript',
   logs: 'logs',
   artifacts: 'artifacts',
+  live: 'live',
 });
 
 const TAB_KEYS = Object.freeze({
@@ -29,6 +30,7 @@ const TAB_KEYS = Object.freeze({
   '2': TUI_TABS.transcript,
   '3': TUI_TABS.logs,
   '4': TUI_TABS.artifacts,
+  '5': TUI_TABS.live,
 });
 
 export function parseKeypress(input) {

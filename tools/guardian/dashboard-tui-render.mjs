@@ -17,6 +17,7 @@ const TAB_LABELS = Object.freeze({
   [TUI_TABS.transcript]: '2 Transcript',
   [TUI_TABS.logs]: '3 Logs',
   [TUI_TABS.artifacts]: '4 产物/错误',
+  [TUI_TABS.live]: '5 实时',
 });
 
 function panelBorder(title, innerWidth, side, focused) {
@@ -71,7 +72,7 @@ function helpLines(ui) {
     '  ↑/↓ 或 j/k 队列移动 / 当前 pane 滚动',
     '  ←/→ 或 h/l 在队列/详情/上下文间切焦点',
     '  Enter 进入详情滚动，Esc 返回队列',
-    '  1 摘要  2 transcript  3 logs  4 产物/错误',
+    '  1 摘要  2 transcript  3 logs  4 产物/错误  5 实时(需共享 serve)',
     '  r 手动刷新',
     '  a 切换自动刷新',
     '  t 切换队列筛选（关注中 / 处理中 / 等待人工 / 全部历史）',

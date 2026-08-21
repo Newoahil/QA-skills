@@ -84,6 +84,7 @@ export async function loadDashboardTuiSnapshot({
   transcriptFull,
   baseUrl,
   transcriptFetcher = fetchTranscript,
+  liveLines = null,
   now = Date.now(),
 } = {}) {
   const repoDir = resolveViewerRepo(path.resolve(requestedRepo), bindingFile);
@@ -107,7 +108,7 @@ export async function loadDashboardTuiSnapshot({
   const stats = dashboardStats(records);
   const selected = selectIssue(records, selectedIssue);
   const record = selected.record;
-  const contextLines = await loadContextLines({ baseUrl, guardianDir, now, record, stats, tab, transcriptFetcher, transcriptFull });
+  const contextLines = await loadContextLines({ baseUrl, guardianDir, now, record, stats, tab, transcriptFetcher, transcriptFull, liveLines });
 
   return {
     kind: 'ok',
@@ -124,7 +125,7 @@ export async function loadDashboardTuiSnapshot({
   };
 }
 
-async function loadContextLines({ baseUrl, guardianDir, now, record, stats, tab, transcriptFetcher, transcriptFull }) {
+async function loadContextLines({ baseUrl, guardianDir, now, record, stats, tab, transcriptFetcher, transcriptFull, liveLines }) {
   switch (tab) {
     case TUI_TABS.transcript:
       return buildTranscriptLines(record, { baseUrl, full: transcriptFull, transcriptFetcher });
@@ -132,9 +133,28 @@ async function loadContextLines({ baseUrl, guardianDir, now, record, stats, tab,
       return buildProgressLogLines(guardianDir, record);
     case TUI_TABS.artifacts:
       return buildArtifactErrorLines(guardianDir, record);
+    case TUI_TABS.live:
+      return buildLiveEventLines(liveLines, baseUrl);
     default:
       return buildSummaryTabLines(record, stats, now);
   }
+}
+
+// Live tab: rendered from the CLI's in-memory SSE event buffer (no polling). When no shared server
+// is configured, explain how to enable native real-time viewing instead of showing an empty pane.
+function buildLiveEventLines(liveLines, baseUrl) {
+  if (!Array.isArray(liveLines)) {
+    return [
+      '实时事件流未启用。',
+      '',
+      '原因: 未连接共享 opencode 服务（--base-url 未指向运行中的 serve）。',
+      '下一步: 用 guardian-start.bat 启动（默认共享 serve），或运行 dashboard-tui.mjs --base-url http://127.0.0.1:4096。',
+    ];
+  }
+  if (liveLines.length === 0) {
+    return [`实时事件流已连接: ${baseUrl}`, '', '等待专员事件…（专员开始工作后逐条流式显示）'];
+  }
+  return [`实时事件流: ${baseUrl}`, '', ...liveLines];
 }
 
 function maxScroll(lines, visibleHeight) {
