@@ -11,13 +11,56 @@ import { resolveSessionForRole } from './session-resolver.mjs';
 import { PERMISSION_POLICY_VERSION } from './opencode-client.mjs';
 import { hasTimeout } from './budgets.mjs';
 
-function extractJson(text) {
+const PREVIEW_LIMIT = 220;
+
+function redactedPreview(text) {
+  return String(text)
+    .replace(/gh[pousr]_[A-Za-z0-9_]{8,}/g, '[redacted]')
+    .replace(/Bearer\s+[A-Za-z0-9._~+/=-]{12,}/gi, 'Bearer [redacted]')
+    .replace(/https:\/\/open\.feishu\.cn\/open-apis\/bot\/v2\/hook\/[A-Za-z0-9_-]+/gi, 'https://open.feishu.cn/open-apis/bot/v2/hook/[redacted]')
+    .replace(/\s+/g, ' ')
+    .slice(0, PREVIEW_LIMIT);
+}
+
+class InvestigationJsonParseError extends Error {
+  constructor({ message, cause, phase, role, source, output, response = null }) {
+    super(message, { cause });
+    this.name = 'InvestigationJsonParseError';
+    this.json_phase = phase;
+    this.role = role;
+    this.json_source = source;
+    this.parse_error_message = cause instanceof Error ? cause.message : String(cause ?? 'invalid JSON');
+    this.output_bytes = Buffer.byteLength(String(output ?? ''), 'utf8');
+    this.output_preview = redactedPreview(output ?? '');
+    if (response && typeof response === 'object') this.prompt_response = response;
+  }
+}
+
+function parseJsonWithContext(source, context) {
+  try {
+    return JSON.parse(source);
+  } catch (error) {
+    throw new InvestigationJsonParseError({
+      message: `${context.phase} parse failed for ${context.role}: ${error instanceof Error ? error.message : 'invalid JSON'}`,
+      cause: error,
+      phase: context.phase,
+      role: context.role,
+      source: context.source,
+      output: source,
+      response: context.response ?? null,
+    });
+  }
+}
+
+function extractJson(text, context = {}) {
   const source = String(text).trim();
   const fenced = source.match(/```json\s*([\s\S]*?)```/i);
-  if (fenced) return JSON.parse(fenced[1]);
+  const role = context.role ?? 'unknown';
+  const phase = context.phase ?? 'investigation-json';
+  if (fenced) return parseJsonWithContext(fenced[1], { phase, role, source: 'fenced-json', response: context.response ?? null });
   // Accept exactly one complete JSON object only. Never select the last `{` from arbitrary
   // model output: trailing JSON-like text could otherwise replace the authoritative plan.
-  const parsed = JSON.parse(source);
+  const parsed = parseJsonWithContext(source, { phase, role, source: 'full-text', response: context.response ?? null });
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('specialist output must be one JSON object');
   return parsed;
 }
@@ -127,7 +170,7 @@ export function runAgentJson({ agent, repoDir, prompt, timeoutMs = 0, spawnImpl 
     child.on('close', (code) => {
       if (stdoutBuffer) consumeLine(stdoutBuffer);
       if (code !== 0) return finish(reject, new Error(`specialist ${agent} exited ${code}: ${stderr.slice(-300)}`));
-      try { finish(resolve, extractJson(resultText)); } catch (error) { finish(reject, new Error(`specialist ${agent} returned invalid JSON`)); }
+      try { finish(resolve, extractJson(resultText, { phase: 'specialist-final-json', role: agent })); } catch (error) { finish(reject, error); }
     });
   });
 }
@@ -236,7 +279,7 @@ export function processSpecialistRunner({ role, issue, issueDataPath, repoDir, q
         stampSpecialistSession(state, role, { last_status: 'ok', last_seen_at: new Date().toISOString(), duration_ms: Date.now() - startedAt });
         if (outcome.result?.structured && typeof outcome.result.structured === 'object') return outcome.result.structured;
         const text = typeof outcome.result?.text === 'string' ? outcome.result.text : JSON.stringify(outcome.result ?? {});
-        return extractJson(text);
+        return extractJson(text, { phase: 'specialist-final-json', role, response: outcome.result?.prompt_response ?? null });
       } catch (error) {
         stampSpecialistSession(state, role, { last_status: 'failed', last_seen_at: new Date().toISOString(), duration_ms: Date.now() - startedAt, last_error: error instanceof Error ? error.message : 'unknown' });
         throw error;
@@ -320,7 +363,7 @@ export function processPlanBuilder({ issue, repoDir, qaRuntimeDir = repoDir, gua
       if (outcome.kind !== 'ok') throw new Error(`plan builder prompt failed: ${outcome.error?.message ?? 'unknown'}`);
       if (outcome.result?.structured && typeof outcome.result.structured === 'object') return outcome.result.structured;
       const text = typeof outcome.result?.text === 'string' ? outcome.result.text : JSON.stringify(outcome.result ?? {});
-      return extractJson(text);
+      return extractJson(text, { phase: 'plan-final-json', role: 'guardian-business', response: outcome.result?.prompt_response ?? null });
     })();
   }
 

@@ -197,6 +197,35 @@ test('processSpecialistRunner uses QA runtime path while preserving control stat
   assert.equal(state.opencode.specialists['guardian-runtime'].repo_dir, 'D:/qa-snapshot');
 });
 
+test('processSpecialistRunner reports SDK prompt response shape on empty text JSON failure', async () => {
+  const client = {
+    createSession: async () => 'ses_empty',
+    prompt: async () => ({ kind: 'ok', result: { text: '', structured: null, prompt_response: { parts_count: 0, text_bytes: 0, has_structured: false, has_structured_output: false } } }),
+    getSession: async () => ({ kind: 'ok', session: { id: 'ses_empty', agent: 'guardian-history' } }),
+  };
+  const failure = await processSpecialistRunner({
+    role: 'guardian-history',
+    issue: 205,
+    issueDataPath: 'D:/repo/.qa/guardian/205/issue-data.json',
+    repoDir: 'D:/repo',
+    dossierPath: 'D:/repo/.qa/guardian/205/dossier.json',
+    opencodeClient: client,
+  }).then(
+    () => null,
+    (error) => error,
+  );
+
+  assert.ok(failure instanceof Error);
+  assert.equal(failure.name, 'InvestigationJsonParseError');
+  assert.equal(failure.role, 'guardian-history');
+  assert.deepEqual(failure.prompt_response, {
+    parts_count: 0,
+    text_bytes: 0,
+    has_structured: false,
+    has_structured_output: false,
+  });
+});
+
 test('processPlanBuilder uses the SDK client instead of spawning an attach process', async () => {
   // Given: an injected fake opencode client.
   const created = [];
@@ -261,6 +290,45 @@ test('runAgentJson reports malformed event lines without treating them as final 
   // Then: malformed progress is visible and the valid final text still resolves.
   assert.equal(progress.some((line) => line.includes('unparsed event')), true);
   assert.equal(result.specialist, 'guardian-runtime');
+});
+
+test('runAgentJson reports final JSON parse context without leaking secrets', async () => {
+  // Given: OpenCode emits truncated final JSON containing a token-looking value.
+  const child = fakeChild();
+  const spawnImpl = () => {
+    queueMicrotask(() => {
+      child.stdout.write(`${JSON.stringify({
+        type: 'text',
+        part: { text: '{"specialist":"guardian-runtime","token":"ghp_1234567890abcdef"' },
+      })}\n`);
+      child.emit('close', 0);
+    });
+    return child;
+  };
+
+  // When: the final JSON parser rejects the output.
+  const failure = await runAgentJson({
+    agent: 'guardian-runtime',
+    repoDir: 'D:/repo',
+    prompt: 'issue data',
+    timeoutMs: 1000,
+    spawnImpl,
+    progressSink: () => {},
+  }).then(
+    () => null,
+    (error) => error,
+  );
+
+  // Then: the error carries source metadata and a redacted bounded preview.
+  assert.ok(failure instanceof Error);
+  assert.equal(failure.name, 'InvestigationJsonParseError');
+  assert.equal(failure.json_phase, 'specialist-final-json');
+  assert.equal(failure.role, 'guardian-runtime');
+  assert.equal(failure.json_source, 'full-text');
+  assert.match(failure.parse_error_message, /Expected|Unexpected|JSON/);
+  assert.equal(typeof failure.output_bytes, 'number');
+  assert.match(failure.output_preview, /\[redacted\]/);
+  assert.equal(failure.output_preview.includes('ghp_1234567890abcdef'), false);
 });
 
 test('createProgressSink mirrors progress to scheduler output and the agent log', () => {
