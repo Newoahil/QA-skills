@@ -5,7 +5,8 @@
   "scripts": {
     "test:guardian": "node --test tests/guardian/*.test.mjs",
     "guardian:start": "node tools/guardian/guardian-runtime.mjs",
-    "guardian:dashboard": "node tools/guardian/dashboard.mjs"
+    "guardian:dashboard": "node tools/guardian/dashboard.mjs",
+    "guardian:dashboard:tui": "node tools/guardian/dashboard-tui.mjs"
   },
   "dependencies": {
     "@larksuiteoapi/node-sdk": "1.73.0",
