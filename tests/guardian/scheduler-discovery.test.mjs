@@ -37,6 +37,26 @@ test('all-open discovery includes historical unlabeled issues and orders determi
   }
 });
 
+test('listCandidates logs the discovery result via injected logger', () => {
+  const repoDir = repoWithGuardian();
+  const events = [];
+  const logger = { info: (event, fields) => events.push({ event, fields }), warn: () => {}, error: () => {} };
+  try {
+    listCandidates(repoDir, {}, new Date('2026-08-20T12:00:00Z'), {
+      ghIssueList: () => [
+        { issue: 205, updatedAt: '2026-08-20T10:00:00Z', labels: [] },
+        { issue: 206, updatedAt: '2026-08-20T11:00:00Z', labels: [] },
+      ],
+      logger,
+    });
+    const discovery = events.find((e) => e.event === 'discovery.candidates');
+    assert.ok(discovery, 'discovery.candidates event should be emitted');
+    assert.equal(discovery.fields.count, 2);
+  } finally {
+    rmSync(repoDir, { recursive: true, force: true });
+  }
+});
+
 test('DONE and GATE_2_WAIT records remain followup candidates', () => {
   const repoDir = repoWithGuardian();
   try {

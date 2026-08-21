@@ -7,7 +7,9 @@ import { validatePlan } from './plan-validator.mjs';
 import { resolveBudgets } from './budgets.mjs';
 import { randomUUID } from 'node:crypto';
 
-export async function prepareInvestigation({ issue, issueData, repoDir, qaRuntimeDir = repoDir, guardianDir, issueClass, complexity, capabilities, config = {}, memoryContext = null, runSpecialist, buildPlan, state = null, round = 1, signal = null, now = () => Date.now() }) {
+const NOOP_LOGGER = { info: () => {}, warn: () => {}, error: () => {} };
+
+export async function prepareInvestigation({ issue, issueData, repoDir, qaRuntimeDir = repoDir, guardianDir, issueClass, complexity, capabilities, config = {}, memoryContext = null, runSpecialist, buildPlan, state = null, round = 1, signal = null, now = () => Date.now(), logger = NOOP_LOGGER }) {
   const paths = artifactPaths(guardianDir, issue);
   const budgets = resolveBudgets(config, complexity);
   const investigationId = randomUUID();
@@ -25,10 +27,12 @@ export async function prepareInvestigation({ issue, issueData, repoDir, qaRuntim
   // evidence-based. No time budget is enforced here (budgets default to unlimited).
   const investigationStartedAt = now();
   const specialistDurations = {};
+  logger.info('investigation.begin', { issue, roles: selectedRoles.join(','), count: selectedRoles.length });
   const settled = await Promise.allSettled(selectedRoles.map(async (role) => {
     const startedAt = now();
+    logger.info('specialist.begin', { issue, role, round });
     try {
-      return await runSpecialist({
+      const result = await runSpecialist({
         role,
         issue,
         issueData,
@@ -42,6 +46,11 @@ export async function prepareInvestigation({ issue, issueData, repoDir, qaRuntim
         memoryContext,
         signal,
       });
+      logger.info('specialist.ok', { issue, role, duration_ms: now() - startedAt });
+      return result;
+    } catch (error) {
+      logger.warn('specialist.failed', { issue, role, duration_ms: now() - startedAt, error_message: error instanceof Error ? error.message : 'unknown' });
+      throw error;
     } finally {
       specialistDurations[role] = now() - startedAt;
     }
@@ -65,9 +74,11 @@ export async function prepareInvestigation({ issue, issueData, repoDir, qaRuntim
   writeArtifact(guardianDir, issue, 'dossier', dossier);
 
   const planStartedAt = now();
+  logger.info('plan.begin', { issue });
   const plan = { ...(await buildPlan({ issue, dossier, hypotheses: synthesis.ranked_hypotheses, repoDir, qaRuntimeDir, memoryContext, signal })), investigation_id: investigationId };
   const planDurationMs = now() - planStartedAt;
   const planResult = validatePlan(plan, dossier);
+  logger.info('plan.ok', { issue, duration_ms: planDurationMs, valid: planResult.valid });
   writeArtifact(guardianDir, issue, 'plan', plan);
   const investigationCompletedAt = now();
 

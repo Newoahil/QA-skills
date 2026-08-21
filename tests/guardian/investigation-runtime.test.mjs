@@ -42,6 +42,51 @@ test('prepareInvestigation runs bounded specialists and persists dossier/plan', 
   }
 });
 
+test('prepareInvestigation logs specialist and plan lifecycle events', async () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'guardian-investigation-'));
+  const events = [];
+  const logger = { info: (event, fields) => events.push({ event, fields }), warn: () => {}, error: () => {} };
+  try {
+    await prepareInvestigation({
+      issue: 205, repoDir: 'D:/repo', guardianDir: root, issueClass: 'bug', complexity: 'simple',
+      issueData: { title: 't', body: 'b' }, capabilities: {}, config: {}, logger,
+      runSpecialist: async ({ role }) => ({ specialist: role, hypotheses: [{ id: 'H1', statement: 'r' }], evidence: [{ id: `E-${role}`, kind: 'source_invariant', source: role, observation: 'o', supports: ['H1'], contradicts: [] }], unresolved_facts: [], acceptance_criteria: [] }),
+      buildPlan: async () => ({ root_cause: 'r', affected_files: ['a.mjs'], non_goals: ['b'], test_plan: ['t'], acceptance_criteria: ['w'], rollback_plan: 'revert', evidence_ids: ['E-guardian-code'], risk: 'LOW' }),
+    });
+    const names = events.map((e) => e.event);
+    assert.equal(names.includes('specialist.begin'), true);
+    assert.equal(names.includes('specialist.ok'), true);
+    assert.equal(names.includes('plan.begin'), true);
+    assert.equal(names.includes('plan.ok'), true);
+    const begin = events.find((e) => e.event === 'specialist.begin');
+    assert.equal(begin.fields.issue, 205);
+    assert.equal(typeof begin.fields.role, 'string');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('prepareInvestigation logs specialist failure without leaking issue body', async () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'guardian-investigation-'));
+  const events = [];
+  const logger = { info: (event, fields) => events.push({ level: 'info', event, fields }), warn: (event, fields) => events.push({ level: 'warn', event, fields }), error: (event, fields) => events.push({ level: 'error', event, fields }) };
+  try {
+    await prepareInvestigation({
+      issue: 205, repoDir: 'D:/repo', guardianDir: root, issueClass: 'bug', complexity: 'simple',
+      issueData: { title: 'SECRET-TITLE', body: 'SECRET-BODY' }, capabilities: {}, config: {}, logger,
+      runSpecialist: async () => { throw new Error('model_cooldown'); },
+      buildPlan: async () => ({ root_cause: 'r', affected_files: ['a.mjs'], non_goals: ['b'], test_plan: ['t'], acceptance_criteria: ['w'], rollback_plan: 'revert', evidence_ids: [], risk: 'LOW' }),
+    }).then(() => null, (e) => e);
+    const failed = events.filter((e) => e.event === 'specialist.failed');
+    assert.equal(failed.length >= 1, true);
+    const serialized = JSON.stringify(events);
+    assert.equal(serialized.includes('SECRET-BODY'), false);
+    assert.equal(serialized.includes('SECRET-TITLE'), false);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('prepareInvestigation respects disabled optional specialists', async () => {
   const root = mkdtempSync(path.join(tmpdir(), 'guardian-investigation-'));
   const roles = [];

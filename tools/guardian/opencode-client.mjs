@@ -140,7 +140,7 @@ function safeJson(text) {
   }
 }
 
-export function createOpencodeClient({ baseUrl, sdk } = {}) {
+export function createOpencodeClient({ baseUrl, sdk, logger = null } = {}) {
   const client = sdk ?? createSdkClient({ baseUrl });
 
   async function createSession({ title, agent, parentID = null, directory = null }) {
@@ -200,8 +200,12 @@ export function createOpencodeClient({ baseUrl, sdk } = {}) {
   async function prompt({ sessionId, agent, parts, format = null, system = null, signal = null, fallbackModels = [] }) {
     const models = [undefined, ...(Array.isArray(fallbackModels) ? fallbackModels.filter((m) => typeof m === 'string' && m) : [])];
     let last = null;
-    for (const model of models) {
+    for (let i = 0; i < models.length; i += 1) {
       if (signal?.aborted) break;
+      const model = models[i];
+      if (i > 0 && logger) {
+        logger.warn('provider.fallback', { agent, from_model: models[i - 1] ?? 'agent-default', to_model: model, code: last?.error?.code ?? null, status: last?.error?.statusCode ?? null });
+      }
       last = await promptOnce({ sessionId, agent, parts, format, system, signal, model });
       if (last.kind !== 'provider-error') return last;
     }

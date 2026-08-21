@@ -132,10 +132,19 @@ export function listCandidates(repoDir, _config = {}, _now = new Date(), deps = 
     return { ...issue, claim_source: record ? 'existing' : 'discovered' };
   });
   const merged = new Map(candidates.concat(followups).map((x) => [x.issue, x]));
-  return [...merged.values()].sort((a, b) => {
+  const ordered = [...merged.values()].sort((a, b) => {
     const updated = String(a.updatedAt ?? '').localeCompare(String(b.updatedAt ?? ''));
     return updated || Number(a.issue) - Number(b.issue);
   });
+  if (deps.logger) {
+    deps.logger.info('discovery.candidates', {
+      count: ordered.length,
+      open: openIssues.length,
+      followups: followups.length,
+      issues: ordered.map((x) => x.issue).join(','),
+    });
+  }
+  return ordered;
 }
 
 function lockPath(repoDir) {
@@ -186,13 +195,13 @@ async function tick(repoDir, config, logger, signal = null) {
   const qaRuntimeDir = config.qa_runtime_dir ?? repoDir;
   const leaseMs = Number(config.lease_ms ?? DEFAULT_LEASE_MS);
   const now = Date.now();
-  const issues = listCandidates(repoDir, config, new Date(now));
+  const issues = listCandidates(repoDir, config, new Date(now), { logger });
 
   // Shared OpenCode server client (Oracle design): one serve, SDK sessions per role. Created once
   // per tick from the configured server URL; null when no shared server is configured (fallback to
   // child-process path).
   const serverUrl = process.env.QA_GUARDIAN_OPENCODE_SERVER_URL;
-  const opencodeClient = serverUrl ? createOpencodeClient({ baseUrl: serverUrl }) : null;
+  const opencodeClient = serverUrl ? createOpencodeClient({ baseUrl: serverUrl, logger }) : null;
   // Provider resilience: when a specialist/plan prompt hits a provider cooldown (429), retry the
   // same session on the next configured fallback model instead of failing the whole investigation.
   const fallbackModels = Array.isArray(config.fallback_models)
@@ -207,6 +216,10 @@ async function tick(repoDir, config, logger, signal = null) {
     }),
     claim_source,
   }));
+
+  for (const decision of decisions) {
+    logger.info('route.decision', { issue: decision.issue, action: decision.action, to_state: decision.toState ?? null, reason: decision.reason ?? null });
+  }
 
   // Labels are best-effort visible projection; state JSON remains authoritative.
   for (const decision of decisions) {
@@ -344,6 +357,7 @@ async function tick(repoDir, config, logger, signal = null) {
           state: investigationState,
           round: investigationState.processing_round ?? 1,
           signal,
+          logger,
           runSpecialist: (args) => processSpecialistRunner({ ...args, opencodeClient, fallbackModels }),
            buildPlan: (args) => processPlanBuilder({ ...args, repoDir, qaRuntimeDir, guardianDir, opencodeClient, fallbackModels }),
         });
@@ -489,6 +503,7 @@ async function tick(repoDir, config, logger, signal = null) {
        if (branchPreparation.status !== 0) {
          throw new Error(`prepare fix branch failed: ${branchPreparation.stderr || 'unknown'}`);
        }
+       logger.info('fixer.begin', { issue, round: currentState.processing_round ?? 1 });
        const fixerRun = await runFixerSession({
          client: opencodeClient,
          supervisor,
@@ -519,6 +534,7 @@ async function tick(repoDir, config, logger, signal = null) {
 
       // 方案 A: QA runs via an independent SDK session (scheduler-invoked, not fixer-internal).
       const afterFix = readState(guardianDir, issue) ?? { issue };
+      logger.info('qa.begin', { issue, round: afterFix.processing_round ?? 1 });
       const qaRun = await runQaSession({
         client: opencodeClient,
         state: afterFix,

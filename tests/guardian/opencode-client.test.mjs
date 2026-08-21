@@ -199,6 +199,28 @@ test('prompt retries with fallback model on provider cooldown then succeeds', as
   assert.equal(bodies[1].model, 'cpa/gpt-5.4');
 });
 
+test('prompt logs a provider.fallback event when downgrading models', async () => {
+  let n = 0;
+  const events = [];
+  const sdk = {
+    _client: {
+      post: async () => {
+        n += 1;
+        if (n === 1) return { data: { info: { error: { name: 'APIError', data: { statusCode: 429, responseBody: '{"error":{"code":"model_cooldown"}}' } } }, parts: [] } };
+        return { data: { parts: [{ type: 'text', text: 'ok' }] } };
+      },
+    },
+    session: { create: async () => ({ id: 'ses_log' }) },
+  };
+  const logger = { info: () => {}, warn: (event, fields) => events.push({ event, fields }), error: () => {} };
+  const client = createOpencodeClient({ sdk, logger });
+  await client.prompt({ sessionId: 'ses_log', agent: 'guardian-code', parts: [], fallbackModels: ['cpa/gpt-5.5'] });
+  const fb = events.find((e) => e.event === 'provider.fallback');
+  assert.ok(fb, 'provider.fallback should be logged');
+  assert.equal(fb.fields.to_model, 'cpa/gpt-5.5');
+  assert.equal(fb.fields.code, 'model_cooldown');
+});
+
 test('prompt returns provider-error after exhausting all fallback models', async () => {
   const bodies = [];
   const sdk = {
