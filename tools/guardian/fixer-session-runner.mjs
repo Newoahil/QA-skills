@@ -70,7 +70,7 @@ export async function runFixerSession({
   round = 1,
   plan = null,
   mode = 'enforced',
-  deadlineMs = 20 * 60 * 1000,
+  deadlineMs = 60 * 60 * 1000,
   writePrSummary = null,
 }) {
   const opencode = state.opencode ?? { schema_version: 1, fixer: null, qa: null, specialists: {}, inflight: null };

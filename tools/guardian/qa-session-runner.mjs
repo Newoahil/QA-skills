@@ -28,7 +28,7 @@ function buildQaPrompt({ issue, repoDir, branch, diffSummary, intendedBehavior, 
 
 export async function runQaSession({
   client, state, issue, repoDir, branch, diffSummary, intendedBehavior, round = 1,
-  deadlineMs = 20 * 60 * 1000, pollIntervalMs = 1000,
+  deadlineMs = 60 * 60 * 1000, pollIntervalMs = 1000,
   writeQaAcceptance = null,
 }) {
   const startedAt = Date.now();

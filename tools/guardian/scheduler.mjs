@@ -23,7 +23,7 @@ import { deliverNotifications, defaultGhComment, defaultCurlPost } from './notif
 import { createLogger } from './runtime-io.mjs';
 import { projectLabels } from './label-io.mjs';
 import { prepareInvestigation } from './investigation-runtime.mjs';
-import { hasTimeout } from './budgets.mjs';
+import { hasTimeout, resolveSessionDeadlineMs } from './budgets.mjs';
 import { processPlanBuilder, processSpecialistRunner } from './investigation-process.mjs';
 import { discoverCapabilities } from './capabilities.mjs';
 import { artifactIdentity, quarantineArtifacts, readArtifact, readArtifactPair, writeArtifact, writeMarkdownArtifact } from './artifacts.mjs';
@@ -464,7 +464,7 @@ async function tick(repoDir, config, logger, signal = null) {
          round: currentState.processing_round ?? 1,
           plan: readArtifactPair(guardianDir, issue).plan,
           mode: investigationMode,
-           deadlineMs: Number(config.child_timeout_ms ?? 20 * 60 * 1000),
+           deadlineMs: resolveSessionDeadlineMs(config, 'fixer_deadline_ms'),
           writePrSummary: (content) => writeMarkdownArtifact(guardianDir, issue, 'pr-summary', content),
        });
        writeState(guardianDir, fixerRun.state, { touch: false });
@@ -493,7 +493,7 @@ async function tick(repoDir, config, logger, signal = null) {
            : `fix branch ${afterFix.branch ?? 'unknown'}`,
         intendedBehavior: plan.toRun.issueTitle ?? `issue #${issue}`,
         round: afterFix.processing_round ?? 1,
-        deadlineMs: Number(config.child_timeout_ms ?? 20 * 60 * 1000),
+        deadlineMs: resolveSessionDeadlineMs(config, 'qa_deadline_ms'),
         writeQaAcceptance: (content) => writeMarkdownArtifact(guardianDir, issue, 'qa-acceptance', content),
       });
        writeState(guardianDir, qaRun.state, { touch: false });
