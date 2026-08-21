@@ -83,6 +83,7 @@ This file summarizes all project changes, decisions, requirements, and bug recor
 - [change-c9452e10a1264645a06915267c49e44d] #qa-guardian #feishu #followup — 修复 DONE 飞书 followup 的空输入漏洞、Gate 1/Gate 2 卡片通知不可达、跨轮次 DONE 通知幂等标记继承问题，并补 UC-L 与回归测试，149/149 测试通过。 (2026-08-18)
 - [change-cabd52ea36184a8885927911ff2e029e] #qa-guardian #launcher #operations — Guardian launcher now remembers independent bindings per project and allows a clean local tools checkout to run when behind upstream with a warning, so project switching is explicit and local runtime availability is not blocked by tool-version drift. (2026-08-20)
 - [change-cc34c0f387b04539bef2107012ba5deb] #qa-guardian #runtime-integration #plan-gate — 将 investigation-process/investigation-runtime 接入 scheduler 的 shadow/enforced 路径：真实执行只读 specialist 子进程、写 dossier/plan artifact、执行 plan gate，失败或不完整计划不启动 write-capable Guardian；192/192 测试通过。 (2026-08-18)
+- [change-cd0869b5cfa74261b9cf4655935f2317] #guardian-tui #opencode #observability — Guardian TUI now distinguishes unread OpenCode transcripts and stale runtime state so users do not mistake missing messages or persisted running status for no work. (2026-08-21)
 - [change-d4732a411e254c618517828d62e5ed70] #qa-guardian #usability #deployment — scheduler-start.ps1 增 -Init/-CommandAuthors/-BaseBranch，config 不存在时一步创建（BOM-free UTF-8，修 PS5.1 Set-Content BOM 导致 node JSON.parse 失败）或交互提示，已存在则直接启动；新增 scheduler-start.bat 双击入口（自动 ExecutionPolicy Bypass 调 ps1 并转发参数），129/129 测试通过、init 冒烟验证 config 可被 node 解析。 (2026-08-18)
 - [change-d68ddced82a4440492d038e2b4aa8975] #qa-guardian #lock #n1-concurrency — Fixed a second real bug found by the E2E run: the N=1 lease heartbeat only covered the fixer spawn, so a long investigation went lease-stale mid-run and was judged STALLED; the heartbeat now covers the whole critical section \(investigation + fixer + QA + PR\). (2026-08-19)
 - [change-d9e9344cce4a4afbb937c6c637a7931c] #qa-guardian #plan-gate #safety — 新增 plan-gate.mjs，把 legacy/shadow/enforced 三种调查模式映射为是否允许写入，enforced 下只有 dossier-backed decision-complete LOW plan 可自主进入 FIXING，183/183 测试通过。 (2026-08-18)
@@ -226,6 +227,7 @@ This file summarizes all project changes, decisions, requirements, and bug recor
 | change-c9452e10a1264645a06915267c49e44d | 2026-08-18 | 修复 DONE followup 卡片 review 阻塞项 | done | [link](changes/2026-08-18-change-c9452e10a1264645a06915267c49e44d-followup-review-fixes.md) |
 | change-cabd52ea36184a8885927911ff2e029e | 2026-08-20 | Launcher project switching and tool version warning |  | [link](changes/2026-08-20-change-cabd52ea36184a8885927911ff2e029e-launcher-project-switch-and-tool-warning.md) |
 | change-cc34c0f387b04539bef2107012ba5deb | 2026-08-18 | 强化 Guardian Phase 9：investigation runtime 接入真实 scheduler | done | [link](changes/2026-08-18-change-cc34c0f387b04539bef2107012ba5deb-phase9-runtime-integration.md) |
+| change-cd0869b5cfa74261b9cf4655935f2317 | 2026-08-21 | Guardian TUI surfaces OpenCode transcript and liveness ambiguity | completed | [link](changes/2026-08-21-change-cd0869b5cfa74261b9cf4655935f2317-guardian-tui-opencode-observability.md) |
 | change-d4732a411e254c618517828d62e5ed70 | 2026-08-18 | QA Guardian scheduler 一键创建 config + 启动 + .bat 双击入口 | done | [link](changes/2026-08-18-change-d4732a411e254c618517828d62e5ed70-guardian-init-and-bat-launcher.md) |
 | change-d68ddced82a4440492d038e2b4aa8975 | 2026-08-19 | Heartbeat the N=1 lease across the whole scheduler critical section | done | [link](changes/2026-08-19-change-d68ddced82a4440492d038e2b4aa8975-heartbeat-critical-section.md) |
 | change-d9e9344cce4a4afbb937c6c637a7931c | 2026-08-18 | 强化 Guardian Phase 8：plan-gated execution core | done | [link](changes/2026-08-18-change-d9e9344cce4a4afbb937c6c637a7931c-plan-gate.md) |
@@ -327,7 +329,7 @@ This file summarizes all project changes, decisions, requirements, and bug recor
 - guardian-launcher: change-76c5d0ed9fac48cb970da4f0329c2454, change-fc28793f11104036ad20f0cb288bda6f, decision-038091b9b1ca447db6c8a2d2a86719b4
 - guardian-scheduler: change-60858dbd238d4a13a5190dc40a7a1965
 - guardian-timeout: change-30d32899761b40d8ac9f442695dfec62
-- guardian-tui: change-f78313d32e614657bce29b72264e20fb
+- guardian-tui: change-cd0869b5cfa74261b9cf4655935f2317, change-f78313d32e614657bce29b72264e20fb
 - human-approval: bug-68ea53ff66ef4f62b7f680db1ecebf19
 - idempotency: change-5e5f9e3456464cb598ba51d705ffc945, change-eb83465c334b4e88b55e83d019123930
 - injection-safety: change-bcabf0f8e62b4a45b47b7823b934848e
@@ -342,8 +344,8 @@ This file summarizes all project changes, decisions, requirements, and bug recor
 - multi-project: change-5cb23fed3750411f9d0a01fddae5f6de
 - n1-concurrency: change-d68ddced82a4440492d038e2b4aa8975
 - notification: change-c4f7796c3fa940589c4c90921c26455c
-- observability: change-6ff6c658477b423eae1d6e18a33f92b9
-- opencode: change-5330fd1c1188484fa1647010616d8195
+- observability: change-6ff6c658477b423eae1d6e18a33f92b9, change-cd0869b5cfa74261b9cf4655935f2317
+- opencode: change-5330fd1c1188484fa1647010616d8195, change-cd0869b5cfa74261b9cf4655935f2317
 - opencode-events: change-7e6fdf97764f412c921e2d9ab581c7b1
 - opencode-sdk: bug-09c23cce8bb443d7aadb0f5dea5ce3b7, bug-682f269c0050412797459f52712af366, bug-95af95c0c87348659c6d36a12974beb0, bug-b963cb3902ec472fba0747de51688475, change-09acc786cc4c4b53b58d1e9a5b7267ef, change-1a149adf92854c34938da07409ba28a9, change-2d00718e55fc479195377618f8fe8527, change-4e17ae8322d944be9acbbd5f14780594, change-9c651671735d41ca84cb71a1c1bd2213, change-bf2f029768594b7097870069da715a0a
 - opencode-serve: change-76c5d0ed9fac48cb970da4f0329c2454
