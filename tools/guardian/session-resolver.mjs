@@ -25,13 +25,13 @@ export async function resolveSessionForRole({ role, opencode, repoDir, issue, ro
     ? opencode?.specialists?.[role]
     : opencode?.[role];
 
+  // Specialists are one-shot read-only investigations. NEVER reuse a prior specialist session:
+  // accumulated history from an earlier attempt (or an unrelated exchange) can contaminate the
+  // structured result. Always create a fresh session so each investigation attempt is isolated.
+  if (isSpecialist) return { action: 'create', agent, contextLoss: false };
+
   // No persisted session -> create.
   if (!record?.session_id) return { action: 'create', agent, contextLoss: false };
-
-  // Specialist sessions are per-round: reuse only within the same round.
-  if (isSpecialist && (record.round ?? record.created_round) !== round) {
-    return { action: 'create', agent, contextLoss: false };
-  }
 
   const requested = bindingFor({ repoDir, issue, role });
   const persisted = persistedBinding(record);
