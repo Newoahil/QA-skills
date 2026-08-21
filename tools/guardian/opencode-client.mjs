@@ -177,5 +177,21 @@ export function createOpencodeClient({ baseUrl, sdk } = {}) {
     }
   }
 
-  return { createSession, prompt, abort, getSession, getMessages };
+  // Official real-time event stream (SSE): client.event.subscribe() → { stream } async-iterable of
+  // { type, properties }. Returns { kind:'ok', stream } or a normalized error kind. The caller owns
+  // iteration + cancellation (break out of the for-await loop, or call the returned cancel()).
+  async function subscribeEvents() {
+    try {
+      const subscription = await client.event.subscribe();
+      const stream = subscription?.stream ?? subscription;
+      const cancel = typeof subscription?.controller?.abort === 'function'
+        ? () => subscription.controller.abort()
+        : (typeof subscription?.cancel === 'function' ? () => subscription.cancel() : () => {});
+      return { kind: 'ok', stream, cancel };
+    } catch (error) {
+      return { kind: classifyError(error).kind, error };
+    }
+  }
+
+  return { createSession, prompt, abort, getSession, getMessages, subscribeEvents };
 }
