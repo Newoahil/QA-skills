@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { guidedError } from './dashboard-errors.mjs';
 import { createKeypressParser } from './dashboard-tui-input.mjs';
-import { loadDashboardTuiSnapshot, createInitialUiState, parseRefreshSeconds, reduceUiState } from './dashboard-tui-model.mjs';
+import { loadDashboardTuiSnapshot, createInitialUiState, parseRefreshSeconds, reduceUiState, DEFAULT_STATE_FILTER } from './dashboard-tui-model.mjs';
 import { renderDashboardTui } from './dashboard-tui-render.mjs';
 import { createTerminalSession } from './dashboard-tui-terminal.mjs';
 
@@ -21,7 +21,7 @@ export function tuiUsage() {
 参数:
   --repo <path>        目标项目路径（必需；会先通过 resolveViewerRepo 定位 authoritative control repo）
   --refresh <秒>       自动刷新秒数，默认 8；运行中可按 a 开关自动刷新
-  --state <filter>     队列筛选：active、waiting、terminal，或具体状态名
+  --state <filter>     队列初始筛选：current(默认)、active、waiting、all、terminal，或具体状态名
   --base-url <url>     OpenCode 服务地址；默认 ${DEFAULT_BASE_URL}
   --issue <n>          启动时默认选中 issue
   --help               显示帮助
@@ -29,7 +29,7 @@ export function tuiUsage() {
 键位:
   q 退出 | ↑/↓ 或 j/k 导航 | Enter 进入详情滚动 | Esc 返回队列
   1 摘要 | 2 transcript | 3 logs | 4 产物/错误
-  r 手动刷新 | a 自动刷新开关 | ? 帮助 | F transcript 完整模式 | G/p logs follow
+  r 手动刷新 | a 自动刷新开关 | t 切换队列筛选 | ? 帮助 | F transcript 完整模式 | G/p logs follow
 
 安全说明:
   - 只读查看 .qa/guardian、issue 产物与 OpenCode transcript
@@ -84,6 +84,7 @@ export async function runDashboardTuiCli(argv, deps = {}) {
   let ui = createInitialUiState({
     selectedIssue: args.issue ? Number(args.issue) : null,
     refreshSeconds,
+    stateFilter: args.state ?? DEFAULT_STATE_FILTER,
   });
   let snapshot = {
     kind: 'ok',
@@ -121,7 +122,7 @@ export async function runDashboardTuiCli(argv, deps = {}) {
         bindingFile,
         selectedIssue: ui.selectedIssue,
         tab: ui.tab,
-        stateFilter: args.state,
+        stateFilter: ui.stateFilter,
         transcriptFull: ui.transcriptFull,
         baseUrl: args['base-url'] ?? DEFAULT_BASE_URL,
         transcriptFetcher,
@@ -145,11 +146,13 @@ export async function runDashboardTuiCli(argv, deps = {}) {
     }
     const beforeIssue = ui.selectedIssue;
     const beforeTab = ui.tab;
+    const beforeFilter = ui.stateFilter;
     ui = reduceUiState(ui, action, snapshot, terminal.viewport());
     repaint();
     const needsRefresh = action.type === 'refresh'
       || beforeIssue !== ui.selectedIssue
       || beforeTab !== ui.tab
+      || beforeFilter !== ui.stateFilter
       || action.type === 'toggle-transcript-full'
       || action.type === 'logs-follow-end'
       || action.type === 'logs-pause-follow';

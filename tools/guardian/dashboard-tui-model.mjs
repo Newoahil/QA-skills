@@ -10,6 +10,28 @@ import { TUI_TABS } from './dashboard-tui-input.mjs';
 
 export const DEFAULT_REFRESH_SECONDS = 8;
 export const DEFAULT_FOCUS = 'queue';
+export const DEFAULT_STATE_FILTER = 'current';
+
+// Cycle order for the `t` key. `current` (active + waiting) is the day-to-day watch view;
+// `all` exposes terminal history (DONE / HANDED_BACK) for audit without deleting state files.
+export const STATE_FILTER_CYCLE = Object.freeze(['current', 'active', 'waiting', 'all']);
+
+export const STATE_FILTER_LABELS = Object.freeze({
+  current: '关注中',
+  active: '处理中',
+  waiting: '等待人工',
+  all: '全部历史',
+});
+
+export function stateFilterLabel(filter) {
+  return STATE_FILTER_LABELS[filter] ?? String(filter ?? '全部');
+}
+
+export function nextStateFilter(filter) {
+  const index = STATE_FILTER_CYCLE.indexOf(filter);
+  if (index < 0) return STATE_FILTER_CYCLE[0];
+  return STATE_FILTER_CYCLE[(index + 1) % STATE_FILTER_CYCLE.length];
+}
 
 function splitLines(text) {
   return String(text ?? '').split(/\r?\n/);
@@ -22,7 +44,11 @@ export function parseRefreshSeconds(value, fallback = DEFAULT_REFRESH_SECONDS) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
-export function createInitialUiState({ selectedIssue = null, refreshSeconds = DEFAULT_REFRESH_SECONDS } = {}) {
+export function createInitialUiState({
+  selectedIssue = null,
+  refreshSeconds = DEFAULT_REFRESH_SECONDS,
+  stateFilter = DEFAULT_STATE_FILTER,
+} = {}) {
   return {
     selectedIssue,
     focus: DEFAULT_FOCUS,
@@ -31,6 +57,7 @@ export function createInitialUiState({ selectedIssue = null, refreshSeconds = DE
     transcriptFull: false,
     autoRefresh: true,
     refreshSeconds,
+    stateFilter,
     detailScroll: 0,
     contextScroll: 0,
     logFollow: true,
@@ -135,6 +162,13 @@ export function reduceUiState(ui, action, snapshot, viewport = { rows: 24 }) {
       next.transcriptFull = !next.transcriptFull;
       next.contextScroll = 0;
       next.statusMessage = next.transcriptFull ? '完整 transcript 已开启。' : 'transcript 截断模式已恢复。';
+      return next;
+    case 'cycle-state-filter':
+      next.stateFilter = nextStateFilter(next.stateFilter);
+      next.selectedIssue = null;
+      next.detailScroll = 0;
+      next.contextScroll = 0;
+      next.statusMessage = `队列筛选已切换到「${stateFilterLabel(next.stateFilter)}」。`;
       return next;
     case 'switch-tab':
       next.tab = action.tab;

@@ -23,6 +23,8 @@ test('dashboard-tui input maps tabs and refresh helpers', () => {
   assert.deepEqual(parseKeypress('F'), { type: 'toggle-transcript-full' });
   assert.deepEqual(parseKeypress('G'), { type: 'logs-follow-end' });
   assert.deepEqual(parseKeypress('p'), { type: 'logs-pause-follow' });
+  assert.deepEqual(parseKeypress('t'), { type: 'cycle-state-filter' });
+  assert.deepEqual(parseKeypress('T'), { type: 'cycle-state-filter' });
 });
 
 test('dashboard-tui input buffers split escape sequences until complete', () => {

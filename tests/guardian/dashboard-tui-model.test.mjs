@@ -10,7 +10,9 @@ import {
   buildProgressLogLines,
   buildTranscriptLines,
   createInitialUiState,
+  DEFAULT_STATE_FILTER,
   loadDashboardTuiSnapshot,
+  nextStateFilter,
   reduceUiState,
   resolvePreferredSession,
 } from '../../tools/guardian/dashboard-tui-model.mjs';
@@ -140,6 +142,57 @@ test('loadDashboardTuiSnapshot resolves selected issue and loads current tab lin
   } finally {
     rmSync(repo, { recursive: true, force: true });
   }
+});
+
+test('loadDashboardTuiSnapshot default current filter hides terminal issues', async () => {
+  const repo = tempRepo();
+  const guardianDir = guardianDirFor(repo);
+  try {
+    mkdirSync(guardianDir, { recursive: true });
+    const done = { ...newState(193, '2026-08-20T10:00:00.000Z'), state: STATES.DONE, risk: RISK.HIGH };
+    const fixing = { ...newState(211, '2026-08-20T12:00:00.000Z'), state: STATES.FIXING, risk: RISK.LOW };
+    writeFileSync(path.join(guardianDir, '193.json'), `${JSON.stringify(done)}\n`, 'utf8');
+    writeFileSync(path.join(guardianDir, '211.json'), `${JSON.stringify(fixing)}\n`, 'utf8');
+
+    const current = await loadDashboardTuiSnapshot({
+      requestedRepo: repo,
+      bindingFile: path.join('tests', 'guardian', 'does-not-exist.json'),
+      stateFilter: DEFAULT_STATE_FILTER,
+      tab: TUI_TABS.summary,
+    });
+    assert.equal(current.kind, 'ok');
+    assert.deepEqual(current.records.map((record) => record.issue), [211]);
+    assert.equal(current.selectedIssue, 211);
+
+    const all = await loadDashboardTuiSnapshot({
+      requestedRepo: repo,
+      bindingFile: path.join('tests', 'guardian', 'does-not-exist.json'),
+      stateFilter: 'all',
+      tab: TUI_TABS.summary,
+    });
+    assert.deepEqual(all.records.map((record) => record.issue), [211, 193]);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test('createInitialUiState defaults to the current filter and t cycles it', () => {
+  const ui = createInitialUiState();
+  assert.equal(ui.stateFilter, 'current');
+  assert.equal(nextStateFilter('current'), 'active');
+  assert.equal(nextStateFilter('active'), 'waiting');
+  assert.equal(nextStateFilter('waiting'), 'all');
+  assert.equal(nextStateFilter('all'), 'current');
+  assert.equal(nextStateFilter('unknown'), 'current');
+});
+
+test('reduceUiState cycle-state-filter advances filter and resets selection', () => {
+  const ui = createInitialUiState({ selectedIssue: 193 });
+  const snapshot = { records: [{ issue: 193 }], selectedIssue: 193, selectedIndex: 0, detailLines: [], contextLines: [] };
+  const cycled = reduceUiState(ui, { type: 'cycle-state-filter' }, snapshot, { rows: 24 });
+  assert.equal(cycled.stateFilter, 'active');
+  assert.equal(cycled.selectedIssue, null);
+  assert.match(cycled.statusMessage, /筛选/);
 });
 
 test('reduceUiState moves selection, switches tabs, and manages log follow', () => {
