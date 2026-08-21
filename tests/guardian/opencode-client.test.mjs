@@ -8,6 +8,30 @@ import test from 'node:test';
 
 import { createOpencodeClient, createLongLivedSdkConfig, isPermissionCompatible, PERMISSION_POLICY_VERSION, permissionRulesFor } from '../../tools/guardian/opencode-client.mjs';
 
+test('prompt sends model as an object providerID/modelID, not a raw string', async () => {
+  let sentBody = null;
+  const sdk = {
+    _client: { post: async (params) => { sentBody = params.body; return { data: { parts: [{ type: 'text', text: 'OK' }] } }; } },
+    session: { create: async () => ({ id: 'ses_m' }) },
+  };
+  const client = createOpencodeClient({ sdk });
+  const r = await client.prompt({ sessionId: 'ses_m', agent: 'guardian-code', parts: [], model: 'cpa/gpt-5.5' });
+  assert.equal(r.kind, 'ok');
+  // OpenCode POST /session/:id/message expects model: { providerID, modelID } — a raw string is silently ignored.
+  assert.deepEqual(sentBody.model, { providerID: 'cpa', modelID: 'gpt-5.5' });
+});
+
+test('prompt splits only the first slash so model ids with slashes survive', async () => {
+  let sentBody = null;
+  const sdk = {
+    _client: { post: async (params) => { sentBody = params.body; return { data: { parts: [{ type: 'text', text: 'OK' }] } }; } },
+    session: { create: async () => ({ id: 'ses_m2' }) },
+  };
+  const client = createOpencodeClient({ sdk });
+  await client.prompt({ sessionId: 'ses_m2', agent: 'guardian-code', parts: [], model: 'openrouter/anthropic/claude' });
+  assert.deepEqual(sentBody.model, { providerID: 'openrouter', modelID: 'anthropic/claude' });
+});
+
 test('createLongLivedSdkConfig disables undici header/body timeouts for long prompts', () => {
   const config = createLongLivedSdkConfig({ baseUrl: 'http://127.0.0.1:4096' });
   assert.equal(config.baseUrl, 'http://127.0.0.1:4096');
@@ -217,7 +241,7 @@ test('prompt retries with fallback model on provider cooldown then succeeds', as
   assert.equal(result.result.text, 'ok-from-fallback');
   assert.equal(bodies.length, 2);
   assert.equal(bodies[0].model, undefined);
-  assert.equal(bodies[1].model, 'cpa/gpt-5.4');
+  assert.deepEqual(bodies[1].model, { providerID: 'cpa', modelID: 'gpt-5.4' });
 });
 
 test('prompt logs a provider.fallback event when downgrading models', async () => {
@@ -257,7 +281,7 @@ test('prompt returns provider-error after exhausting all fallback models', async
   const result = await client.prompt({ sessionId: 'ses_fb2', agent: 'guardian-code', parts: [], fallbackModels: ['cpa/gpt-5.4', 'cpa/gpt-5.6-sol'] });
   assert.equal(result.kind, 'provider-error');
   assert.equal(bodies.length, 3);
-  assert.deepEqual(bodies.map((b) => b.model), [undefined, 'cpa/gpt-5.4', 'cpa/gpt-5.6-sol']);
+  assert.deepEqual(bodies.map((b) => b.model), [undefined, { providerID: 'cpa', modelID: 'gpt-5.4' }, { providerID: 'cpa', modelID: 'gpt-5.6-sol' }]);
 });
 
 test('abort and getSession delegate to the SDK', async () => {

@@ -159,6 +159,21 @@ function safeJson(text) {
   }
 }
 
+// Normalize a model spec into OpenCode's { providerID, modelID } shape. Accepts a `provider/model`
+// string (split on the first slash), an already-shaped object, or nullish (returns null = use the
+// session/agent default). Never throws.
+export function toModelObject(model) {
+  if (!model) return null;
+  if (typeof model === 'object') {
+    return model.providerID && model.modelID ? { providerID: model.providerID, modelID: model.modelID } : null;
+  }
+  if (typeof model !== 'string') return null;
+  const trimmed = model.trim();
+  const slash = trimmed.indexOf('/');
+  if (slash <= 0 || slash === trimmed.length - 1) return null;
+  return { providerID: trimmed.slice(0, slash), modelID: trimmed.slice(slash + 1) };
+}
+
 export function createOpencodeClient({ baseUrl, sdk, logger = null, sdkFactory = createSdkClient } = {}) {
   // Build the SDK client with a long-lived fetch (undici header/body timeouts disabled) so
   // multi-minute prompts do not abort with `fetch failed` at ~300s. `dispatcher`/`dispatcherOptions`
@@ -181,7 +196,12 @@ export function createOpencodeClient({ baseUrl, sdk, logger = null, sdkFactory =
       const body = { agent, parts };
       if (format) body.format = format;
       if (system) body.system = system;
-      if (model) body.model = model;
+      // OpenCode POST /session/:id/message expects model as { providerID, modelID }; a raw string is
+      // silently ignored and yields an empty response. Accept either a `provider/model` string or an
+      // already-shaped object. Split on the FIRST slash only so ids like `openrouter/anthropic/x` keep
+      // the rest of the path as the modelID.
+      const modelObject = toModelObject(model);
+      if (modelObject) body.model = modelObject;
       // Cooperative abort: when the caller's signal fires, tell the server to abort the session so
       // an in-flight investigation prompt does not keep running after Ctrl+C.
       const onAbort = () => { abort(sessionId).catch(() => undefined); };
