@@ -44,6 +44,7 @@ This file summarizes all project changes, decisions, requirements, and bug recor
 - [change-1a149adf92854c34938da07409ba28a9] #qa-guardian #opencode-sdk #bug — Fixed a leftover spawn--attach path where the plan builder hung under a shared server, by routing it through an SDK session with json_schema output \(matching the specialists\). (2026-08-19)
 - [change-24402a071a3a4c84a3a6f56e78cca33b] #qa-guardian #architecture #role-split — Split QA Guardian into QA/Fixer/Supervisor roles as docs-only contracts \(scheme A, zero runtime change\) so later phases can separate identities without reopening frozen invariants. (2026-08-19)
 - [change-260993fcf6504e8eb9e54f84f0dd45f4] #qa-guardian #integration #investigation — 新增 investigation-runtime.mjs，把注入的 specialist runner、coordinator dossier synthesis、artifact persistence、plan builder 和 plan validation 串成可调用 runtime adapter，192/192 测试通过。 ()
+- [change-27078cb8ae6e43b19f65ab149bdb87ca] #guardian-runtime #opencode #model-config — Guardian agents now pin explicit per-role models instead of inheriting the global default, and prompts auto-retry on the next fallback model when a provider cooldown \(429\) occurs, so a single model cooldown no longer bricks the whole investigation. (2026-08-21)
 - [change-2955e2780a8b4097bfdf09d765453605] #qa-guardian #reliability #timeout — scheduler child invocation 增加 child_timeout_ms 与 kill/timeout code，investigation failure 写入 dossier/plan failed、attempts/error/phase 状态，192/192 测试通过。 (2026-08-18)
 - [change-2d00718e55fc479195377618f8fe8527] #qa-guardian #opencode-sdk #session-continuity — Replaced the unreliable multi-process `opencode run --attach` fan-out with the official one-serve + @opencode-ai/sdk pattern, and added per-issue OpenCode session metadata so human-approval and rework/followup flows continue the prior fixer/QA session with full context. (2026-08-19)
 - [change-30d32899761b40d8ac9f442695dfec62] #guardian-timeout #config #fixer-qa-session — 将 Fixer/QA SDK 会话的硬编码 20 分钟 deadline 改为可配置（fixer_deadline_ms/qa_deadline_ms），默认拉长到 60 分钟；用 resolveSessionDeadlineMs 保证始终为正（child_timeout_ms=0 的“调查不限时”不会把会话 deadline 归零），保留轮询运行器的有限上界语义。 (2026-08-21)
@@ -189,6 +190,7 @@ This file summarizes all project changes, decisions, requirements, and bug recor
 | change-1a149adf92854c34938da07409ba28a9 | 2026-08-19 | Route plan builder through the OpenCode SDK session | done | [link](changes/2026-08-19-change-1a149adf92854c34938da07409ba28a9-plan-builder-sdk.md) |
 | change-24402a071a3a4c84a3a6f56e78cca33b | 2026-08-19 | Introduce three-role architecture contract for QA Guardian \(Phase 1\) | done | [link](changes/2026-08-19-change-24402a071a3a4c84a3a6f56e78cca33b-role-architecture-contract.md) |
 | change-260993fcf6504e8eb9e54f84f0dd45f4 |  |  | done | [link](changes/2026-08-18-change-260993fcf6504e8eb9e54f84f0dd45f4-investigation-runtime.md) |
+| change-27078cb8ae6e43b19f65ab149bdb87ca | 2026-08-21 | Guardian pins per-role models and adds provider cooldown fallback | completed | [link](changes/2026-08-21-change-27078cb8ae6e43b19f65ab149bdb87ca-guardian-per-role-models-cooldown-fallback.md) |
 | change-2955e2780a8b4097bfdf09d765453605 | 2026-08-18 | 修复 Strong Guardian runtime timeout 与调查失败持久化 | done | [link](changes/2026-08-18-change-2955e2780a8b4097bfdf09d765453605-runtime-reliability.md) |
 | change-2d00718e55fc479195377618f8fe8527 | 2026-08-19 | Adopt OpenCode SDK multi-session runtime with session continuity | done | [link](changes/2026-08-19-change-2d00718e55fc479195377618f8fe8527-adopt-opencode-sdk-session-continuity.md) |
 | change-30d32899761b40d8ac9f442695dfec62 | 2026-08-21 | Fixer/QA 会话 deadline 可配置且默认拉长到 60 分钟 | done | [link](changes/2026-08-21-change-30d32899761b40d8ac9f442695dfec62-configurable-session-deadlines.md) |
@@ -329,7 +331,7 @@ This file summarizes all project changes, decisions, requirements, and bug recor
 - git: bug-986e8e7b64f046c1bedbacbcbc65a083, bug-9ea4fabc7f0948ac9dcdf159659e61de
 - guardian-investigation: change-0042ab69c2b94eb49a3576bfaadea0e4
 - guardian-launcher: change-76c5d0ed9fac48cb970da4f0329c2454, change-fc28793f11104036ad20f0cb288bda6f, decision-038091b9b1ca447db6c8a2d2a86719b4
-- guardian-runtime: change-7dc3767885cd4c9cb2ff5a1b5d8ca73d
+- guardian-runtime: change-27078cb8ae6e43b19f65ab149bdb87ca, change-7dc3767885cd4c9cb2ff5a1b5d8ca73d
 - guardian-scheduler: change-60858dbd238d4a13a5190dc40a7a1965
 - guardian-timeout: change-30d32899761b40d8ac9f442695dfec62
 - guardian-tui: change-cd0869b5cfa74261b9cf4655935f2317, change-f78313d32e614657bce29b72264e20fb
@@ -344,11 +346,12 @@ This file summarizes all project changes, decisions, requirements, and bug recor
 - lock: change-d68ddced82a4440492d038e2b4aa8975
 - logging: change-5330fd1c1188484fa1647010616d8195
 - migration: change-41675aeea2c446eea10506e55cbbd08d
+- model-config: change-27078cb8ae6e43b19f65ab149bdb87ca
 - multi-project: change-5cb23fed3750411f9d0a01fddae5f6de
 - n1-concurrency: change-d68ddced82a4440492d038e2b4aa8975
 - notification: change-c4f7796c3fa940589c4c90921c26455c
 - observability: change-6ff6c658477b423eae1d6e18a33f92b9, change-cd0869b5cfa74261b9cf4655935f2317
-- opencode: change-5330fd1c1188484fa1647010616d8195, change-7dc3767885cd4c9cb2ff5a1b5d8ca73d, change-cd0869b5cfa74261b9cf4655935f2317
+- opencode: change-27078cb8ae6e43b19f65ab149bdb87ca, change-5330fd1c1188484fa1647010616d8195, change-7dc3767885cd4c9cb2ff5a1b5d8ca73d, change-cd0869b5cfa74261b9cf4655935f2317
 - opencode-events: change-7e6fdf97764f412c921e2d9ab581c7b1
 - opencode-sdk: bug-09c23cce8bb443d7aadb0f5dea5ce3b7, bug-682f269c0050412797459f52712af366, bug-95af95c0c87348659c6d36a12974beb0, bug-b963cb3902ec472fba0747de51688475, change-09acc786cc4c4b53b58d1e9a5b7267ef, change-1a149adf92854c34938da07409ba28a9, change-2d00718e55fc479195377618f8fe8527, change-4e17ae8322d944be9acbbd5f14780594, change-9c651671735d41ca84cb71a1c1bd2213, change-bf2f029768594b7097870069da715a0a
 - opencode-serve: change-76c5d0ed9fac48cb970da4f0329c2454
