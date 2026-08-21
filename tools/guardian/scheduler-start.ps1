@@ -573,25 +573,28 @@ if ($DryRun) {
 
 Confirm-Start "    确认启动上述值守配置？输入 yes/确认 继续"
 
+# Shared OpenCode server + progress dir apply to BOTH the polling-only and combined (Feishu) runtimes
+# so agent sessions are hosted on one server (natively viewable) and specialist progress is mirrored.
+if ($OpenCodeServerUrl) {
+  Write-Host "    OpenCode服务: $OpenCodeServerUrl" -ForegroundColor Green
+  $ready = $false
+  for ($attempt = 0; $attempt -lt 60; $attempt++) {
+    try {
+      $health = Invoke-WebRequest -UseBasicParsing -Uri "$OpenCodeServerUrl/global/health" -TimeoutSec 2
+      if ($health.StatusCode -eq 200) { $ready = $true; break }
+    } catch {}
+    Start-Sleep -Seconds 1
+  }
+  if (-not $ready) { throw "OpenCode server did not become healthy: $OpenCodeServerUrl" }
+  $env:QA_GUARDIAN_OPENCODE_SERVER_URL = $OpenCodeServerUrl
+}
+if ($ProgressDir) {
+  New-Item -ItemType Directory -Path $ProgressDir -Force | Out-Null
+  $env:QA_GUARDIAN_PROGRESS_DIR = $ProgressDir
+  Write-Host "    Agent进度  : $ProgressDir" -ForegroundColor Green
+}
+
 if ($SchedulerOnly) {
-  if ($OpenCodeServerUrl) {
-    Write-Host "    OpenCode服务: $OpenCodeServerUrl" -ForegroundColor Green
-    $ready = $false
-    for ($attempt = 0; $attempt -lt 60; $attempt++) {
-      try {
-        $health = Invoke-WebRequest -UseBasicParsing -Uri "$OpenCodeServerUrl/global/health" -TimeoutSec 2
-        if ($health.StatusCode -eq 200) { $ready = $true; break }
-      } catch {}
-      Start-Sleep -Seconds 1
-    }
-    if (-not $ready) { throw "OpenCode server did not become healthy: $OpenCodeServerUrl" }
-    $env:QA_GUARDIAN_OPENCODE_SERVER_URL = $OpenCodeServerUrl
-  }
-  if ($ProgressDir) {
-    New-Item -ItemType Directory -Path $ProgressDir -Force | Out-Null
-    $env:QA_GUARDIAN_PROGRESS_DIR = $ProgressDir
-    Write-Host "    Agent进度  : $ProgressDir" -ForegroundColor Green
-  }
   Write-Host "==> 正在启动 Guardian scheduler（polling only）" -ForegroundColor Cyan
   Write-Host "    提示：按 Ctrl+C 可停止。" -ForegroundColor Gray
    $env:QA_GUARDIAN_QA_RUNTIME_DIR = $qaRuntimeRepo
