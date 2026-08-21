@@ -160,6 +160,35 @@ function normalizeProviderError(infoError) {
   };
 }
 
+function isStructuredOutputContractFailure(outcome) {
+  if (!outcome || outcome.kind === 'ok') return false;
+  const error = outcome.error;
+  const message = String(error?.message ?? '');
+  if (/Model did not produce structured output/i.test(message)) return true;
+  if (/Expected OutputFormatJsonSchema/i.test(message)) return true;
+  if (outcome.kind === 'unusable-session') return /json_schema|OutputFormatJsonSchema|structured output/i.test(message);
+  if (outcome.kind !== 'provider-error') return false;
+  return error?.retryable !== true && /json_schema|OutputFormatJsonSchema|structured output/i.test(message);
+}
+
+function markFormatFallback(result, original) {
+  if (result?.kind !== 'ok') return result;
+  const promptResponse = result.result?.prompt_response && typeof result.result.prompt_response === 'object'
+    ? result.result.prompt_response
+    : {};
+  return {
+    ...result,
+    result: {
+      ...result.result,
+      prompt_response: {
+        ...promptResponse,
+        format_fallback: true,
+        format_fallback_reason: original?.error?.message ?? original?.kind ?? 'structured output unavailable',
+      },
+    },
+  };
+}
+
 function safeJson(text) {
   try {
     return JSON.parse(text);
@@ -261,6 +290,12 @@ export function createOpencodeClient({ baseUrl, sdk, logger = null, sdkFactory =
         logger.warn('provider.fallback', { agent, from_model: models[i - 1] ?? 'agent-default', to_model: model, code: last?.error?.code ?? null, status: last?.error?.statusCode ?? null });
       }
       last = await promptOnce({ sessionId, agent, parts, format, system, signal, model });
+      if (format && isStructuredOutputContractFailure(last) && !signal?.aborted) {
+        if (logger) logger.warn('prompt.format_fallback', { agent, model: model ?? 'agent-default', reason: last.error?.message ?? last.kind });
+        const fallback = await promptOnce({ sessionId, agent, parts, format: null, system, signal, model });
+        if (fallback.kind === 'ok') return markFormatFallback(fallback, last);
+        last = fallback;
+      }
       // Fall back to the next model ONLY for a transient (retryable) provider error such as a
       // cooldown / 429 / 5xx. Any other outcome (ok, unusable, or a non-transient provider error)
       // returns immediately — no wasteful downgrade on an unknown/permanent failure.

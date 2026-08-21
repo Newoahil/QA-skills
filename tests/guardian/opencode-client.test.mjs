@@ -189,6 +189,46 @@ test('prompt passes agent, parts, and json_schema format to the session', async 
   });
 });
 
+test('prompt retries once without format when structured output contract is unavailable', async () => {
+  const bodies = [];
+  const events = [];
+  const sdk = {
+    _client: {
+      post: async (params) => {
+        bodies.push(params.body);
+        if (bodies.length === 1) {
+          return { data: { info: { error: { name: 'ProviderError', data: { message: 'Model did not produce structured output' } } }, parts: [] } };
+        }
+        return { data: { parts: [{ type: 'text', text: '{"ok":true}' }] } };
+      },
+    },
+    session: { create: async () => ({ id: 'ses_json' }) },
+  };
+  const logger = { info: () => {}, warn: (event, fields) => events.push({ event, fields }), error: () => {} };
+  const client = createOpencodeClient({ sdk, logger });
+  const result = await client.prompt({
+    sessionId: 'ses_json',
+    agent: 'guardian-code',
+    parts: [{ type: 'text', text: 'json' }],
+    format: { type: 'json_schema', schema: { type: 'object' } },
+    model: 'cpa/gpt-5.5',
+    fallbackModels: ['cpa/gpt-5.6-sol'],
+  });
+
+  assert.equal(result.kind, 'ok');
+  assert.equal(result.result.text, '{"ok":true}');
+  assert.equal(bodies.length, 2);
+  assert.equal(bodies[0].format.type, 'json_schema');
+  assert.equal(bodies[1].format, undefined);
+  assert.deepEqual(bodies.map((b) => b.model), [
+    { providerID: 'cpa', modelID: 'gpt-5.5' },
+    { providerID: 'cpa', modelID: 'gpt-5.5' },
+  ]);
+  assert.equal(events.some((e) => e.event === 'prompt.format_fallback'), true);
+  assert.equal(result.result.prompt_response.format_fallback, true);
+  assert.match(result.result.prompt_response.format_fallback_reason, /structured output/i);
+});
+
 test('prompt treats OpenCode info.error responses as provider failures', async () => {
   const sdk = {
     _client: {
