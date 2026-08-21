@@ -1,4 +1,5 @@
 import { TUI_TABS } from './dashboard-tui-input.mjs';
+import { stateFilterLabel } from './dashboard-tui-model.mjs';
 import { fitLine } from './dashboard-tui-text.mjs';
 
 const ANSI = Object.freeze({
@@ -73,12 +74,14 @@ function helpLines(ui) {
     '  1 摘要  2 transcript  3 logs  4 产物/错误',
     '  r 手动刷新',
     '  a 切换自动刷新',
+    '  t 切换队列筛选（关注中 / 处理中 / 等待人工 / 全部历史）',
     '  F transcript 完整模式',
     '  G 跳到日志末尾并 follow',
     '  p 暂停日志 follow',
     '  Tab 循环切焦点，PgUp/PgDn/Home/End 支持滚动',
     '',
     `当前自动刷新: ${ui.autoRefresh ? `${ui.refreshSeconds} 秒` : '关闭'}`,
+    `当前队列筛选: ${stateFilterLabel(ui.stateFilter)}（默认隐藏 DONE / 交回等历史，可按 t 切到全部历史）`,
     `Transcript 模式: ${ui.transcriptFull ? '完整' : '截断'}`,
   ];
 }
@@ -90,7 +93,7 @@ function renderHeader(snapshot, ui, viewport) {
     .join('  ');
   return [
     fitLine(`${ANSI.bold}QA Guardian 单终端只读 TUI${ANSI.reset}  ${repo}`, viewport.columns),
-    fitLine(`焦点=${ui.focus}  自动刷新=${ui.autoRefresh ? `${ui.refreshSeconds}s` : 'off'}  选中=#${snapshot.selectedIssue ?? '-'}  标签=${tabs}`, viewport.columns),
+    fitLine(`焦点=${ui.focus}  筛选=${stateFilterLabel(ui.stateFilter)}  自动刷新=${ui.autoRefresh ? `${ui.refreshSeconds}s` : 'off'}  选中=#${snapshot.selectedIssue ?? '-'}  标签=${tabs}`, viewport.columns),
   ];
 }
 
@@ -98,7 +101,7 @@ function renderFooter(snapshot, ui, viewport) {
   const timeText = snapshot.now ? new Date(snapshot.now).toLocaleString('zh-CN') : '-';
   return [
     fitLine(`${ANSI.dim}${ui.statusMessage ?? ''}${ANSI.reset}`, viewport.columns),
-    fitLine(`${ANSI.dim}r 刷新 · a 自动刷新 · ? 帮助 · 最后绘制 ${timeText}${ANSI.reset}`, viewport.columns),
+    fitLine(`${ANSI.dim}r 刷新 · a 自动刷新 · t 筛选 · ? 帮助 · 最后绘制 ${timeText}${ANSI.reset}`, viewport.columns),
   ];
 }
 
