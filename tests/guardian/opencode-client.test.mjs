@@ -24,7 +24,7 @@ function fakeSdk() {
       post: async (params) => {
         if (params.url.endsWith('/message')) {
           calls.prompt.push(params);
-          return { data: { info: { structured: { ok: true } }, parts: [{ type: 'text', text: 'fallback' }] } };
+          return { data: { info: { structured_output: { ok: true } }, parts: [{ type: 'text', text: 'fallback' }] } };
         }
         calls.abort.push(params);
         return { data: true };
@@ -34,6 +34,9 @@ function fakeSdk() {
         if (params.url.endsWith('/message')) {
           calls.messages.push(params);
           return { data: [{ info: { role: 'assistant' }, parts: [{ type: 'text', text: 'done' }] }] };
+        }
+        if (params.url === '/agent') {
+          return { data: { 'guardian-code': { name: 'guardian-code' }, 'guardian-runtime': { name: 'guardian-runtime' } } };
         }
         return { data: { id: 'ses_existing', agent: 'qa-guardian' } };
       },
@@ -133,6 +136,12 @@ test('prompt passes agent, parts, and json_schema format to the session', async 
     format: { type: 'json_schema', schema: { type: 'object' } },
   });
   assert.deepEqual(result.result.structured, { ok: true });
+  assert.deepEqual(result.result.prompt_response, {
+    parts_count: 1,
+    text_bytes: 8,
+    has_structured: false,
+    has_structured_output: true,
+  });
 });
 
 test('abort and getSession delegate to the SDK', async () => {
@@ -153,6 +162,15 @@ test('getMessages reads session messages through the explicit SDK URL', async ()
   assert.equal(result.kind, 'ok');
   assert.equal(result.messages[0].parts[0].text, 'done');
   assert.equal(calls.messages[0].url, '/session/ses_existing/message');
+});
+
+test('getAgents reads available agent names for a directory', async () => {
+  const { sdk, calls } = fakeSdk();
+  const client = createOpencodeClient({ sdk });
+  const result = await client.getAgents('D:/repo');
+  assert.equal(result.kind, 'ok');
+  assert.deepEqual(result.agents, ['guardian-code', 'guardian-runtime']);
+  assert.deepEqual(calls.get[0], { url: '/agent', query: { directory: 'D:/repo' } });
 });
 
 test('normalizes a 404 session as unusable (recreate) vs a 5xx as retryable', async () => {

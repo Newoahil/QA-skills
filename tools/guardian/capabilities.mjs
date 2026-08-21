@@ -3,6 +3,7 @@
 // flags and safe local capabilities; integrations can inject actual MCP probes later.
 
 export const CAPABILITY_NAMES = Object.freeze(['codegraph', 'context7', 'local_runtime', 'git_history', 'plan_critic', 'sybermem']);
+export const GUARDIAN_AGENT_ROLES = Object.freeze(['guardian-code', 'guardian-business', 'guardian-runtime', 'guardian-docs', 'guardian-history', 'guardian-plan-critic']);
 
 function configValue(config, name) {
   return config?.capabilities?.[name] ?? config?.agents?.[name] ?? undefined;
@@ -63,4 +64,21 @@ export function availableInvestigationTools(capabilities, config = {}) {
   if (capabilities?.plan_critic?.available) tools.push('guardian-plan-critic');
   if (capabilities?.sybermem?.available) tools.push('sybermem');
   return tools.filter((tool) => !tool.startsWith('guardian-') || agentEnabled(config, tool));
+}
+
+export function unavailableGuardianAgents(config = {}, availableAgents = []) {
+  const available = new Set(Array.isArray(availableAgents) ? availableAgents : []);
+  if (available.size === 0) return [];
+  return GUARDIAN_AGENT_ROLES.filter((role) => agentEnabled(config, role) && !available.has(role));
+}
+
+export function disableUnavailableGuardianAgents(config = {}, availableAgents = []) {
+  const unavailable = unavailableGuardianAgents(config, availableAgents);
+  if (unavailable.length === 0) return config;
+  const agents = { ...(config.agents ?? {}) };
+  for (const role of unavailable) {
+    agents[role] = false;
+    agents[role.replace(/^guardian-/, 'guardian_').replaceAll('-', '_')] = false;
+  }
+  return { ...config, agents };
 }

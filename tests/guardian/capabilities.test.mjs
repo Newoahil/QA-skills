@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { agentEnabled, availableInvestigationTools, discoverCapabilities, disabledSkills } from '../../tools/guardian/capabilities.mjs';
+import { agentEnabled, availableInvestigationTools, disableUnavailableGuardianAgents, discoverCapabilities, disabledSkills, unavailableGuardianAgents } from '../../tools/guardian/capabilities.mjs';
 
 test('capabilities fail closed when MCP flags are not enabled', () => {
   const caps = discoverCapabilities({ env: {}, probes: { codegraph: { available: true }, context7: { available: true } } });
@@ -46,4 +46,14 @@ test('disabled skills remove guardian agents from investigation tools', () => {
   assert.equal(disabledSkills(config).has('guardian-history'), true);
   assert.equal(agentEnabled(config, 'guardian-plan-critic'), false);
   assert.deepEqual(availableInvestigationTools(caps, config), ['explore', 'guardian-code', 'guardian-business', 'guardian-runtime']);
+});
+
+test('available OpenCode agents disable missing optional Guardian specialists', () => {
+  const config = { agents: { guardian_history: true, guardian_plan_critic: true } };
+  const available = ['guardian-code', 'guardian-business', 'guardian-runtime'];
+  assert.deepEqual(unavailableGuardianAgents(config, available), ['guardian-docs', 'guardian-history', 'guardian-plan-critic']);
+  const filtered = disableUnavailableGuardianAgents(config, available);
+  assert.equal(agentEnabled(filtered, 'guardian-history'), false);
+  assert.equal(agentEnabled(filtered, 'guardian-plan-critic'), false);
+  assert.equal(agentEnabled(filtered, 'guardian-code'), true);
 });

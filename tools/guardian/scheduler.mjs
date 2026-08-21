@@ -25,7 +25,7 @@ import { projectLabels } from './label-io.mjs';
 import { prepareInvestigation } from './investigation-runtime.mjs';
 import { hasTimeout, resolveSessionDeadlineMs } from './budgets.mjs';
 import { processPlanBuilder, processSpecialistRunner } from './investigation-process.mjs';
-import { discoverCapabilities } from './capabilities.mjs';
+import { disableUnavailableGuardianAgents, discoverCapabilities, unavailableGuardianAgents } from './capabilities.mjs';
 import { artifactIdentity, quarantineArtifacts, readArtifact, readArtifactPair, writeArtifact, writeMarkdownArtifact } from './artifacts.mjs';
 import { assessFixingEntry } from './plan-gate.mjs';
 import { auditQaVerdict } from './qa-verdict.mjs';
@@ -47,6 +47,23 @@ export function sessionStatusAction(status) {
   if (status === 'ok') return { continue: true, retry: false, failClosed: false };
   if (status === 'retry') return { continue: false, retry: true, failClosed: false };
   return { continue: false, retry: false, failClosed: true };
+}
+
+function jsonFailureFields(error) {
+  if (!(error instanceof Error) || error.name !== 'InvestigationJsonParseError') return {};
+  const response = error.prompt_response && typeof error.prompt_response === 'object' ? error.prompt_response : {};
+  return {
+    json_phase: error.json_phase ?? null,
+    json_source: error.json_source ?? null,
+    role: error.role ?? null,
+    parse_error_message: error.parse_error_message ?? null,
+    output_bytes: typeof error.output_bytes === 'number' ? error.output_bytes : null,
+    output_preview: error.output_preview ?? null,
+    prompt_parts_count: typeof response.parts_count === 'number' ? response.parts_count : null,
+    prompt_text_bytes: typeof response.text_bytes === 'number' ? response.text_bytes : null,
+    prompt_has_structured: typeof response.has_structured === 'boolean' ? response.has_structured : null,
+    prompt_has_structured_output: typeof response.has_structured_output === 'boolean' ? response.has_structured_output : null,
+  };
 }
 
 const DEFAULT_INTERVAL_MS = 60 * 1000;
@@ -298,13 +315,26 @@ async function tick(repoDir, config, logger, signal = null) {
         const issueData = { title: plan.toRun.issueTitle ?? '', body: plan.toRun.issueBody ?? '' };
         const memoryContext = recallEngineeringMemory({ config, repoDir, issue, issueData });
         if (memoryContext.status === 'unavailable') logger.warn('memory.recall_unavailable', { issue, provider: memoryContext.provider, reason: memoryContext.reason });
+        let investigationConfig = config;
+        if (opencodeClient?.getAgents) {
+          const agents = await opencodeClient.getAgents(qaRuntimeDir);
+          if (agents.kind === 'ok') {
+            const unavailable = unavailableGuardianAgents(config, agents.agents);
+            if (unavailable.length > 0) {
+              logger.warn('investigation.agents_unavailable', { issue, agents: unavailable.join(',') });
+              investigationConfig = disableUnavailableGuardianAgents(config, agents.agents);
+            }
+          } else {
+            logger.warn('investigation.agent_probe_failed', { issue, error_message: agents.error instanceof Error ? agents.error.message : 'unknown' });
+          }
+        }
         const prepared = await prepareInvestigation({
           issue,
           issueData,
            repoDir, qaRuntimeDir, guardianDir, issueClass: config.default_issue_class ?? 'bug',
           complexity: config.investigation_complexity ?? 'complex',
-          capabilities: discoverCapabilities({ env: process.env, config }),
-          config,
+          capabilities: discoverCapabilities({ env: process.env, config: investigationConfig }),
+          config: investigationConfig,
           memoryContext,
           state: investigationState,
           round: investigationState.processing_round ?? 1,
@@ -363,7 +393,7 @@ async function tick(repoDir, config, logger, signal = null) {
           plan_validation_errors: [error instanceof Error ? error.message : 'investigation failed'],
         }, { touch: false });
         releaseLock(lockFile, handle);
-        logger.error('investigation.failed', { issue, error_message: error instanceof Error ? error.message : 'unknown' });
+        logger.error('investigation.failed', { issue, error_message: error instanceof Error ? error.message : 'unknown', ...jsonFailureFields(error) });
         return;
       }
     }

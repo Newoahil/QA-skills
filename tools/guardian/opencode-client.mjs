@@ -145,11 +145,18 @@ export function createOpencodeClient({ baseUrl, sdk } = {}) {
         ...(signal ? { signal } : {}),
       }).finally(() => { if (signal) signal.removeEventListener('abort', onAbort); });
       const data = result?.data ?? result;
-      const text = Array.isArray(data?.parts)
-        ? data.parts.filter((part) => part?.type === 'text' && typeof part.text === 'string').map((part) => part.text).join('')
+      const responseParts = Array.isArray(data?.parts) ? data.parts : [];
+      const text = responseParts.length > 0
+        ? responseParts.filter((part) => part?.type === 'text' && typeof part.text === 'string').map((part) => part.text).join('')
         : (typeof data?.text === 'string' ? data.text : '');
-      const structured = data?.info?.structured ?? null;
-      return { kind: 'ok', status: 'ok', result: { ...data, text, structured } };
+      const structured = data?.info?.structured_output ?? data?.info?.structured ?? null;
+      const prompt_response = {
+        parts_count: responseParts.length,
+        text_bytes: Buffer.byteLength(text, 'utf8'),
+        has_structured: data?.info?.structured !== undefined,
+        has_structured_output: data?.info?.structured_output !== undefined,
+      };
+      return { kind: 'ok', status: 'ok', result: { ...data, text, structured, prompt_response } };
     } catch (error) {
       return { kind: classifyError(error).kind, error };
     }
@@ -177,6 +184,21 @@ export function createOpencodeClient({ baseUrl, sdk } = {}) {
     }
   }
 
+  async function getAgents(directory = null) {
+    try {
+      const params = { url: '/agent' };
+      if (directory) params.query = { directory };
+      const result = await client._client.get(params);
+      const data = result?.data ?? result ?? {};
+      const names = Array.isArray(data)
+        ? data.map((agent) => agent?.name ?? agent?.id).filter((name) => typeof name === 'string')
+        : Object.keys(data).filter((name) => data?.[name] && typeof data[name] === 'object');
+      return { kind: 'ok', status: 'ok', agents: names };
+    } catch (error) {
+      return { kind: classifyError(error).kind, error };
+    }
+  }
+
   // Official real-time event stream (SSE): client.event.subscribe() → { stream } async-iterable of
   // { type, properties }. Returns { kind:'ok', stream } or a normalized error kind. The caller owns
   // iteration + cancellation (break out of the for-await loop, or call the returned cancel()).
@@ -193,5 +215,5 @@ export function createOpencodeClient({ baseUrl, sdk } = {}) {
     }
   }
 
-  return { createSession, prompt, abort, getSession, getMessages, subscribeEvents };
+  return { createSession, prompt, abort, getSession, getMessages, getAgents, subscribeEvents };
 }
