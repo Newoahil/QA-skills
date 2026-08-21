@@ -6,7 +6,7 @@ import path from 'node:path';
 import { PassThrough } from 'node:stream';
 import test from 'node:test';
 
-import { createProgressSink, processSpecialistRunner, runAgentJson } from '../../tools/guardian/investigation-process.mjs';
+import { createProgressSink, guardianDirFromDossierPath, issueProgressDir, processSpecialistRunner, runAgentJson } from '../../tools/guardian/investigation-process.mjs';
 
 function fakeChild() {
   const child = new EventEmitter();
@@ -237,4 +237,16 @@ test('createProgressSink mirrors progress to scheduler output and the agent log'
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test('issue progress dir matches the TUI reader path and derives from the dossier path', () => {
+  const guardianDir = path.join('D:', 'ctrl', '.qa', 'guardian');
+  // TUI reads <guardianDir>/progress/<issue>/<agent>.log — the writer must target the same layout.
+  assert.equal(issueProgressDir({ guardianDir, issue: 205 }), path.join(guardianDir, 'progress', '205'));
+  assert.equal(issueProgressDir({ guardianDir: null, issue: 205 }), null);
+  assert.equal(issueProgressDir({ guardianDir, issue: null }), null);
+  // dossierPath is <guardianDir>/<issue>/dossier.json → guardianDir recovered by dirname twice.
+  const dossierPath = path.join(guardianDir, '205', 'dossier.json');
+  assert.equal(guardianDirFromDossierPath(dossierPath), guardianDir);
+  assert.equal(guardianDirFromDossierPath(null), null);
 });

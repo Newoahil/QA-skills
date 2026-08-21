@@ -303,7 +303,7 @@ async function tick(repoDir, config, logger) {
           state: investigationState,
           round: investigationState.processing_round ?? 1,
           runSpecialist: (args) => processSpecialistRunner({ ...args, opencodeClient }),
-           buildPlan: (args) => processPlanBuilder({ ...args, repoDir, qaRuntimeDir, opencodeClient }),
+           buildPlan: (args) => processPlanBuilder({ ...args, repoDir, qaRuntimeDir, guardianDir, opencodeClient }),
         });
         const state = readState(guardianDir, issue) ?? { issue };
         writeState(guardianDir, {

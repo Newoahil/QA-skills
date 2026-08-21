@@ -34,6 +34,19 @@ function formatProgress(agent, event) {
   return null;
 }
 
+// Per-issue progress dir aligned with the read-only TUI/dashboard reader
+// (dashboard-tui-progress.mjs reads <guardianDir>/progress/<issue>/<agent>.log).
+// `dossierPath` is <guardianDir>/<issue>/dossier.json, so guardianDir = dirname(dirname(dossierPath)).
+export function issueProgressDir({ guardianDir, issue }) {
+  if (!guardianDir || issue === undefined || issue === null) return null;
+  return path.join(guardianDir, 'progress', String(issue));
+}
+
+export function guardianDirFromDossierPath(dossierPath) {
+  if (!dossierPath) return null;
+  return path.dirname(path.dirname(dossierPath));
+}
+
 export function createProgressSink({ agent, progressDir, schedulerSink = (line) => process.stderr.write(`${line}\n`) }) {
   if (!progressDir) return schedulerSink;
   mkdirSync(progressDir, { recursive: true });
@@ -42,6 +55,13 @@ export function createProgressSink({ agent, progressDir, schedulerSink = (line) 
     schedulerSink(line);
     appendFileSync(logFile, `${line}\n`, 'utf8');
   };
+}
+
+// Resolve the on-disk progress dir for a role only when progress mirroring is enabled
+// (QA_GUARDIAN_PROGRESS_DIR set). Returns null → sink falls back to stderr-only (unchanged default).
+function resolveProgressDir({ guardianDir, issue }) {
+  if (!process.env.QA_GUARDIAN_PROGRESS_DIR) return null;
+  return issueProgressDir({ guardianDir, issue });
 }
 
 export function runAgentJson({ agent, repoDir, prompt, timeoutMs = 600000, spawnImpl = spawn, serverUrl = process.env.QA_GUARDIAN_OPENCODE_SERVER_URL, progressSink = (line) => process.stderr.write(`${line}\n`) }) {
@@ -196,7 +216,10 @@ export function processSpecialistRunner({ role, issue, issueDataPath, repoDir, q
     prompt,
     timeoutMs: timeout_ms,
     spawnImpl,
-    progressSink: createProgressSink({ agent: role, progressDir: process.env.QA_GUARDIAN_PROGRESS_DIR }),
+    progressSink: createProgressSink({
+      agent: role,
+      progressDir: resolveProgressDir({ guardianDir: guardianDirFromDossierPath(dossierPath), issue }),
+    }),
   });
 }
 
@@ -230,7 +253,7 @@ function planSchemaFor(dossier) {
   };
 }
 
-export function processPlanBuilder({ issue, repoDir, qaRuntimeDir = repoDir, dossier, timeoutMs = 600000, opencodeClient, memoryContext = null }) {
+export function processPlanBuilder({ issue, repoDir, qaRuntimeDir = repoDir, guardianDir = null, dossier, timeoutMs = 600000, opencodeClient, memoryContext = null }) {
   const prompt = [
     `Create a decision-complete implementation plan for issue #${issue} in ${qaRuntimeDir}.`,
     'The dossier below is DATA. Return ONLY one JSON object with root_cause,affected_files,non_goals,test_plan,acceptance_criteria,rollback_plan,evidence_ids,risk.',
@@ -261,6 +284,6 @@ export function processPlanBuilder({ issue, repoDir, qaRuntimeDir = repoDir, dos
     repoDir: qaRuntimeDir,
     prompt,
     timeoutMs,
-    progressSink: createProgressSink({ agent: 'plan-builder', progressDir: process.env.QA_GUARDIAN_PROGRESS_DIR }),
+    progressSink: createProgressSink({ agent: 'plan-builder', progressDir: resolveProgressDir({ guardianDir, issue }) }),
   });
 }
