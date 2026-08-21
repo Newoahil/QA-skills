@@ -162,6 +162,8 @@ test('buildProgressLogLines shows clear guidance when no progress logs exist', (
     assert.match(text, /未发现进度目录/);
     assert.match(text, /progress\\21\\<agent>\.log|progress\/21\/\<agent>\.log/);
     assert.match(text, /runtime/);
+    assert.match(text, /shared OpenCode server/);
+    assert.match(text, /Transcript|实时/);
   } finally {
     rmSync(repo, { recursive: true, force: true });
   }

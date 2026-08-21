@@ -47,6 +47,11 @@ function collectRelevantLogRoles(record, existingLogs = []) {
   return Array.from(roles).filter(Boolean);
 }
 
+function appendMissingProgressGuidance(lines) {
+  lines.push('- 说明: shared OpenCode server / SDK 会话路径当前不会写本地镜像 .log 文件；本地 progress 日志只来自 child-process 进度镜像。');
+  lines.push('- 下一步: 切到 Transcript 或实时 标签查看 session 消息、provider 错误和 SSE 事件。');
+}
+
 function readBoundedTail(filePath, { maxBytes = PROGRESS_TAIL_BYTES, maxLines = PROGRESS_TAIL_LINES } = {}) {
   const size = statSync(filePath).size;
   const start = Math.max(0, size - maxBytes);
@@ -121,12 +126,14 @@ function buildProgressLogLinesForGuardianDir(guardianDir, record) {
     lines.push(`- 未发现进度目录: ${progressDir}`);
     lines.push(`- 期望日志路径: ${path.join(progressDir, '<agent>.log')}`);
     if (roles.length > 0) lines.push(`- 当前相关角色: ${roles.join(', ')}`);
+    appendMissingProgressGuidance(lines);
     return lines;
   }
   if (existingLogs.length === 0) {
     lines.push(`- 进度目录存在，但没有 .log 文件: ${progressDir}`);
     lines.push(`- 期望日志路径: ${path.join(progressDir, '<agent>.log')}`);
     if (roles.length > 0) lines.push(`- 当前相关角色: ${roles.join(', ')}`);
+    appendMissingProgressGuidance(lines);
     return lines;
   }
   const orderedRoles = collectRelevantLogRoles(record, existingLogs)
