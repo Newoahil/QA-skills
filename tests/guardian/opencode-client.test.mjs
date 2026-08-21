@@ -176,6 +176,47 @@ test('prompt treats OpenCode info.error responses as provider failures', async (
   assert.equal(JSON.stringify(result).includes('must-not-leak'), false);
 });
 
+test('prompt retries with fallback model on provider cooldown then succeeds', async () => {
+  const bodies = [];
+  const sdk = {
+    _client: {
+      post: async (params) => {
+        bodies.push(params.body);
+        if (bodies.length === 1) {
+          return { data: { info: { error: { name: 'APIError', data: { statusCode: 429, responseBody: '{"error":{"code":"model_cooldown"}}' } } }, parts: [] } };
+        }
+        return { data: { parts: [{ type: 'text', text: 'ok-from-fallback' }] } };
+      },
+    },
+    session: { create: async () => ({ id: 'ses_fb' }) },
+  };
+  const client = createOpencodeClient({ sdk });
+  const result = await client.prompt({ sessionId: 'ses_fb', agent: 'guardian-code', parts: [], fallbackModels: ['cpa/gpt-5.4'] });
+  assert.equal(result.kind, 'ok');
+  assert.equal(result.result.text, 'ok-from-fallback');
+  assert.equal(bodies.length, 2);
+  assert.equal(bodies[0].model, undefined);
+  assert.equal(bodies[1].model, 'cpa/gpt-5.4');
+});
+
+test('prompt returns provider-error after exhausting all fallback models', async () => {
+  const bodies = [];
+  const sdk = {
+    _client: {
+      post: async (params) => {
+        bodies.push(params.body);
+        return { data: { info: { error: { name: 'APIError', data: { statusCode: 429, responseBody: '{"error":{"code":"model_cooldown"}}' } } }, parts: [] } };
+      },
+    },
+    session: { create: async () => ({ id: 'ses_fb2' }) },
+  };
+  const client = createOpencodeClient({ sdk });
+  const result = await client.prompt({ sessionId: 'ses_fb2', agent: 'guardian-code', parts: [], fallbackModels: ['cpa/gpt-5.4', 'cpa/gpt-5.6-sol'] });
+  assert.equal(result.kind, 'provider-error');
+  assert.equal(bodies.length, 3);
+  assert.deepEqual(bodies.map((b) => b.model), [undefined, 'cpa/gpt-5.4', 'cpa/gpt-5.6-sol']);
+});
+
 test('abort and getSession delegate to the SDK', async () => {
   const { sdk, calls } = fakeSdk();
   const client = createOpencodeClient({ sdk });

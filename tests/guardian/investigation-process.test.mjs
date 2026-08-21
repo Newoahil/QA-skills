@@ -226,6 +226,25 @@ test('processSpecialistRunner reports SDK prompt response shape on empty text JS
   });
 });
 
+test('processSpecialistRunner forwards fallback models to the prompt', async () => {
+  const seen = [];
+  const client = {
+    createSession: async () => 'ses_fb',
+    prompt: async ({ fallbackModels }) => { seen.push(fallbackModels); return { kind: 'ok', result: { text: '{"specialist":"guardian-code","hypotheses":[],"evidence":[],"unresolved_facts":[],"acceptance_criteria":[]}' } }; },
+    getSession: async () => ({ kind: 'ok', session: { id: 'ses_fb', agent: 'guardian-code' } }),
+  };
+  await processSpecialistRunner({
+    role: 'guardian-code',
+    issue: 205,
+    issueDataPath: 'D:/repo/.qa/guardian/205/issue-data.json',
+    repoDir: 'D:/repo',
+    dossierPath: 'D:/repo/.qa/guardian/205/dossier.json',
+    opencodeClient: client,
+    fallbackModels: ['cpa/gpt-5.4'],
+  });
+  assert.deepEqual(seen[0], ['cpa/gpt-5.4']);
+});
+
 test('processSpecialistRunner reports provider errors instead of parsing empty JSON', async () => {
   const client = {
     createSession: async () => 'ses_cooldown',

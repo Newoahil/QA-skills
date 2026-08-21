@@ -153,11 +153,12 @@ export function createOpencodeClient({ baseUrl, sdk } = {}) {
     return result?.data?.id ?? result?.id ?? result;
   }
 
-  async function prompt({ sessionId, agent, parts, format = null, system = null, signal = null }) {
+  async function promptOnce({ sessionId, agent, parts, format, system, signal, model }) {
     try {
       const body = { agent, parts };
       if (format) body.format = format;
       if (system) body.system = system;
+      if (model) body.model = model;
       // Cooperative abort: when the caller's signal fires, tell the server to abort the session so
       // an in-flight investigation prompt does not keep running after Ctrl+C.
       const onAbort = () => { abort(sessionId).catch(() => undefined); };
@@ -191,6 +192,20 @@ export function createOpencodeClient({ baseUrl, sdk } = {}) {
     } catch (error) {
       return { kind: classifyError(error).kind, error };
     }
+  }
+
+  // Try the agent's own model first (model=undefined lets OpenCode use the agent definition), then
+  // each configured fallback model in order. Only a provider-error (e.g. model cooldown / 429) is
+  // retried on the next model; any other outcome (ok / retryable / unusable) returns immediately.
+  async function prompt({ sessionId, agent, parts, format = null, system = null, signal = null, fallbackModels = [] }) {
+    const models = [undefined, ...(Array.isArray(fallbackModels) ? fallbackModels.filter((m) => typeof m === 'string' && m) : [])];
+    let last = null;
+    for (const model of models) {
+      if (signal?.aborted) break;
+      last = await promptOnce({ sessionId, agent, parts, format, system, signal, model });
+      if (last.kind !== 'provider-error') return last;
+    }
+    return last;
   }
 
   async function abort(sessionId) {

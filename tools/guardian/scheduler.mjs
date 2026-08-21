@@ -193,6 +193,11 @@ async function tick(repoDir, config, logger, signal = null) {
   // child-process path).
   const serverUrl = process.env.QA_GUARDIAN_OPENCODE_SERVER_URL;
   const opencodeClient = serverUrl ? createOpencodeClient({ baseUrl: serverUrl }) : null;
+  // Provider resilience: when a specialist/plan prompt hits a provider cooldown (429), retry the
+  // same session on the next configured fallback model instead of failing the whole investigation.
+  const fallbackModels = Array.isArray(config.fallback_models)
+    ? config.fallback_models.filter((m) => typeof m === 'string' && m)
+    : [];
   const supervisor = opencodeClient ? createSupervisorExecutor({ repoDir }) : null;
 
   const trustedAuthors = config.command_authors ?? [];
@@ -339,8 +344,8 @@ async function tick(repoDir, config, logger, signal = null) {
           state: investigationState,
           round: investigationState.processing_round ?? 1,
           signal,
-          runSpecialist: (args) => processSpecialistRunner({ ...args, opencodeClient }),
-           buildPlan: (args) => processPlanBuilder({ ...args, repoDir, qaRuntimeDir, guardianDir, opencodeClient }),
+          runSpecialist: (args) => processSpecialistRunner({ ...args, opencodeClient, fallbackModels }),
+           buildPlan: (args) => processPlanBuilder({ ...args, repoDir, qaRuntimeDir, guardianDir, opencodeClient, fallbackModels }),
         });
         const state = readState(guardianDir, issue) ?? { issue };
         writeState(guardianDir, {
