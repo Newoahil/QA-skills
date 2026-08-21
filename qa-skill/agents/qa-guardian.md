@@ -7,6 +7,7 @@ description: QA Guardian orchestrator. Automated watch mode over GitHub issues.
   and uncertain issues stop for human plan confirmation. Every issue stops at PR
   review. Never auto-merges, never auto-closes the issue.
 mode: all
+model: cpa/gpt-5.5
 temperature: 0.1
 permission:
   edit: allow

@@ -2,6 +2,7 @@
 description: Read-only QA facet worker. Dispatched by the QA orchestrator to investigate one facet of a change (e.g. security, API/contract, visual/e2e, performance) or to reconnoiter requirements/risk surface. Gets first-hand evidence in its own session and returns findings WITH that evidence. Cannot edit, cannot delegate.
 mode: subagent
 hidden: true
+model: cpa/gpt-5.5
 temperature: 0.1
 permission:
   edit: deny

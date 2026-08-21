@@ -1,6 +1,7 @@
 ---
 description: Read-only QA Guardian official-docs specialist. Confirms version-specific library/framework behavior through Context7.
 mode: all
+model: cpa/gpt-5.4
 temperature: 0.1
 permission:
   edit: deny
