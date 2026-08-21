@@ -164,6 +164,19 @@ test('getMessages reads session messages through the explicit SDK URL', async ()
   assert.equal(calls.messages[0].url, '/session/ses_existing/message');
 });
 
+test('getMessages preserves bad request responses as message endpoint errors', async () => {
+  const sdk = {
+    _client: {
+      get: async () => { throw Object.assign(new Error('bad request'), { status: 400 }); },
+    },
+    session: { create: async () => ({ id: 'ses_new' }) },
+  };
+  const client = createOpencodeClient({ sdk });
+  const result = await client.getMessages('ses_bad');
+  assert.equal(result.kind, 'message-endpoint-error');
+  assert.equal(result.status, 400);
+});
+
 test('getAgents reads available agent names for a directory', async () => {
   const { sdk, calls } = fakeSdk();
   const client = createOpencodeClient({ sdk });

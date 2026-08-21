@@ -110,6 +110,13 @@ function classifyError(error) {
   return { kind: 'unusable-session' };
 }
 
+function messageEndpointError(error) {
+  const status = Number(error?.status);
+  if (status === 404) return { kind: 'unusable-session', status };
+  if (isRetryableStatus(status) || !Number.isFinite(status)) return { kind: 'retryable', status: Number.isFinite(status) ? status : null, error };
+  return { kind: 'message-endpoint-error', status, error };
+}
+
 export function createOpencodeClient({ baseUrl, sdk } = {}) {
   const client = sdk ?? createSdkClient({ baseUrl });
 
@@ -180,7 +187,7 @@ export function createOpencodeClient({ baseUrl, sdk } = {}) {
       const result = await client._client.get({ url: `/session/${encodeURIComponent(sessionId)}/message` });
       return { kind: 'ok', status: 'ok', messages: result?.data ?? result ?? [] };
     } catch (error) {
-      return { kind: classifyError(error).kind, error };
+      return messageEndpointError(error);
     }
   }
 
