@@ -6,6 +6,7 @@ import path from 'node:path';
 
 import { newState, STATES, RISK } from '../../tools/guardian/state.mjs';
 import {
+  buildSummaryTabLines,
   buildArtifactErrorLines,
   buildProgressLogLines,
   buildTranscriptLines,
@@ -119,6 +120,33 @@ test('buildProgressLogLines surfaces investigation and per-role durations', () =
   }
 });
 
+test('summary and logs mark persisted running sessions as non-live without inflight evidence', () => {
+  const repo = tempRepo();
+  const guardianDir = guardianDirFor(repo);
+  try {
+    mkdirSync(guardianDir, { recursive: true });
+    const record = {
+      ...newState(205, '2026-08-20T10:00:00.000Z'),
+      state: STATES.DISCOVERED,
+      opencode: {
+        schema_version: 1,
+        fixer: null,
+        qa: null,
+        specialists: {
+          'guardian-code': { session_id: 'ses_code', agent: 'guardian-code', last_status: 'running', last_seen_at: '2026-08-20T10:05:00.000Z' },
+        },
+        inflight: null,
+      },
+    };
+    const summary = buildSummaryTabLines(record, { active: 0, waiting: 0, terminal: 0, total: 1 }, Date.parse('2026-08-20T11:00:00.000Z')).join('\n');
+    assert.match(summary, /running，非实时/);
+    const logs = buildProgressLogLines(guardianDir, record).join('\n');
+    assert.match(logs, /状态=running，非实时/);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
 test('buildProgressLogLines shows clear guidance when no progress logs exist', () => {
   const repo = tempRepo();
   const guardianDir = guardianDirFor(repo);
@@ -217,6 +245,32 @@ test('live tab renders buffered event lines when enabled and guidance when disab
     });
     assert.match(withLive.contextLines.join('\n'), /实时事件流: http:\/\/127\.0\.0\.1:4096/);
     assert.match(withLive.contextLines.join('\n'), /工具 grep \(running\)/);
+
+    const connectedIdle = await loadDashboardTuiSnapshot({
+      requestedRepo: repo,
+      bindingFile: path.join('tests', 'guardian', 'does-not-exist.json'),
+      selectedIssue: 205,
+      tab: TUI_TABS.live,
+      baseUrl: 'http://127.0.0.1:4096',
+      liveLines: [],
+      now: Date.parse('2026-08-20T10:00:10.000Z'),
+    });
+    assert.match(connectedIdle.contextLines.join('\n'), /已连接共享 OpenCode 事件流/);
+    assert.match(connectedIdle.contextLines.join('\n'), /当前没有活跃专员/);
+    assert.match(connectedIdle.contextLines.join('\n'), /scheduler lock: 未检测到/);
+
+    writeFileSync(path.join(guardianDir, '.scheduler.lock'), `${JSON.stringify({ pid: 999999, token: 'secret-token', acquired_at: Date.parse('2026-08-20T10:00:00.000Z'), renewed_at: Date.parse('2026-08-20T10:00:00.000Z') })}\n`, 'utf8');
+    const stalePid = await loadDashboardTuiSnapshot({
+      requestedRepo: repo,
+      bindingFile: path.join('tests', 'guardian', 'does-not-exist.json'),
+      selectedIssue: 205,
+      tab: TUI_TABS.live,
+      baseUrl: 'http://127.0.0.1:4096',
+      liveLines: [],
+      now: Date.parse('2026-08-20T10:00:10.000Z'),
+    });
+    assert.match(stalePid.contextLines.join('\n'), /scheduler lock: 陈旧/);
+    assert.doesNotMatch(stalePid.contextLines.join('\n'), /secret-token/);
 
     const disabled = await loadDashboardTuiSnapshot({
       requestedRepo: repo,

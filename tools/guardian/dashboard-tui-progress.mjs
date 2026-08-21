@@ -14,6 +14,12 @@ function valueOrDash(value) {
   return value === undefined || value === null || value === '' ? '-' : String(value);
 }
 
+function displaySessionStatus(status, record) {
+  const text = valueOrDash(status);
+  if (text === 'running' && !record?.opencode?.inflight?.session_id) return 'running，非实时';
+  return text;
+}
+
 // Human-readable duration. null/undefined/non-number → '-'. Sub-minute shows seconds.
 function formatDuration(ms) {
   const n = Number(ms);
@@ -100,7 +106,7 @@ function buildProgressLogLinesForGuardianDir(guardianDir, record) {
   if (sessions.length === 0) {
     lines.push('- 暂无会话记录');
   } else {
-    for (const session of sessions) lines.push(`- ${session.role}: ${session.session_id} | 状态=${valueOrDash(session.last_status)} | 最近=${valueOrDash(session.last_seen_at)}`);
+    for (const session of sessions) lines.push(`- ${session.role}: ${session.session_id} | 状态=${displaySessionStatus(session.last_status, record)} | 最近=${valueOrDash(session.last_seen_at)}`);
   }
   if (record?.opencode?.inflight) {
     const inflight = record.opencode.inflight;

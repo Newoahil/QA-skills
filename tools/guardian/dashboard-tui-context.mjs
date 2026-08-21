@@ -16,6 +16,12 @@ function trimPreview(text, limit = 18) {
   return [...lines.slice(0, limit), `... 共 ${lines.length} 行，已截断`];
 }
 
+function displaySessionStatus(status, record) {
+  const text = valueOrDash(status);
+  if (text === 'running' && !record?.opencode?.inflight?.session_id) return 'running，非实时';
+  return text;
+}
+
 export function resolvePreferredSession(record) {
   if (!record) return { kind: 'missing-issue' };
   const inflight = record.opencode?.inflight;
@@ -59,7 +65,7 @@ export function buildSummaryTabLines(record, stats, now) {
     `最近更新: ${relativeTime(record.updated_at, now)}`,
     '',
     `OpenCode 会话数: ${sessions.length}`,
-    ...(sessions.length === 0 ? ['暂无已记录会话。'] : sessions.map((session) => `- ${session.role}: ${session.session_id} (${valueOrDash(session.last_status)})`)),
+    ...(sessions.length === 0 ? ['暂无已记录会话。'] : sessions.map((session) => `- ${session.role}: ${session.session_id} (${displaySessionStatus(session.last_status, record)})`)),
   ];
 }
 

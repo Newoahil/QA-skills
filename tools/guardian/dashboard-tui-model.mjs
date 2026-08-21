@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { existsSync, readFileSync } from 'node:fs';
 
 import { dashboardStats, filterByState, formatIssueDetail, guardianDirFor, hasGuardianDir, loadAllIssueStates } from './dashboard-model.mjs';
 import { buildArtifactErrorLines } from './dashboard-tui-artifacts.mjs';
@@ -7,10 +8,12 @@ import { buildSummaryTabLines, buildTranscriptLines, resolvePreferredSession } f
 import { resolveViewerRepo } from './worktree-binding.mjs';
 import { fetchTranscript } from './session-transcript.mjs';
 import { TUI_TABS } from './dashboard-tui-input.mjs';
+import { stripUtf8Bom } from './runtime-io.mjs';
 
 export const DEFAULT_REFRESH_SECONDS = 8;
 export const DEFAULT_FOCUS = 'queue';
 export const DEFAULT_STATE_FILTER = 'current';
+const DEFAULT_LOCK_LEASE_MS = 30 * 60 * 1000;
 
 // Cycle order for the `t` key. `current` (active + waiting) is the day-to-day watch view;
 // `all` exposes terminal history (DONE / HANDED_BACK) for audit without deleting state files.
@@ -37,7 +40,7 @@ function splitLines(text) {
   return String(text ?? '').split(/\r?\n/);
 }
 
-export { buildArtifactErrorLines, buildProgressLogLines, buildTranscriptLines, resolvePreferredSession };
+export { buildArtifactErrorLines, buildProgressLogLines, buildSummaryTabLines, buildTranscriptLines, resolvePreferredSession };
 
 export function parseRefreshSeconds(value, fallback = DEFAULT_REFRESH_SECONDS) {
   const parsed = Number(value);
@@ -134,7 +137,7 @@ async function loadContextLines({ baseUrl, guardianDir, now, record, stats, tab,
     case TUI_TABS.artifacts:
       return buildArtifactErrorLines(guardianDir, record);
     case TUI_TABS.live:
-      return buildLiveEventLines(liveLines, baseUrl);
+      return buildLiveEventLines(liveLines, baseUrl, { guardianDir, now, record });
     default:
       return buildSummaryTabLines(record, stats, now);
   }
@@ -142,7 +145,44 @@ async function loadContextLines({ baseUrl, guardianDir, now, record, stats, tab,
 
 // Live tab: rendered from the CLI's in-memory SSE event buffer (no polling). When no shared server
 // is configured, explain how to enable native real-time viewing instead of showing an empty pane.
-function buildLiveEventLines(liveLines, baseUrl) {
+function processExists(pid) {
+  const n = Number(pid);
+  if (!Number.isInteger(n) || n <= 0) return false;
+  try {
+    process.kill(n, 0);
+    return true;
+  } catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === 'ESRCH') return false;
+    return true;
+  }
+}
+
+function schedulerLockLines(guardianDir, now = Date.now()) {
+  if (!guardianDir) return ['- scheduler lock: 未知（无 guardianDir）'];
+  const lockFile = path.join(guardianDir, '.scheduler.lock');
+  if (!existsSync(lockFile)) return ['- scheduler lock: 未检测到'];
+  try {
+    const lock = JSON.parse(stripUtf8Bom(readFileSync(lockFile, 'utf8')));
+    const renewedAt = Number(lock?.renewed_at ?? lock?.acquired_at);
+    const pid = Number(lock?.pid);
+    const ageMs = Number.isFinite(renewedAt) ? Math.max(0, now - renewedAt) : null;
+    const leaseLive = ageMs !== null && ageMs < DEFAULT_LOCK_LEASE_MS;
+    const ownerAlive = processExists(pid);
+    if (leaseLive && ownerAlive) return [`- scheduler lock: live pid=${pid} renewed=${new Date(renewedAt).toLocaleString('zh-CN')}`];
+    if (leaseLive && !ownerAlive) return [`- scheduler lock: 陈旧（pid=${pid} 不存在，但 lease 尚未过期）`];
+    return [`- scheduler lock: 已过期 pid=${Number.isFinite(pid) ? pid : '-'} renewed=${Number.isFinite(renewedAt) ? new Date(renewedAt).toLocaleString('zh-CN') : '-'}`];
+  } catch (error) {
+    return [`- scheduler lock: 读取失败（${error instanceof Error ? error.message : 'unknown'}）`];
+  }
+}
+
+function activeWorkLines(record) {
+  const inflight = record?.opencode?.inflight;
+  if (!inflight?.session_id) return ['- 当前操作: 无活跃 inflight'];
+  return [`- 当前操作: ${inflight.role ?? '-'} session=${inflight.session_id} 状态=${inflight.status ?? '-'}`];
+}
+
+function buildLiveEventLines(liveLines, baseUrl, { guardianDir = null, now = Date.now(), record = null } = {}) {
   if (!Array.isArray(liveLines)) {
     return [
       '实时事件流未启用。',
@@ -152,7 +192,16 @@ function buildLiveEventLines(liveLines, baseUrl) {
     ];
   }
   if (liveLines.length === 0) {
-    return [`实时事件流已连接: ${baseUrl}`, '', '等待专员事件…（专员开始工作后逐条流式显示）'];
+    return [
+      `已连接共享 OpenCode 事件流: ${baseUrl}`,
+      '',
+      '当前没有活跃专员事件。',
+      '说明: SSE 连接成功只代表可以接收后续事件；是否正在工作请同时看当前操作、scheduler lock 和状态更新时间。',
+      '',
+      '运行状态',
+      ...activeWorkLines(record),
+      ...schedulerLockLines(guardianDir, now),
+    ];
   }
   return [`实时事件流: ${baseUrl}`, '', ...liveLines];
 }

@@ -68,9 +68,14 @@ function pad(value, width) {
   return text.length >= width ? text : `${text}${' '.repeat(width - text.length)}`;
 }
 
+function sessionStatus(ref) {
+  const status = valueOrDash(ref.last_status);
+  return status === 'running' ? 'running，非实时记录' : status;
+}
+
 function sessionLine(ref) {
   const label = ROLE_LABELS[ref.role] ?? `专家[${ref.role}]`;
-  return `${label}: ${ref.session_id} (agent=${valueOrDash(ref.agent)}, 状态=${valueOrDash(ref.last_status)}, 最后活跃=${valueOrDash(ref.last_seen_at)})`;
+  return `${label}: ${ref.session_id} (agent=${valueOrDash(ref.agent)}, 状态=${sessionStatus(ref)}, 最后活跃=${valueOrDash(ref.last_seen_at)})`;
 }
 
 export function extractSessionIds(record) {
