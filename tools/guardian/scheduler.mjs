@@ -25,6 +25,7 @@ import { projectLabels } from './label-io.mjs';
 import { prepareInvestigation } from './investigation-runtime.mjs';
 import { hasTimeout, resolveSessionDeadlineMs } from './budgets.mjs';
 import { processPlanBuilder, processSpecialistRunner } from './investigation-process.mjs';
+import { resolveModelForRole } from './investigation-coordinator.mjs';
 import { disableUnavailableGuardianAgents, discoverCapabilities, unavailableGuardianAgents } from './capabilities.mjs';
 import { artifactIdentity, quarantineArtifacts, readArtifact, readArtifactPair, writeArtifact, writeMarkdownArtifact } from './artifacts.mjs';
 import { assessFixingEntry } from './plan-gate.mjs';
@@ -358,8 +359,8 @@ async function tick(repoDir, config, logger, signal = null) {
           round: investigationState.processing_round ?? 1,
           signal,
           logger,
-          runSpecialist: (args) => processSpecialistRunner({ ...args, opencodeClient, fallbackModels }),
-           buildPlan: (args) => processPlanBuilder({ ...args, repoDir, qaRuntimeDir, guardianDir, opencodeClient, fallbackModels }),
+          runSpecialist: (args) => processSpecialistRunner({ ...args, opencodeClient, fallbackModels, model: resolveModelForRole(config, args.role) }),
+           buildPlan: (args) => processPlanBuilder({ ...args, repoDir, qaRuntimeDir, guardianDir, opencodeClient, fallbackModels, model: resolveModelForRole(config, 'plan') }),
         });
         const state = readState(guardianDir, issue) ?? { issue };
         writeState(guardianDir, {
@@ -518,6 +519,8 @@ async function tick(repoDir, config, logger, signal = null) {
           mode: investigationMode,
            deadlineMs: resolveSessionDeadlineMs(config, 'fixer_deadline_ms'),
           writePrSummary: (content) => writeMarkdownArtifact(guardianDir, issue, 'pr-summary', content),
+          model: resolveModelForRole(config, 'fixer'),
+          fallbackModels,
        });
        writeState(guardianDir, fixerRun.state, { touch: false });
        const fixerAction = sessionStatusAction(fixerRun.status);
@@ -548,6 +551,8 @@ async function tick(repoDir, config, logger, signal = null) {
         round: afterFix.processing_round ?? 1,
         deadlineMs: resolveSessionDeadlineMs(config, 'qa_deadline_ms'),
         writeQaAcceptance: (content) => writeMarkdownArtifact(guardianDir, issue, 'qa-acceptance', content),
+        model: resolveModelForRole(config, 'qa'),
+        fallbackModels,
       });
        writeState(guardianDir, qaRun.state, { touch: false });
        const qaAction = sessionStatusAction(qaRun.status);

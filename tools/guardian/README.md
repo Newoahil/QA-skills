@@ -84,8 +84,17 @@ The write-capable agent itself is [`qa-skill/agents/qa-guardian.md`](../../qa-sk
      "base_branch": "dev",
      "notify_webhook": "https://open.feishu.cn/open-apis/bot/v2/hook/XXXX",
       "notify_channel": "feishu",
-      "investigation_mode": "enforced",
-      "capabilities": {
+       "investigation_mode": "enforced",
+       "models": {
+         "default": "your-provider/your-model",
+         "fixer": "your-provider/your-strong-model",
+         "qa": "your-provider/your-strong-model",
+         "guardian-code": "your-provider/your-strong-model",
+         "guardian-docs": "your-provider/your-fast-model",
+         "plan": "your-provider/your-strong-model"
+       },
+       "fallback_models": ["your-provider/your-backup-model"],
+       "capabilities": {
         "codegraph": false,
         "context7": false,
         "git_history": true,
@@ -130,6 +139,8 @@ The write-capable agent itself is [`qa-skill/agents/qa-guardian.md`](../../qa-sk
     | `notify_webhook` | notification webhook URL (Feishu bot / generic) | none → comment-only |
     | `notify_channel` | `generic` (raw JSON) or `feishu` (interactive card) | generic |
     | `investigation_mode` | `legacy`, `shadow`, or `enforced` dossier/plan migration mode | enforced |
+    | `models` | **optional per-role model map, keyed by role** (`fixer`, `qa`, `qa-facet`, `plan`, `guardian-code`/`business`/`runtime`/`docs`/`history`/`plan-critic`, plus a `default` catch-all). Values are your own OpenCode `provider/model` strings — the repo hardcodes none. Any unset role falls back to `models.default`, then to the OpenCode agent/global default, so Guardian runs out of the box on any provider even with no `models` block. | none (use global default) |
+    | `fallback_models` | optional ordered list of `provider/model` strings tried in turn when a prompt hits a provider cooldown / 429 | none |
     | `capabilities` | optional read-only integrations and specialist capability flags | safe defaults |
     | `agents` | per-specialist switches; set an agent key to `false` to skip it | enabled |
     | `memory` | optional engineering-memory provider settings; SyberMem is opt-in | disabled |

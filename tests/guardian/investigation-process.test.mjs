@@ -226,6 +226,25 @@ test('processSpecialistRunner reports SDK prompt response shape on empty text JS
   });
 });
 
+test('processSpecialistRunner forwards the configured per-role model to the prompt', async () => {
+  const seen = [];
+  const client = {
+    createSession: async () => 'ses_m',
+    prompt: async ({ model }) => { seen.push(model); return { kind: 'ok', result: { text: '{"specialist":"guardian-code","hypotheses":[],"evidence":[],"unresolved_facts":[],"acceptance_criteria":[]}' } }; },
+    getSession: async () => ({ kind: 'ok', session: { id: 'ses_m', agent: 'guardian-code' } }),
+  };
+  await processSpecialistRunner({
+    role: 'guardian-code',
+    issue: 205,
+    issueDataPath: 'D:/repo/.qa/guardian/205/issue-data.json',
+    repoDir: 'D:/repo',
+    dossierPath: 'D:/repo/.qa/guardian/205/dossier.json',
+    opencodeClient: client,
+    model: 'openai/gpt-x',
+  });
+  assert.equal(seen[0], 'openai/gpt-x');
+});
+
 test('processSpecialistRunner forwards fallback models to the prompt', async () => {
   const seen = [];
   const client = {

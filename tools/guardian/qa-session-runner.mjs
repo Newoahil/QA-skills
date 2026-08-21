@@ -30,6 +30,7 @@ export async function runQaSession({
   client, state, issue, repoDir, branch, diffSummary, intendedBehavior, round = 1,
   deadlineMs = 60 * 60 * 1000, pollIntervalMs = 1000,
   writeQaAcceptance = null,
+  model = undefined, fallbackModels = [],
 }) {
   const startedAt = Date.now();
   const opencode = state.opencode ?? { schema_version: 1, fixer: null, qa: null, specialists: {}, inflight: null };
@@ -52,7 +53,7 @@ export async function runQaSession({
   const prompt = buildQaPrompt({ issue, repoDir, branch, diffSummary, intendedBehavior, round, operationMarker });
   const control = { cancelled: false };
   const outcome = await withDeadline(
-    () => promptOrCompletedMessage({ client, sessionId, prompt, baseline: baselineResult, promptStartedAt: Date.now(), operationMarker, pollIntervalMs, control, deadlineMs: remaining() }),
+    () => promptOrCompletedMessage({ client, sessionId, prompt, baseline: baselineResult, promptStartedAt: Date.now(), operationMarker, pollIntervalMs, control, deadlineMs: remaining(), model, fallbackModels }),
     remaining(),
     () => client.abort(sessionId),
     () => { control.cancelled = true; },
@@ -92,10 +93,10 @@ async function baselineMessageIds(client, sessionId) {
   return new Set(result.messages.map(messageId).filter(Boolean));
 }
 
-async function promptOrCompletedMessage({ client, sessionId, prompt, baseline, promptStartedAt, operationMarker, pollIntervalMs, control, deadlineMs }) {
+async function promptOrCompletedMessage({ client, sessionId, prompt, baseline, promptStartedAt, operationMarker, pollIntervalMs, control, deadlineMs, model = undefined, fallbackModels = [] }) {
   let promptResult = null;
   let promptSettled = false;
-  const rawPromptPromise = client.prompt({ sessionId, agent: 'qa', parts: [{ type: 'text', text: prompt }] })
+  const rawPromptPromise = client.prompt({ sessionId, agent: 'qa', parts: [{ type: 'text', text: prompt }], model, fallbackModels })
     .then((result) => { promptResult = result; promptSettled = true; return result; });
   if (typeof client.getMessages !== 'function') return rawPromptPromise;
 

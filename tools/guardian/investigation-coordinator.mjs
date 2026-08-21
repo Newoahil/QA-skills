@@ -7,6 +7,18 @@ import { agentEnabled, availableInvestigationTools } from './capabilities.mjs';
 
 export const SPECIALIST_ROLES = Object.freeze(['guardian-code', 'guardian-business', 'guardian-runtime', 'guardian-docs', 'guardian-history', 'guardian-plan-critic']);
 
+// Resolve the model for a given Guardian role from config, portably. The repository never hardcodes
+// a provider/model: `.qa/guardian/config.json` may set `models.<role>` (e.g. models["guardian-code"]),
+// a `models.plan` for the plan builder, and a `models.default` catch-all. When nothing is configured
+// this returns undefined so OpenCode falls back to the agent definition / global default model —
+// which keeps the repo runnable on any user's provider setup out of the box.
+export function resolveModelForRole(config, role) {
+  const models = config?.models;
+  if (!models || typeof models !== 'object') return undefined;
+  const clean = (value) => (typeof value === 'string' && value.trim() !== '' ? value.trim() : undefined);
+  return clean(models[role]) ?? clean(models.default);
+}
+
 export function selectSpecialists({ issueClass, complexity = 'complex', capabilities, config = {} }) {
   const roles = complexity === 'simple'
     ? ['guardian-code', 'guardian-runtime']

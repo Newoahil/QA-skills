@@ -1,7 +1,6 @@
 ---
 description: Read-only QA Guardian runtime specialist. Reproduces bugs with existing tests and local probes without installing or changing the repository.
 mode: all
-model: cpa/gpt-5.5
 temperature: 0.1
 permission:
   edit: deny

@@ -1,7 +1,6 @@
 ---
 description: Read-only QA Guardian plan critic. Reviews dossier/plan safety, scope, evidence, risk, and verifiability before fixing.
 mode: all
-model: cpa/gpt-5.6-luna
 temperature: 0.1
 permission:
   edit: deny

@@ -1,7 +1,22 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { buildInvestigationPrompt, coordinatorContext, selectSpecialists, synthesizeDossier } from '../../tools/guardian/investigation-coordinator.mjs';
+import { buildInvestigationPrompt, coordinatorContext, resolveModelForRole, selectSpecialists, synthesizeDossier } from '../../tools/guardian/investigation-coordinator.mjs';
+
+test('resolveModelForRole reads per-role model from config with default and global fallback', () => {
+  const config = { models: { 'guardian-code': 'openai/gpt-x', plan: 'anthropic/claude-y', default: 'openai/fallback' } };
+  // exact role match wins
+  assert.equal(resolveModelForRole(config, 'guardian-code'), 'openai/gpt-x');
+  // plan builder uses the 'plan' key
+  assert.equal(resolveModelForRole(config, 'plan'), 'anthropic/claude-y');
+  // unlisted role falls back to models.default
+  assert.equal(resolveModelForRole(config, 'guardian-runtime'), 'openai/fallback');
+  // no models config at all -> undefined (let OpenCode use the agent/global default; portable)
+  assert.equal(resolveModelForRole({}, 'guardian-code'), undefined);
+  assert.equal(resolveModelForRole({ models: {} }, 'qa'), undefined);
+  // never hardcode a provider: an empty/whitespace value is treated as unset
+  assert.equal(resolveModelForRole({ models: { qa: '  ' } }, 'qa'), undefined);
+});
 
 test('complex issues select orthogonal read-only specialists', () => {
   const roles = selectSpecialists({ issueClass: 'bug', complexity: 'complex', capabilities: { context7: { available: true }, git_history: { available: true }, plan_critic: { available: true } } });

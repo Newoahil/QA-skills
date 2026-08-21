@@ -72,6 +72,8 @@ export async function runFixerSession({
   mode = 'enforced',
   deadlineMs = 60 * 60 * 1000,
   writePrSummary = null,
+  model = undefined,
+  fallbackModels = [],
 }) {
   const opencode = state.opencode ?? { schema_version: 1, fixer: null, qa: null, specialists: {}, inflight: null };
   const decision = await resolveSessionForRole({
@@ -99,6 +101,8 @@ export async function runFixerSession({
       agent: 'qa-guardian',
       parts: [{ type: 'text', text: prompt }],
       format: { type: 'json_schema', schema: FIXER_SCHEMA },
+      model,
+      fallbackModels,
     }),
     deadlineMs,
     () => client.abort(sessionId),
