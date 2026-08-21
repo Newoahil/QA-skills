@@ -123,6 +123,9 @@ The write-capable agent itself is [`qa-skill/agents/qa-guardian.md`](../../qa-sk
     | `command_authors` | **trusted `/guardian` command authors (security, required).** Entered once in the per-project launcher binding and propagated to control config; **unset = every command is ignored (fail-closed)** | none |
     | `poll_interval_ms` | resident scheduler poll interval; config may override the code default | 60000 |
    | `lease_ms` | N=1 lock lease (heartbeat-renewed while a run is live) | 1800000 |
+    | `specialist_timeout_ms` / `investigation_budget_ms` / `child_timeout_ms` | investigation-phase timeouts; **0 = unlimited** (durations are recorded as telemetry instead of force-killing) | 0 (unlimited) |
+    | `fixer_deadline_ms` | Fixer SDK session deadline (polling bound; must be > 0) | 3600000 (60 min) |
+    | `qa_deadline_ms` | QA SDK session deadline (polling bound; must be > 0) | 3600000 (60 min) |
    | `base_branch` | PR target branch | dev |
     | `notify_webhook` | notification webhook URL (Feishu bot / generic) | none → comment-only |
     | `notify_channel` | `generic` (raw JSON) or `feishu` (interactive card) | generic |
