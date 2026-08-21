@@ -221,6 +221,26 @@ test('prompt treats OpenCode info.error responses as provider failures', async (
   assert.equal(JSON.stringify(result).includes('must-not-leak'), false);
 });
 
+test('prompt does NOT fall back when provider error lacks retryable signal (null code/status)', async () => {
+  const bodies = [];
+  const sdk = {
+    _client: {
+      post: async (params) => {
+        bodies.push(params.body);
+        // info.error with no statusCode/code — an unknown non-transient error, not a cooldown.
+        return { data: { info: { error: { name: 'APIError', data: { message: 'weird' } } } }, parts: [] };
+      },
+    },
+    session: { create: async () => ({ id: 'ses_x' }) },
+  };
+  const client = createOpencodeClient({ sdk });
+  const r = await client.prompt({ sessionId: 'ses_x', agent: 'guardian-code', parts: [], model: 'cpa/gpt-5.5', fallbackModels: ['cpa/gpt-5.6-sol'] });
+  assert.equal(r.kind, 'provider-error');
+  assert.equal(r.error.retryable, false);
+  // Only ONE attempt: no wasteful downgrade to the fallback model on a non-transient error.
+  assert.equal(bodies.length, 1);
+});
+
 test('prompt retries with fallback model on provider cooldown then succeeds', async () => {
   const bodies = [];
   const sdk = {

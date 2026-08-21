@@ -141,11 +141,20 @@ function normalizeProviderError(infoError) {
   const responseBody = typeof data.responseBody === 'string' ? safeJson(data.responseBody) : null;
   const bodyError = responseBody?.error && typeof responseBody.error === 'object' ? responseBody.error : {};
   const statusCode = Number(data.statusCode ?? infoError?.statusCode);
+  const code = typeof data.code === 'string' ? data.code : (typeof bodyError.code === 'string' ? bodyError.code : null);
+  const normalizedStatus = Number.isFinite(statusCode) ? statusCode : null;
+  // Only transient conditions justify a model fallback: HTTP 429/408/5xx, or an explicit
+  // cooldown/rate-limit code. An error with no status and no code is an UNKNOWN, likely
+  // non-transient failure (e.g. bad request, unsupported feature) — surfacing it as a hard failure
+  // is safer than mislabeling it a cooldown and needlessly downgrading to another model.
+  const cooldownCode = typeof code === 'string' && /cooldown|rate.?limit|too.?many.?requests/i.test(code);
+  const retryable = normalizedStatus === 429 || normalizedStatus === 408 || (normalizedStatus !== null && normalizedStatus >= 500) || cooldownCode;
   return {
     name: typeof infoError?.name === 'string' ? infoError.name : 'OpenCodeProviderError',
     message: typeof data.message === 'string' ? data.message : (typeof infoError?.message === 'string' ? infoError.message : 'OpenCode provider error'),
-    statusCode: Number.isFinite(statusCode) ? statusCode : null,
-    code: typeof data.code === 'string' ? data.code : (typeof bodyError.code === 'string' ? bodyError.code : null),
+    statusCode: normalizedStatus,
+    code,
+    retryable,
     reset_seconds: Number.isFinite(Number(data.reset_seconds)) ? Number(data.reset_seconds) : (Number.isFinite(Number(bodyError.reset_seconds)) ? Number(bodyError.reset_seconds) : null),
     reset_time: typeof data.reset_time === 'string' ? data.reset_time : (typeof bodyError.reset_time === 'string' ? bodyError.reset_time : null),
   };
@@ -252,7 +261,10 @@ export function createOpencodeClient({ baseUrl, sdk, logger = null, sdkFactory =
         logger.warn('provider.fallback', { agent, from_model: models[i - 1] ?? 'agent-default', to_model: model, code: last?.error?.code ?? null, status: last?.error?.statusCode ?? null });
       }
       last = await promptOnce({ sessionId, agent, parts, format, system, signal, model });
-      if (last.kind !== 'provider-error') return last;
+      // Fall back to the next model ONLY for a transient (retryable) provider error such as a
+      // cooldown / 429 / 5xx. Any other outcome (ok, unusable, or a non-transient provider error)
+      // returns immediately — no wasteful downgrade on an unknown/permanent failure.
+      if (last.kind !== 'provider-error' || last.error?.retryable !== true) return last;
     }
     return last;
   }
