@@ -293,8 +293,8 @@ async function tick(repoDir, config, logger, signal = null) {
     const planArtifact = pair.plan;
     if (!pair.complete) {
       if (dossier || planArtifact) quarantineArtifacts(guardianDir, issue);
+      const investigationState = readState(guardianDir, issue) ?? { issue };
       try {
-        const investigationState = readState(guardianDir, issue) ?? { issue };
         const issueData = { title: plan.toRun.issueTitle ?? '', body: plan.toRun.issueBody ?? '' };
         const memoryContext = recallEngineeringMemory({ config, repoDir, issue, issueData });
         if (memoryContext.status === 'unavailable') logger.warn('memory.recall_unavailable', { issue, provider: memoryContext.provider, reason: memoryContext.reason });

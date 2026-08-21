@@ -49,17 +49,17 @@ test('scheduler-start.ps1 checks the Guardian tools repository against its curre
   const text = readFileSync('tools/guardian/scheduler-start.ps1', 'utf8');
   assert.match(text, /function Current-GitBranch/);
   assert.match(text, /function Assert-CleanAndUpstreamLatest/);
-  assert.match(text, /\$guardianFacts = Assert-CleanAndUpstreamLatest \$GuardianRepo 'Guardian工具仓库'/);
+  assert.match(text, /\$guardianFacts = Assert-CleanAndUpstreamLatest \$GuardianRepo 'Guardian tools repo'/);
   assert.match(text, /Assert-CleanAndLatest \$Repo \$branch \$Label -AllowBehind/);
-  assert.match(text, /本地版本不是远端最新，将继续使用本地版本运行/);
-  assert.doesNotMatch(text, /Assert-CleanAndLatest \$GuardianRepo 'main' 'Guardian工具仓库'/);
+  assert.match(text, /not at upstream latest; continuing with the local version/);
+  assert.doesNotMatch(text, /Assert-CleanAndLatest \$GuardianRepo 'main' 'Guardian tools repo'/);
 });
 
 test('scheduler-start.ps1 warns but continues when Guardian tools are not upstream latest', () => {
   const text = readFileSync('tools/guardian/scheduler-start.ps1', 'utf8');
   assert.match(text, /AllowBehind/);
-  assert.match(text, /本地版本不是远端最新，将继续使用本地版本运行/);
-  assert.match(text, /目标值守仓库/);
+  assert.match(text, /not at upstream latest; continuing with the local version/);
+  assert.match(text, /Target watch repo/);
 });
 
 test('scheduler-start.ps1 accepts GitHub URL input by normalizing it to owner repo form', () => {
@@ -156,6 +156,32 @@ test('scheduler launcher keeps binding author authorization fail-closed under -Y
   assert.match(text, /Normalize-CommandAuthors \$Binding\.command_authors/);
   assert.match(text, /\$authorInput = if \(\$CommandAuthors\) \{ \$CommandAuthors \}/);
   assert.match(text, /Normalize-CommandAuthors \$authorInput/);
+});
+
+test('scheduler launcher startup banner uses ASCII labels for Windows console safety', () => {
+  const text = readFileSync('tools/guardian/scheduler-start.ps1', 'utf8');
+  const startupBlock = text.slice(text.indexOf('==> QA Guardian scheduler'), text.indexOf('$packageRoot'));
+  const authorsBlock = text.slice(text.indexOf('Write-Host "    Command authors'), text.indexOf('$base = if ($cfg.base_branch)'));
+  const statusBlock = text.slice(text.indexOf('Write-Host "    GitHub repo'), text.indexOf('if ($DryRun)'));
+  const runtimeBlock = text.slice(text.indexOf('Write-Host "    OpenCode URL'), text.length);
+  const visibleBlocks = [startupBlock, authorsBlock, statusBlock, runtimeBlock].join('\n');
+  for (const label of ['Guardian dir', 'Target repo', 'Command authors', 'GitHub repo', 'Watch mode', 'OpenCode URL', 'Progress dir']) {
+    assert.match(visibleBlocks, new RegExp(label.replace(/ /g, '\\s+')));
+  }
+  for (const fragile of ['Guardian目录', '目标项目', '可信命令作者', 'GitHub仓库', '值守模式', 'OpenCode服务', 'Agent进度', 'Guardian工具仓库', '目标值守仓库']) {
+    assert.doesNotMatch(visibleBlocks, new RegExp(fragile));
+  }
+});
+
+test('scheduler keeps investigation state visible to failure handler', () => {
+  const text = readFileSync('tools/guardian/scheduler.mjs', 'utf8');
+  const outerDeclaration = text.indexOf('const investigationState = readState(guardianDir, issue) ?? { issue };');
+  const tryIndex = text.indexOf('try {', outerDeclaration);
+  const catchIndex = text.indexOf('} catch (error) {', tryIndex);
+  const failureUse = text.indexOf('investigationState.opencode?.specialists', catchIndex);
+  assert.ok(outerDeclaration > 0);
+  assert.ok(outerDeclaration < tryIndex);
+  assert.ok(failureUse > catchIndex);
 });
 
 test('launcher docs and config describe explicit project switching and independent bindings', () => {

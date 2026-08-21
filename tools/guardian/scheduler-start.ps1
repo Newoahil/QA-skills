@@ -198,17 +198,17 @@ function Current-GitBranch([string]$Repo) {
 
 function Assert-CleanAndLatest([string]$Repo, [string]$Branch, [string]$Label, [switch]$AllowBehind) {
   $inside = Invoke-Git $Repo @('rev-parse', '--is-inside-work-tree')
-  if ($inside.output -ne 'true') { throw "$Label 不是 git 仓库: $Repo" }
+  if ($inside.output -ne 'true') { throw "$Label is not a git repository: $Repo" }
   $status = Invoke-Git $Repo @('status', '--porcelain')
-  if ($status.output) { throw "$Label 工作区不干净，请先提交/暂存/清理后再启动: $Repo" }
+  if ($status.output) { throw "$Label worktree is dirty; commit/stash/clean before startup: $Repo" }
   $remote = Invoke-Git $Repo @('remote', 'get-url', 'origin')
-  if (-not $remote.output) { throw "$Label 缺少 origin remote: $Repo" }
+  if (-not $remote.output) { throw "$Label is missing origin remote: $Repo" }
   Invoke-Git $Repo @('fetch', 'origin', $Branch) | Out-Null
   $local = Invoke-Git $Repo @('rev-parse', $Branch)
   $upstream = Invoke-Git $Repo @('rev-parse', "origin/$Branch")
   $inSync = $local.output -eq $upstream.output
-  if (-not $inSync -and -not $AllowBehind) { throw "$Label 本地 $Branch 与 origin/$Branch 不一致，请先同步到远端最新主分支。" }
-  if (-not $inSync) { Write-Host "    [提示] $Label 本地版本不是远端最新，将继续使用本地版本运行。" -ForegroundColor Yellow }
+  if (-not $inSync -and -not $AllowBehind) { throw "$Label local $Branch differs from origin/$Branch; sync before startup." }
+  if (-not $inSync) { Write-Host "    [warn] $Label is not at upstream latest; continuing with the local version." -ForegroundColor Yellow }
   return [ordered]@{ label = $Label; repo = $Repo; branch = $Branch; remote = $remote.output; commit = $local.output; upstream_commit = $upstream.output; in_sync = $inSync }
 }
 
@@ -354,10 +354,10 @@ Ensure-OnPath "C:\Program Files\GitHub CLI"
 Ensure-OnPath "C:\Program Files\Git\cmd"
 Ensure-OnPath "C:\Program Files\Git\bin"
 
-Write-Host "==> QA Guardian 值守服务" -ForegroundColor Cyan
+Write-Host "==> QA Guardian scheduler" -ForegroundColor Cyan
 Write-Host "    Node        : $nodeExe"
-Write-Host "    Guardian目录: $GuardianRepo"
-Write-Host "    目标项目    : $TargetRepo"
+Write-Host "    Guardian dir: $GuardianRepo"
+Write-Host "    Target repo : $TargetRepo"
 
 $packageRoot = Join-Path $GuardianRepo "package.json"
 $sdkPath = Join-Path $GuardianRepo "node_modules\@larksuiteoapi\node-sdk"
@@ -493,18 +493,18 @@ if ($changedCfg) {
 if (-not $cfg.command_authors -or @($cfg.command_authors).Count -eq 0) {
   throw "command_authors 为空：所有 /guardian 命令都会被拒绝。请配置可信 GitHub 用户后再启动。"
 } else {
-  Write-Host "    可信命令作者: $($cfg.command_authors -join ', ')" -ForegroundColor Green
+  Write-Host "    Command authors: $($cfg.command_authors -join ', ')" -ForegroundColor Green
 }
 
 $base = if ($cfg.base_branch) { [string]$cfg.base_branch } else { $BaseBranch }
-$guardianFacts = Assert-CleanAndUpstreamLatest $GuardianRepo 'Guardian工具仓库'
+$guardianFacts = Assert-CleanAndUpstreamLatest $GuardianRepo 'Guardian tools repo'
 $bindingMode = [string]$binding.mode
 
 $targetFacts = $null
 $controlRepo = $TargetRepo
 $qaRuntimeRepo = $TargetRepo
 if ($bindingMode -eq 'strict') {
-  $targetFacts = Assert-CleanAndLatest $TargetRepo $base '目标值守仓库'
+  $targetFacts = Assert-CleanAndLatest $TargetRepo $base 'Target watch repo'
 } else {
   $controlRepo = [string]$binding.control_worktree_path
   $qaRuntimeRepo = [string]$binding.qa_snapshot_path
@@ -548,12 +548,12 @@ if ($bindingMode -eq 'strict') {
   $targetFacts = [ordered]@{ label = 'canonical target'; repo = $TargetRepo; mode = 'worktree'; status = (Invoke-Git $TargetRepo @('status', '--porcelain') -AllowFailure).output }
   $controlFacts = [ordered]@{ repo = $controlRepo; base_branch = $base; qa_runtime_repo = $qaRuntimeRepo }
 }
-Write-Host "    GitHub仓库 : $targetGithub" -ForegroundColor Green
-Write-Host "    值守模式    : $($cfg.watch_mode)" -ForegroundColor Green
-Write-Host "    PR目标分支  : $base" -ForegroundColor Green
-Write-Host "    启动绑定    : $bindingMode" -ForegroundColor Green
+Write-Host "    GitHub repo : $targetGithub" -ForegroundColor Green
+Write-Host "    Watch mode  : $($cfg.watch_mode)" -ForegroundColor Green
+Write-Host "    PR base     : $base" -ForegroundColor Green
+Write-Host "    Binding mode: $bindingMode" -ForegroundColor Green
 if ($bindingMode -eq 'worktree') { Write-Host "    Control     : $controlRepo" -ForegroundColor Green; Write-Host "    QA snapshot : $qaRuntimeRepo" -ForegroundColor Green }
-if ($targetFacts.commit) { Write-Host "    目标仓库    : clean/latest $($targetFacts.commit.Substring(0, 8))" -ForegroundColor Green }
+if ($targetFacts.commit) { Write-Host "    Target repo : clean/latest $($targetFacts.commit.Substring(0, 8))" -ForegroundColor Green }
 Write-Host "    Guardian   : clean/latest $($guardianFacts.commit.Substring(0, 8))" -ForegroundColor Green
 
 if ($DryRun) {
@@ -579,7 +579,7 @@ Confirm-Start "    确认启动上述值守配置？输入 yes/确认 继续"
 # Shared OpenCode server + progress dir apply to BOTH the polling-only and combined (Feishu) runtimes
 # so agent sessions are hosted on one server (natively viewable) and specialist progress is mirrored.
 if ($OpenCodeServerUrl) {
-  Write-Host "    OpenCode服务: $OpenCodeServerUrl" -ForegroundColor Green
+  Write-Host "    OpenCode URL: $OpenCodeServerUrl" -ForegroundColor Green
   $ready = $false
   for ($attempt = 0; $attempt -lt 60; $attempt++) {
     try {
@@ -594,17 +594,17 @@ if ($OpenCodeServerUrl) {
 if ($ProgressDir) {
   New-Item -ItemType Directory -Path $ProgressDir -Force | Out-Null
   $env:QA_GUARDIAN_PROGRESS_DIR = $ProgressDir
-  Write-Host "    Agent进度  : $ProgressDir" -ForegroundColor Green
+  Write-Host "    Progress dir: $ProgressDir" -ForegroundColor Green
 }
 
 if ($SchedulerOnly) {
-  Write-Host "==> 正在启动 Guardian scheduler（polling only）" -ForegroundColor Cyan
-  Write-Host "    提示：按 Ctrl+C 可停止。" -ForegroundColor Gray
+  Write-Host "==> Starting Guardian scheduler (polling only)" -ForegroundColor Cyan
+  Write-Host "    Press Ctrl+C to stop." -ForegroundColor Gray
    $env:QA_GUARDIAN_QA_RUNTIME_DIR = $qaRuntimeRepo
    & $nodeExe (Join-Path $GuardianRepo "tools\guardian\scheduler.mjs") --repo $controlRepo
 } else {
-  Write-Host "==> 正在启动 Guardian 组合服务（scheduler + 飞书长连接）" -ForegroundColor Cyan
-  Write-Host "    提示：按 Ctrl+C 可停止；首次启动前请确认已执行 npm install 并配置飞书凭证。" -ForegroundColor Gray
+  Write-Host "==> Starting Guardian combined runtime (scheduler + Feishu WS)" -ForegroundColor Cyan
+  Write-Host "    Press Ctrl+C to stop. Before first start, run npm install and configure Feishu credentials." -ForegroundColor Gray
    $env:QA_GUARDIAN_QA_RUNTIME_DIR = $qaRuntimeRepo
    & $nodeExe (Join-Path $GuardianRepo "tools\guardian\guardian-runtime.mjs") --repo $controlRepo
 }
