@@ -32,6 +32,13 @@ test('guardian-start.ps1 backfills legacy binding command authors from Guardian 
   assert.match(text, /Trusted GitHub command authors/);
 });
 
+test('guardian-start.ps1 forwards a control progress dir so the TUI Logs tab shows live progress', () => {
+  const text = readFileSync('tools/guardian/guardian-start.ps1', 'utf8');
+  assert.match(text, /\$progressDir = Join-Path \(Join-Path \$controlRepo '\.qa\\guardian'\) 'progress'/);
+  assert.match(text, /'-TargetRepo', \$TargetRepo, '-Yes', '-ProgressDir', \$progressDir/);
+  assert.match(text, /-ProgressDir '\$quotedProgressDir'/);
+});
+
 test('guardian-start.ps1 fails closed without an existing per-project binding', () => {
   const text = readFileSync('tools/guardian/guardian-start.ps1', 'utf8');
   assert.match(text, /No Guardian binding found for this project/);

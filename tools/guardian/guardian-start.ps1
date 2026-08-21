@@ -121,10 +121,13 @@ if ($commandAuthors.Count -eq 0 -and -not $DryRun) {
   if ($commandAuthors.Count -eq 0) { throw 'Cancelled: trusted GitHub command authors are required.' }
 }
 $commandAuthorArgument = ($commandAuthors -join ',')
+# Mirror specialist investigation progress into the authoritative control guardian dir so the
+# read-only TUI Logs tab (progress/<issue>/<agent>.log) shows live progress during investigation.
+$progressDir = Join-Path (Join-Path $controlRepo '.qa\guardian') 'progress'
 
 $schedulerArguments = @(
   '-NoLogo', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $schedulerScript,
-  '-TargetRepo', $TargetRepo, '-Yes'
+  '-TargetRepo', $TargetRepo, '-Yes', '-ProgressDir', $progressDir
 )
 if ($commandAuthorArgument) { $schedulerArguments += @('-CommandAuthors', $commandAuthorArgument) }
 if ($SchedulerOnly) { $schedulerArguments += '-SchedulerOnly' }
@@ -137,6 +140,7 @@ $launchPlan = [ordered]@{
   scheduler_preflight = [ordered]@{ file_path = 'powershell.exe'; arguments = $schedulerPreflightArguments }
   tui = [ordered]@{ file_path = $nodeExe; arguments = $tuiArguments }
   command_authors_source = if ($commandAuthorArgument) { 'binding_or_config' } else { 'missing' }
+  progress_dir = $progressDir
   read_only_tui = $true
 }
 
@@ -158,7 +162,8 @@ if ($schedulerPreflightExitCode -ne 0) {
 $schedulerTitle = "QA Guardian Scheduler - $TargetRepo"
 $quotedSchedulerScript = $schedulerScript.Replace("'", "''")
 $quotedTargetRepo = $TargetRepo.Replace("'", "''")
-$schedulerCommand = "& '$quotedSchedulerScript' -TargetRepo '$quotedTargetRepo' -Yes"
+$quotedProgressDir = $progressDir.Replace("'", "''")
+$schedulerCommand = "& '$quotedSchedulerScript' -TargetRepo '$quotedTargetRepo' -Yes -ProgressDir '$quotedProgressDir'"
 if ($commandAuthorArgument) {
   $quotedCommandAuthors = $commandAuthorArgument.Replace("'", "''")
   $schedulerCommand += " -CommandAuthors '$quotedCommandAuthors'"
