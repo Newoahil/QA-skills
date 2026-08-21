@@ -58,6 +58,7 @@ This file summarizes all project changes, decisions, requirements, and bug recor
 - [change-5abf095ac5524443a5d7a9038a01a1e8] #qa-guardian #security #concurrency — 修复 review-work 发现的阻塞项——命令作者授权 fail-closed、N=1 原子锁+心跳续租、spawn 去 shell、回调 timestamp/去重/体积硬化，消除“任意评论可批准 HIGH 方案”授权漏洞与租约竞态，121/121 测试通过。 (2026-08-18)
 - [change-5cb23fed3750411f9d0a01fddae5f6de] #qa-guardian #launcher #multi-project — Guardian launcher bindings are now stored independently per canonical target path, so explicitly switching projects selects only that project's mode, control worktree, QA snapshot, and configuration while no-argument launches reuse the last target. (2026-08-20)
 - [change-5e5f9e3456464cb598ba51d705ffc945] #qa-guardian #webhook #idempotency — Locked the Oracle-approved Phase 4 design \(webhook = durable wake-up producer only, scheduler stays sole writer\) and implemented the pure 3-layer idempotency ledger, so later webhook wiring cannot violate single-writer state or comment-chronology authorization. (2026-08-19)
+- [change-60858dbd238d4a13a5190dc40a7a1965] #guardian-scheduler #windows-launcher #runtime-debugging — scheduler 调查失败路径不再因 catch 中访问 try 内局部 investigationState 而抛 ReferenceError；启动器可见状态标签改为 ASCII，避免 Windows batch + PowerShell UTF-8 控制台中出现“目目录录/目目标标项项目目”等重复 CJK 标签。 (2026-08-21)
 - [change-62abfd75f0104cce826232f15679e2d3] #qa-guardian #authorization #actor-routing — Introduced a reversible actor-routing policy layer and a bot denylist so machine actors can never authorize or perform out-of-role GitHub effects, enforcing the QA/Fixer/Supervisor identity boundaries in code without a per-App-token cutover. (2026-08-19)
 - [change-66dd4c4f08114b48899480c39d8052a7] #qa-guardian #watch-mode #followup — 增加 watch_mode=new-open 自动发现值守启动后新建 issue、scheduler 领取标签投影和 /guardian followup 新验收轮次；DONE/GATE_2_WAIT 不再静默重复处理，146/146 测试通过。 (2026-08-18)
 - [change-6ff6c658477b423eae1d6e18a33f92b9] #qa-guardian #observability #windows — 新增 runtime-io 统一 BOM-safe JSON 读取、stderr JSONL 结构化日志和 DEVer banner，runtime/scheduler/WS/HTTP server 接入阶段/错误事件且不泄露密钥；PowerShell 生成的 BOM config 现在可加载，测试 139/139 通过。 (2026-08-18)
@@ -199,6 +200,7 @@ This file summarizes all project changes, decisions, requirements, and bug recor
 | change-5abf095ac5524443a5d7a9038a01a1e8 | 2026-08-18 | QA Guardian 安全+并发修复第一批（授权/锁/去 shell/回调硬化） | done | [link](changes/2026-08-18-change-5abf095ac5524443a5d7a9038a01a1e8-guardian-security-concurrency-batch1.md) |
 | change-5cb23fed3750411f9d0a01fddae5f6de | 2026-08-20 | Per-project Guardian launcher bindings |  | [link](changes/2026-08-20-change-5cb23fed3750411f9d0a01fddae5f6de-per-project-launcher-bindings.md) |
 | change-5e5f9e3456464cb598ba51d705ffc945 | 2026-08-19 | Add Phase 4 webhook architecture doc and unified idempotency ledger core | done | [link](changes/2026-08-19-change-5e5f9e3456464cb598ba51d705ffc945-phase4-webhook-architecture-ledger.md) |
+| change-60858dbd238d4a13a5190dc40a7a1965 | 2026-08-21 | 修复 Guardian scheduler 启动后 ReferenceError 与 Windows 中文标签重复显示 | done | [link](changes/2026-08-21-change-60858dbd238d4a13a5190dc40a7a1965-guardian-scheduler-startup-runtime.md) |
 | change-62abfd75f0104cce826232f15679e2d3 | 2026-08-19 | Add actor routing and structural human-only authorization separation \(Phase 3\) | done | [link](changes/2026-08-19-change-62abfd75f0104cce826232f15679e2d3-actor-routing-authorization-separation.md) |
 | change-66dd4c4f08114b48899480c39d8052a7 | 2026-08-18 | QA Guardian new-open 自动发现与 followup 多轮验收 | done | [link](changes/2026-08-18-change-66dd4c4f08114b48899480c39d8052a7-new-open-followup.md) |
 | change-6ff6c658477b423eae1d6e18a33f92b9 | 2026-08-18 | QA Guardian BOM 兼容、结构化日志与 DEVer 启动体验 | done | [link](changes/2026-08-18-change-6ff6c658477b423eae1d6e18a33f92b9-runtime-logging.md) |
@@ -321,6 +323,7 @@ This file summarizes all project changes, decisions, requirements, and bug recor
 - git: bug-986e8e7b64f046c1bedbacbcbc65a083, bug-9ea4fabc7f0948ac9dcdf159659e61de
 - guardian-investigation: change-0042ab69c2b94eb49a3576bfaadea0e4
 - guardian-launcher: change-76c5d0ed9fac48cb970da4f0329c2454, change-fc28793f11104036ad20f0cb288bda6f, decision-038091b9b1ca447db6c8a2d2a86719b4
+- guardian-scheduler: change-60858dbd238d4a13a5190dc40a7a1965
 - guardian-timeout: change-30d32899761b40d8ac9f442695dfec62
 - guardian-tui: change-f78313d32e614657bce29b72264e20fb
 - human-approval: bug-68ea53ff66ef4f62b7f680db1ecebf19
@@ -362,6 +365,7 @@ This file summarizes all project changes, decisions, requirements, and bug recor
 - review-remediation: change-4e17ae8322d944be9acbbd5f14780594
 - role-split: change-24402a071a3a4c84a3a6f56e78cca33b
 - runtime: bug-19e5ffff30db46ccbca9f8ca73551ad1, change-0071a9a0e32c40c28601c3ff7d6ad8b6
+- runtime-debugging: change-60858dbd238d4a13a5190dc40a7a1965
 - runtime-integration: change-cc34c0f387b04539bef2107012ba5deb
 - runtime-qa: change-8566e0c1beed41e28dc4c9b6eed93fa8
 - safety: change-d9e9344cce4a4afbb937c6c637a7931c
@@ -389,6 +393,7 @@ This file summarizes all project changes, decisions, requirements, and bug recor
 - watch-mode: change-66dd4c4f08114b48899480c39d8052a7
 - webhook: change-5e5f9e3456464cb598ba51d705ffc945, change-df0e3cad054847b7a529c6246bd4d603, change-eb83465c334b4e88b55e83d019123930
 - windows: bug-541a9d6211594221a5ceb08950e80881, bug-72dbe209aad24697a5bf36ffdf0b7a88, bug-83b7d5b7c85e4316adc6fa751321262a, bug-8c8b03fc6c9c4adbb115442b042dd400, bug-9df5a75c67504f4fac0d315dd7cef2dd, bug-addaeb3484574da4898bc2d0d5a022d6, change-6ff6c658477b423eae1d6e18a33f92b9, change-9075ddb15f55461cba237c8f6c302f95
+- windows-launcher: change-60858dbd238d4a13a5190dc40a7a1965
 - windows-powershell: change-fc28793f11104036ad20f0cb288bda6f
 - workflow: decision-038091b9b1ca447db6c8a2d2a86719b4
 - worktree: bug-4efe5578aa8742ad884e419e62a1126d, bug-5a7a143fe7f84b4e9ab88dc922c2511b, bug-9ea4fabc7f0948ac9dcdf159659e61de, bug-c9d39c21fcd640948f061bf092488b1b, change-8566e0c1beed41e28dc4c9b6eed93fa8
