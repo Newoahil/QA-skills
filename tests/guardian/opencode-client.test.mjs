@@ -6,7 +6,28 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { createOpencodeClient, isPermissionCompatible, PERMISSION_POLICY_VERSION, permissionRulesFor } from '../../tools/guardian/opencode-client.mjs';
+import { createOpencodeClient, createLongLivedSdkConfig, isPermissionCompatible, PERMISSION_POLICY_VERSION, permissionRulesFor } from '../../tools/guardian/opencode-client.mjs';
+
+test('createLongLivedSdkConfig disables undici header/body timeouts for long prompts', () => {
+  const config = createLongLivedSdkConfig({ baseUrl: 'http://127.0.0.1:4096' });
+  assert.equal(config.baseUrl, 'http://127.0.0.1:4096');
+  assert.equal(typeof config.fetch, 'function');
+  // The dispatcher must be an undici Agent configured with no header/body timeout so a
+  // multi-minute specialist prompt is not aborted with `fetch failed` at ~300s.
+  assert.ok(config.dispatcher, 'a dispatcher must be provided');
+  const opts = config.dispatcher[Symbol.for('undici.dispatcher.options')] ?? config.dispatcherOptions;
+  assert.ok(opts, 'dispatcher options should be inspectable for the test');
+  assert.equal(opts.headersTimeout, 0);
+  assert.equal(opts.bodyTimeout, 0);
+});
+
+test('createOpencodeClient passes the long-lived fetch config to the SDK factory', () => {
+  let received = null;
+  createOpencodeClient({ baseUrl: 'http://127.0.0.1:4096', sdkFactory: (cfg) => { received = cfg; return { _client: {}, session: {} }; } });
+  assert.ok(received, 'sdk factory should be called when no sdk is injected');
+  assert.equal(typeof received.fetch, 'function');
+  assert.equal(received.baseUrl, 'http://127.0.0.1:4096');
+});
 
 test('exports the stable current permission policy version and compatibility helper', () => {
   assert.equal(PERMISSION_POLICY_VERSION, 2);

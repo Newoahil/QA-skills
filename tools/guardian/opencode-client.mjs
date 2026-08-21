@@ -9,8 +9,27 @@
 // The SDK client is injected for unit tests (no real network).
 
 import { createOpencodeClient as createSdkClient } from '@opencode-ai/sdk';
+import { Agent } from 'undici';
 
 export const PERMISSION_POLICY_VERSION = 2;
+
+// Specialist / fixer / QA prompts are long-lived requests: the model may run for several minutes
+// before the response headers arrive. Node's built-in undici default headersTimeout/bodyTimeout is
+// 300s, so a long prompt aborts with `fetch failed` at ~300s (the SDK's `req.timeout = false` does
+// not affect Node's undici). We supply a dispatcher with header/body timeouts disabled while keeping
+// a bounded connect timeout, so establishing a connection still fails fast but a slow model does not.
+const LONG_LIVED_DISPATCHER_OPTIONS = Object.freeze({ headersTimeout: 0, bodyTimeout: 0, connectTimeout: 30_000 });
+
+export function createLongLivedSdkConfig({ baseUrl }) {
+  const dispatcher = new Agent(LONG_LIVED_DISPATCHER_OPTIONS);
+  const fetchWithDispatcher = (input, init = {}) => fetch(input, { ...init, dispatcher });
+  return {
+    baseUrl,
+    fetch: fetchWithDispatcher,
+    dispatcher,
+    dispatcherOptions: LONG_LIVED_DISPATCHER_OPTIONS,
+  };
+}
 
 // A session must never block on a permission prompt in headless mode. There is no broad allow:
 // every role receives explicit capability rules and supervisor-owned repository operations are not
@@ -140,8 +159,12 @@ function safeJson(text) {
   }
 }
 
-export function createOpencodeClient({ baseUrl, sdk, logger = null } = {}) {
-  const client = sdk ?? createSdkClient({ baseUrl });
+export function createOpencodeClient({ baseUrl, sdk, logger = null, sdkFactory = createSdkClient } = {}) {
+  // Build the SDK client with a long-lived fetch (undici header/body timeouts disabled) so
+  // multi-minute prompts do not abort with `fetch failed` at ~300s. `dispatcher`/`dispatcherOptions`
+  // are stripped before handing config to the SDK factory (the SDK only consumes baseUrl/fetch).
+  const { dispatcher: _dispatcher, dispatcherOptions: _dispatcherOptions, ...sdkConfig } = createLongLivedSdkConfig({ baseUrl });
+  const client = sdk ?? sdkFactory(sdkConfig);
 
   async function createSession({ title, agent, parentID = null, directory = null }) {
     const body = { title, agent, permission: permissionRulesFor(agent) };
@@ -194,11 +217,13 @@ export function createOpencodeClient({ baseUrl, sdk, logger = null } = {}) {
     }
   }
 
-  // Try the agent's own model first (model=undefined lets OpenCode use the agent definition), then
-  // each configured fallback model in order. Only a provider-error (e.g. model cooldown / 429) is
-  // retried on the next model; any other outcome (ok / retryable / unusable) returns immediately.
-  async function prompt({ sessionId, agent, parts, format = null, system = null, signal = null, fallbackModels = [] }) {
-    const models = [undefined, ...(Array.isArray(fallbackModels) ? fallbackModels.filter((m) => typeof m === 'string' && m) : [])];
+  // Try the primary model first (model=undefined lets OpenCode use the agent definition / global
+  // default — the portable path when nothing is configured), then each configured fallback model in
+  // order. Only a provider-error (e.g. model cooldown / 429) is retried on the next model; any other
+  // outcome (ok / retryable / unusable) returns immediately.
+  async function prompt({ sessionId, agent, parts, format = null, system = null, signal = null, fallbackModels = [], model = undefined }) {
+    const extras = (Array.isArray(fallbackModels) ? fallbackModels.filter((m) => typeof m === 'string' && m) : []).filter((m) => m !== model);
+    const models = [model, ...extras];
     let last = null;
     for (let i = 0; i < models.length; i += 1) {
       if (signal?.aborted) break;
