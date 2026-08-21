@@ -83,6 +83,7 @@ This file summarizes all project changes, decisions, requirements, and bug recor
 - [change-df0e3cad054847b7a529c6246bd4d603] #qa-guardian #webhook #scheduler — Added the final pure/local Phase 4 seam that merges relay wake targets into the scheduler's existing candidate list, returning the list unchanged when no relay is wired, so the only remaining webhook work is the deployment-coupled live relay connection. (2026-08-19)
 - [change-e34b035b981b4224a44621ba7457d5b2] #qa-guardian #budgets #reliability — 新增 budgets.mjs 纯预算核心，支持标准/复杂调查预算、specialist 数量/截止时间、剩余预算和 timeout 分类，179/179 测试通过；尚未接入 runtime。 (2026-08-18)
 - [change-eb83465c334b4e88b55e83d019123930] #qa-guardian #webhook #idempotency — Implemented the webhook ingest \(cloud, durable dedupe by delivery_id, never a state writer\) and the scheduler wake-drain planner \(coalesce + application-token guard\) so webhook and compensation-poll triggers converge to exactly one application without breaking single-writer N=1 or comment-chronology authorization. (2026-08-19)
+- [change-f78313d32e614657bce29b72264e20fb] #guardian-tui #dashboard-filter #usability — Guardian 只读 TUI 默认用 current\(active+waiting\) 过滤，隐藏 DONE/交回等历史记录，避免误以为在监控已完成/远程已删除的 issue；历史仍保留可按 t 切到 all 审计。 (2026-08-21)
 
 ## Archived Conclusions
 
@@ -217,6 +218,7 @@ This file summarizes all project changes, decisions, requirements, and bug recor
 | change-df0e3cad054847b7a529c6246bd4d603 | 2026-08-19 | Add unionWakeCandidates local seam for scheduler wake consumption | done | [link](changes/2026-08-19-change-df0e3cad054847b7a529c6246bd4d603-phase4-union-wake-candidates-seam.md) |
 | change-e34b035b981b4224a44621ba7457d5b2 | 2026-08-18 | 强化 Guardian Phase 7：调查与子任务预算核心 | done | [link](changes/2026-08-18-change-e34b035b981b4224a44621ba7457d5b2-runtime-budgets.md) |
 | change-eb83465c334b4e88b55e83d019123930 | 2026-08-19 | Add Phase 4 webhook ingest and scheduler wake-drain planner | done | [link](changes/2026-08-19-change-eb83465c334b4e88b55e83d019123930-phase4-webhook-ingest-wake-drain.md) |
+| change-f78313d32e614657bce29b72264e20fb | 2026-08-21 | Guardian 只读 TUI 默认只显示当前值守队列 | done | [link](changes/2026-08-21-change-f78313d32e614657bce29b72264e20fb-guardian-tui-current-filter.md) |
 
 ## Technical Decisions
 
@@ -288,6 +290,7 @@ This file summarizes all project changes, decisions, requirements, and bug recor
 - capabilities: change-856058c87cf3450e8460263aeef5cb2a
 - concurrency: change-5abf095ac5524443a5d7a9038a01a1e8
 - configuration: bug-addaeb3484574da4898bc2d0d5a022d6
+- dashboard-filter: change-f78313d32e614657bce29b72264e20fb
 - deployment: bug-1a88afaf58fe4f13859d209b49b49027, change-39d97b0a4c854e3893e13ba9e9a5859d, change-c4f7796c3fa940589c4c90921c26455c, change-c783251f5b134af9b8bd7e15628fc7c6, change-d4732a411e254c618517828d62e5ed70
 - docker: bug-1a88afaf58fe4f13859d209b49b49027
 - documentation: change-39d97b0a4c854e3893e13ba9e9a5859d, change-41675aeea2c446eea10506e55cbbd08d
@@ -300,6 +303,7 @@ This file summarizes all project changes, decisions, requirements, and bug recor
 - gate1: bug-68ea53ff66ef4f62b7f680db1ecebf19, bug-7cebbfc6c8794207aee4ccebd7974edf
 - gate2: bug-8a5db6c7aa0447189f0e23d02741516c
 - git: bug-986e8e7b64f046c1bedbacbcbc65a083, bug-9ea4fabc7f0948ac9dcdf159659e61de
+- guardian-tui: change-f78313d32e614657bce29b72264e20fb
 - human-approval: bug-68ea53ff66ef4f62b7f680db1ecebf19
 - idempotency: change-5e5f9e3456464cb598ba51d705ffc945, change-eb83465c334b4e88b55e83d019123930
 - injection-safety: change-bcabf0f8e62b4a45b47b7823b934848e
@@ -352,7 +356,7 @@ This file summarizes all project changes, decisions, requirements, and bug recor
 - sybermem: change-856058c87cf3450e8460263aeef5cb2a
 - timeout: change-2955e2780a8b4097bfdf09d765453605
 - unattended-quality: change-559f7f25f2834bb2b50e4b7bcf9a3bfb
-- usability: change-c783251f5b134af9b8bd7e15628fc7c6, change-d4732a411e254c618517828d62e5ed70
+- usability: change-c783251f5b134af9b8bd7e15628fc7c6, change-d4732a411e254c618517828d62e5ed70, change-f78313d32e614657bce29b72264e20fb
 - validation: bug-26ad869551cf43f585bbfc062876eccc
 - verdict: change-a42d82b9641948eab4109dd13795f675
 - verdict-protocol: change-bcabf0f8e62b4a45b47b7823b934848e
