@@ -14,6 +14,7 @@ This file summarizes all project changes, decisions, requirements, and bug recor
 - [bug-19e5ffff30db46ccbca9f8ca73551ad1] #qa-guardian #security #runtime — Phase 11 发现生产镜像可能包含本地 secrets、unattended 默认 legacy 绕过 plan gate、stale lock takeover 非原子和 non-idempotent STALLED rerun 风险；本批已加 .dockerignore/env-only production loader、enforced 默认、原子 stale-lock takeover 和 stall guard，仍待 QA machine enforcement/timeout/state persistence。 ()
 - [bug-1a88afaf58fe4f13859d209b49b49027] #qa-guardian #deployment #docker — docker-compose.yml 用 ports 8787:8787 硬绑宿主端口，在共享 Dokploy 主机上 8787 已被占用导致 "port is already allocated" 启动失败；改为仅 expose 8787、由 Dokploy Domain 反代路由到容器端口，部署不再抢宿主端口。 (2026-08-18)
 - [bug-1a8b3cf22fc9424ba73e009dd9c4556d] #qa-guardian #launcher #authorization — scheduler-start.ps1 now repairs an existing control config with empty command_authors by asking once for the trusted GitHub login and persisting it, so first-run worktree setup can continue safely after an interrupted attempt. (2026-08-20)
+- [bug-209175d9b7974cc18bae1aea0eae8a6f] #guardian-runtime #opencode #investigation — Specialist investigations produced non-JSON results because they reused a long-lived session \(keyed by an unchanging round\) whose accumulated history contaminated the structured output, compounded by classifying any info.error as a retryable cooldown and downgrading models; fixed by always creating a fresh specialist session, only falling back on genuinely transient provider errors, and bounding specialist/plan prompts with an app-level deadline. (2026-08-21)
 - [bug-26ad869551cf43f585bbfc062876eccc] #qa-guardian #json-schema #validation — Tightened specialist and plan json_schema definitions to match the existing evidence/plan validators, so SDK output is valid by construction \(evidence provenance fields + allowed kinds; risk restricted to LOW/HIGH\). (2026-08-19)
 - [bug-4efe5578aa8742ad884e419e62a1126d] #qa-guardian #powershell #worktree — Parenthesizing Test-Path before boolean operators fixes the real worktree-only failure where PowerShell 5.1 interpreted -and as Test-Path dynamic parameter NewerThan and tried to parse a SHA-256 string as DateTime. ()
 - [bug-541a9d6211594221a5ceb08950e80881] #qa-guardian #windows #encoding — Windows bat 的分支 fall-through 会重复调用 PowerShell 并产生大量命令未找到错误；无 BOM UTF-8 的 PowerShell 中文脚本在 PS5.1 解析失败，纯 BOM/控制台编码不一致又导致中文乱码；改为显式 goto 分支、PowerShell 脚本 UTF-8 BOM、bat chcp 65001，cmd 冒烟只执行一次且中文引导可读。 (2026-08-18)
@@ -271,6 +272,7 @@ This file summarizes all project changes, decisions, requirements, and bug recor
 | bug-19e5ffff30db46ccbca9f8ca73551ad1 |  |  | high | [link](bugs/2026-08-18-bug-19e5ffff30db46ccbca9f8ca73551ad1-security-review-blockers.md) |
 | bug-1a88afaf58fe4f13859d209b49b49027 | 2026-08-18 | 飞书回调服务 Dokploy 部署失败——compose 硬绑宿主端口 8787 冲突 | high | [link](bugs/2026-08-18-bug-1a88afaf58fe4f13859d209b49b49027-dokploy-port-collision.md) |
 | bug-1a8b3cf22fc9424ba73e009dd9c4556d | 2026-08-20 | Worktree command authors bootstrap |  | [link](bugs/2026-08-20-bug-1a8b3cf22fc9424ba73e009dd9c4556d-worktree-command-authors-bootstrap.md) |
+| bug-209175d9b7974cc18bae1aea0eae8a6f | 2026-08-21 | Specialist investigations failed via reused-session pollution and over-eager model fallback |  | [link](bugs/2026-08-21-bug-209175d9b7974cc18bae1aea0eae8a6f-specialist-session-pollution-and-fallback.md) |
 | bug-26ad869551cf43f585bbfc062876eccc | 2026-08-19 | Structured-output schemas did not match dossier and plan validators | high | [link](bugs/2026-08-19-bug-26ad869551cf43f585bbfc062876eccc-structured-schema-validator-mismatch.md) |
 | bug-4efe5578aa8742ad884e419e62a1126d |  |  |  | [link](bugs/2026-08-20-bug-4efe5578aa8742ad884e419e62a1126d-powershell-newerthan-dynamic-parameter.md) |
 | bug-541a9d6211594221a5ceb08950e80881 | 2026-08-18 | Windows bat/PowerShell 启动引导乱码与分支重复执行 | medium | [link](bugs/2026-08-18-bug-541a9d6211594221-bat-chinese-output.md) |
@@ -339,7 +341,7 @@ This file summarizes all project changes, decisions, requirements, and bug recor
 - git: bug-986e8e7b64f046c1bedbacbcbc65a083, bug-9ea4fabc7f0948ac9dcdf159659e61de
 - guardian-investigation: change-0042ab69c2b94eb49a3576bfaadea0e4
 - guardian-launcher: change-76c5d0ed9fac48cb970da4f0329c2454, change-fc28793f11104036ad20f0cb288bda6f, decision-038091b9b1ca447db6c8a2d2a86719b4
-- guardian-runtime: bug-0555bcc31a2e4b2a81d7d41fe989ac86, bug-ed371946bdd44873af961a30f33378f8, change-0187155e93c44e53b0dd8b136d4386c6, change-27078cb8ae6e43b19f65ab149bdb87ca, change-2b02bc5e4e534535a15f2ef47dc9986d, change-7dc3767885cd4c9cb2ff5a1b5d8ca73d
+- guardian-runtime: bug-0555bcc31a2e4b2a81d7d41fe989ac86, bug-209175d9b7974cc18bae1aea0eae8a6f, bug-ed371946bdd44873af961a30f33378f8, change-0187155e93c44e53b0dd8b136d4386c6, change-27078cb8ae6e43b19f65ab149bdb87ca, change-2b02bc5e4e534535a15f2ef47dc9986d, change-7dc3767885cd4c9cb2ff5a1b5d8ca73d
 - guardian-scheduler: change-60858dbd238d4a13a5190dc40a7a1965
 - guardian-timeout: change-30d32899761b40d8ac9f442695dfec62
 - guardian-tui: change-cd0869b5cfa74261b9cf4655935f2317, change-f78313d32e614657bce29b72264e20fb
@@ -347,7 +349,7 @@ This file summarizes all project changes, decisions, requirements, and bug recor
 - idempotency: change-5e5f9e3456464cb598ba51d705ffc945, change-eb83465c334b4e88b55e83d019123930
 - injection-safety: change-bcabf0f8e62b4a45b47b7823b934848e
 - integration: change-260993fcf6504e8eb9e54f84f0dd45f4, change-a43b7803dba74e9bae48e0bed222011c
-- investigation: change-260993fcf6504e8eb9e54f84f0dd45f4, change-ab75b9ee58354673b48b9c875f91a889
+- investigation: bug-209175d9b7974cc18bae1aea0eae8a6f, change-260993fcf6504e8eb9e54f84f0dd45f4, change-ab75b9ee58354673b48b9c875f91a889
 - issue-discovery: change-43665fbe15694f7a94ae63d97c21396e
 - json-schema: bug-26ad869551cf43f585bbfc062876eccc, bug-8a392be541a943bdad199b2dd863ca7c
 - launcher: bug-01f49ed7e02b41eba58ccc630c6170d0, bug-1a8b3cf22fc9424ba73e009dd9c4556d, bug-5a7a143fe7f84b4e9ab88dc922c2511b, bug-72dbe209aad24697a5bf36ffdf0b7a88, bug-83b7d5b7c85e4316adc6fa751321262a, bug-986e8e7b64f046c1bedbacbcbc65a083, bug-9df5a75c67504f4fac0d315dd7cef2dd, bug-e4748d924c68474b878a8da0c79c88a2, change-5cb23fed3750411f9d0a01fddae5f6de, change-cabd52ea36184a8885927911ff2e029e
@@ -359,7 +361,7 @@ This file summarizes all project changes, decisions, requirements, and bug recor
 - n1-concurrency: change-d68ddced82a4440492d038e2b4aa8975
 - notification: change-c4f7796c3fa940589c4c90921c26455c
 - observability: change-0187155e93c44e53b0dd8b136d4386c6, change-6ff6c658477b423eae1d6e18a33f92b9, change-cd0869b5cfa74261b9cf4655935f2317
-- opencode: bug-0555bcc31a2e4b2a81d7d41fe989ac86, bug-ed371946bdd44873af961a30f33378f8, change-27078cb8ae6e43b19f65ab149bdb87ca, change-2b02bc5e4e534535a15f2ef47dc9986d, change-5330fd1c1188484fa1647010616d8195, change-7dc3767885cd4c9cb2ff5a1b5d8ca73d, change-cd0869b5cfa74261b9cf4655935f2317
+- opencode: bug-0555bcc31a2e4b2a81d7d41fe989ac86, bug-209175d9b7974cc18bae1aea0eae8a6f, bug-ed371946bdd44873af961a30f33378f8, change-27078cb8ae6e43b19f65ab149bdb87ca, change-2b02bc5e4e534535a15f2ef47dc9986d, change-5330fd1c1188484fa1647010616d8195, change-7dc3767885cd4c9cb2ff5a1b5d8ca73d, change-cd0869b5cfa74261b9cf4655935f2317
 - opencode-events: change-7e6fdf97764f412c921e2d9ab581c7b1
 - opencode-sdk: bug-09c23cce8bb443d7aadb0f5dea5ce3b7, bug-682f269c0050412797459f52712af366, bug-95af95c0c87348659c6d36a12974beb0, bug-b963cb3902ec472fba0747de51688475, change-09acc786cc4c4b53b58d1e9a5b7267ef, change-1a149adf92854c34938da07409ba28a9, change-2d00718e55fc479195377618f8fe8527, change-4e17ae8322d944be9acbbd5f14780594, change-9c651671735d41ca84cb71a1c1bd2213, change-bf2f029768594b7097870069da715a0a
 - opencode-serve: change-76c5d0ed9fac48cb970da4f0329c2454
