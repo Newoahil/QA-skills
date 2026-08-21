@@ -226,6 +226,34 @@ test('processSpecialistRunner reports SDK prompt response shape on empty text JS
   });
 });
 
+test('processSpecialistRunner reports provider errors instead of parsing empty JSON', async () => {
+  const client = {
+    createSession: async () => 'ses_cooldown',
+    prompt: async () => ({ kind: 'provider-error', error: { name: 'APIError', statusCode: 429, message: 'model_cooldown: provider cooling down', code: 'model_cooldown' } }),
+    getSession: async () => ({ kind: 'ok', session: { id: 'ses_cooldown', agent: 'guardian-runtime' } }),
+  };
+  const state = { opencode: { specialists: {} } };
+  const failure = await processSpecialistRunner({
+    role: 'guardian-runtime',
+    issue: 205,
+    issueDataPath: 'D:/repo/.qa/guardian/205/issue-data.json',
+    repoDir: 'D:/repo',
+    dossierPath: 'D:/repo/.qa/guardian/205/dossier.json',
+    opencodeClient: client,
+    state,
+  }).then(
+    () => null,
+    (error) => error,
+  );
+
+  assert.ok(failure instanceof Error);
+  assert.match(failure.message, /prompt failed/);
+  assert.match(failure.message, /model_cooldown/);
+  assert.doesNotMatch(failure.message, /Unexpected end of JSON input/);
+  assert.equal(state.opencode.specialists['guardian-runtime'].last_status, 'failed');
+  assert.match(state.opencode.specialists['guardian-runtime'].last_error, /model_cooldown/);
+});
+
 test('processPlanBuilder uses the SDK client instead of spawning an attach process', async () => {
   // Given: an injected fake opencode client.
   const created = [];
@@ -259,6 +287,27 @@ test('processPlanBuilder uses the SDK client instead of spawning an attach proce
   assert.deepEqual(prompted[0].format.schema.properties.risk.enum, ['LOW', 'HIGH']);
   assert.deepEqual(prompted[0].format.schema.properties.evidence_ids.items.enum, ['E1', 'E2']);
   assert.equal(result.root_cause, 'color');
+});
+
+test('processPlanBuilder reports provider errors instead of parsing empty JSON', async () => {
+  const client = {
+    createSession: async () => 'ses_plan_cooldown',
+    prompt: async () => ({ kind: 'provider-error', error: { name: 'APIError', statusCode: 429, message: 'model_cooldown: provider cooling down', code: 'model_cooldown' } }),
+  };
+  const { processPlanBuilder } = await import('../../tools/guardian/investigation-process.mjs');
+  const failure = await processPlanBuilder({
+    issue: 205,
+    repoDir: 'D:/repo',
+    dossier: { evidence: [] },
+    opencodeClient: client,
+  }).then(
+    () => null,
+    (error) => error,
+  );
+  assert.ok(failure instanceof Error);
+  assert.match(failure.message, /plan prompt failed/);
+  assert.match(failure.message, /model_cooldown/);
+  assert.doesNotMatch(failure.message, /Unexpected end of JSON input/);
 });
 
 test('runAgentJson reports malformed event lines without treating them as final output', async () => {

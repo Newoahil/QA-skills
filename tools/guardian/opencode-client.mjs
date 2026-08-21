@@ -117,6 +117,29 @@ function messageEndpointError(error) {
   return { kind: 'message-endpoint-error', status, error };
 }
 
+function normalizeProviderError(infoError) {
+  const data = infoError?.data && typeof infoError.data === 'object' ? infoError.data : {};
+  const responseBody = typeof data.responseBody === 'string' ? safeJson(data.responseBody) : null;
+  const bodyError = responseBody?.error && typeof responseBody.error === 'object' ? responseBody.error : {};
+  const statusCode = Number(data.statusCode ?? infoError?.statusCode);
+  return {
+    name: typeof infoError?.name === 'string' ? infoError.name : 'OpenCodeProviderError',
+    message: typeof data.message === 'string' ? data.message : (typeof infoError?.message === 'string' ? infoError.message : 'OpenCode provider error'),
+    statusCode: Number.isFinite(statusCode) ? statusCode : null,
+    code: typeof data.code === 'string' ? data.code : (typeof bodyError.code === 'string' ? bodyError.code : null),
+    reset_seconds: Number.isFinite(Number(data.reset_seconds)) ? Number(data.reset_seconds) : (Number.isFinite(Number(bodyError.reset_seconds)) ? Number(bodyError.reset_seconds) : null),
+    reset_time: typeof data.reset_time === 'string' ? data.reset_time : (typeof bodyError.reset_time === 'string' ? bodyError.reset_time : null),
+  };
+}
+
+function safeJson(text) {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
 export function createOpencodeClient({ baseUrl, sdk } = {}) {
   const client = sdk ?? createSdkClient({ baseUrl });
 
@@ -152,6 +175,7 @@ export function createOpencodeClient({ baseUrl, sdk } = {}) {
         ...(signal ? { signal } : {}),
       }).finally(() => { if (signal) signal.removeEventListener('abort', onAbort); });
       const data = result?.data ?? result;
+      if (data?.info?.error) return { kind: 'provider-error', error: normalizeProviderError(data.info.error) };
       const responseParts = Array.isArray(data?.parts) ? data.parts : [];
       const text = responseParts.length > 0
         ? responseParts.filter((part) => part?.type === 'text' && typeof part.text === 'string').map((part) => part.text).join('')

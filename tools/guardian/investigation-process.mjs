@@ -65,6 +65,15 @@ function extractJson(text, context = {}) {
   return parsed;
 }
 
+function promptFailureMessage(prefix, outcome) {
+  const error = outcome?.error;
+  const parts = [prefix];
+  if (error?.code) parts.push(error.code);
+  if (error?.statusCode) parts.push(`status=${error.statusCode}`);
+  if (error?.message) parts.push(error.message);
+  return parts.join(': ');
+}
+
 function formatProgress(agent, event) {
   if (event?.type === 'tool_use') {
     const tool = event.part?.tool ?? 'tool';
@@ -275,7 +284,7 @@ export function processSpecialistRunner({ role, issue, issueDataPath, repoDir, q
           format: { type: 'json_schema', schema: SPECIALIST_SCHEMA },
           signal,
         });
-        if (outcome.kind !== 'ok') throw new Error(`specialist ${role} prompt failed: ${outcome.error?.message ?? 'unknown'}`);
+        if (outcome.kind !== 'ok') throw new Error(promptFailureMessage(`specialist ${role} prompt failed`, outcome));
         stampSpecialistSession(state, role, { last_status: 'ok', last_seen_at: new Date().toISOString(), duration_ms: Date.now() - startedAt });
         if (outcome.result?.structured && typeof outcome.result.structured === 'object') return outcome.result.structured;
         const text = typeof outcome.result?.text === 'string' ? outcome.result.text : JSON.stringify(outcome.result ?? {});
@@ -360,7 +369,7 @@ export function processPlanBuilder({ issue, repoDir, qaRuntimeDir = repoDir, gua
         parts: [{ type: 'text', text: prompt }],
         format: { type: 'json_schema', schema: planSchemaFor(dossier) },
       });
-      if (outcome.kind !== 'ok') throw new Error(`plan builder prompt failed: ${outcome.error?.message ?? 'unknown'}`);
+        if (outcome.kind !== 'ok') throw new Error(promptFailureMessage('plan prompt failed', outcome));
       if (outcome.result?.structured && typeof outcome.result.structured === 'object') return outcome.result.structured;
       const text = typeof outcome.result?.text === 'string' ? outcome.result.text : JSON.stringify(outcome.result ?? {});
       return extractJson(text, { phase: 'plan-final-json', role: 'guardian-business', response: outcome.result?.prompt_response ?? null });

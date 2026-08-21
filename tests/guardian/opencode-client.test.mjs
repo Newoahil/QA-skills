@@ -144,6 +144,38 @@ test('prompt passes agent, parts, and json_schema format to the session', async 
   });
 });
 
+test('prompt treats OpenCode info.error responses as provider failures', async () => {
+  const sdk = {
+    _client: {
+      post: async () => ({
+        data: {
+          info: {
+            error: {
+              name: 'APIError',
+              data: {
+                message: 'All credentials for model gpt-5.3-codex-spark are cooling down via provider codex',
+                statusCode: 429,
+                responseBody: '{"error":{"code":"model_cooldown","reset_time":"3h44m55s"},"secret":"must-not-leak"}',
+              },
+            },
+          },
+          parts: [],
+        },
+      }),
+    },
+    session: { create: async () => ({ id: 'ses_new' }) },
+  };
+  const client = createOpencodeClient({ sdk });
+  const result = await client.prompt({ sessionId: 'ses_cooldown', agent: 'guardian-runtime', parts: [] });
+  assert.equal(result.kind, 'provider-error');
+  assert.equal(result.error.name, 'APIError');
+  assert.equal(result.error.statusCode, 429);
+  assert.equal(result.error.code, 'model_cooldown');
+  assert.equal(result.error.reset_time, '3h44m55s');
+  assert.match(result.error.message, /cooling down/);
+  assert.equal(JSON.stringify(result).includes('must-not-leak'), false);
+});
+
 test('abort and getSession delegate to the SDK', async () => {
   const { sdk, calls } = fakeSdk();
   const client = createOpencodeClient({ sdk });
