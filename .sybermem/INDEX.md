@@ -61,6 +61,7 @@ This file summarizes all project changes, decisions, requirements, and bug recor
 - [change-62abfd75f0104cce826232f15679e2d3] #qa-guardian #authorization #actor-routing — Introduced a reversible actor-routing policy layer and a bot denylist so machine actors can never authorize or perform out-of-role GitHub effects, enforcing the QA/Fixer/Supervisor identity boundaries in code without a per-App-token cutover. (2026-08-19)
 - [change-66dd4c4f08114b48899480c39d8052a7] #qa-guardian #watch-mode #followup — 增加 watch_mode=new-open 自动发现值守启动后新建 issue、scheduler 领取标签投影和 /guardian followup 新验收轮次；DONE/GATE_2_WAIT 不再静默重复处理，146/146 测试通过。 (2026-08-18)
 - [change-6ff6c658477b423eae1d6e18a33f92b9] #qa-guardian #observability #windows — 新增 runtime-io 统一 BOM-safe JSON 读取、stderr JSONL 结构化日志和 DEVer banner，runtime/scheduler/WS/HTTP server 接入阶段/错误事件且不泄露密钥；PowerShell 生成的 BOM config 现在可加载，测试 139/139 通过。 (2026-08-18)
+- [change-76c5d0ed9fac48cb970da4f0329c2454] #opencode-serve #session-viewing #guardian-launcher — 按 OpenCode 官方 client/server 架构，让 guardian-start.bat 自动起一个共享 opencode serve 并把 scheduler\(SDK 会话\) 与只读 TUI\(--base-url\) 都指向它，从而专员/修复者/QA 会话可在 TUI Transcript 原生查看、也可 opencode attach；serve 不可用时自动降级为子进程模式（--NoSharedServer 可关闭）。 (2026-08-21)
 - [change-856058c87cf3450e8460263aeef5cb2a] #qa-guardian #capabilities #sybermem — Added config-gated Guardian investigation specialists and optional non-blocking SyberMem recall/record integration so repository users can enable stronger investigation and engineering memory without making external OMO/SyberMem capabilities mandatory. (2026-08-20)
 - [change-8566e0c1beed41e28dc4c9b6eed93fa8] #qa-guardian #worktree #runtime-qa — QA Guardian now supports a one-time persisted launcher choice that isolates dirty target projects into a clean control worktree plus selected QA runtime snapshot, so unattended fixing remains safe while QA can test an explicit current snapshot. (2026-08-20)
 - [change-9075ddb15f55461cba237c8f6c302f95] #qa-guardian #windows #spawn — Fixed a Windows-only bug where the QA Guardian scheduler could not spawn the opencode agent \(ENOENT/EINVAL on shell:false\), by resolving the real opencode.exe per platform, so the enforced investigation/fixer chain actually runs on Windows. (2026-08-19)
@@ -199,6 +200,7 @@ This file summarizes all project changes, decisions, requirements, and bug recor
 | change-62abfd75f0104cce826232f15679e2d3 | 2026-08-19 | Add actor routing and structural human-only authorization separation \(Phase 3\) | done | [link](changes/2026-08-19-change-62abfd75f0104cce826232f15679e2d3-actor-routing-authorization-separation.md) |
 | change-66dd4c4f08114b48899480c39d8052a7 | 2026-08-18 | QA Guardian new-open 自动发现与 followup 多轮验收 | done | [link](changes/2026-08-18-change-66dd4c4f08114b48899480c39d8052a7-new-open-followup.md) |
 | change-6ff6c658477b423eae1d6e18a33f92b9 | 2026-08-18 | QA Guardian BOM 兼容、结构化日志与 DEVer 启动体验 | done | [link](changes/2026-08-18-change-6ff6c658477b423eae1d6e18a33f92b9-runtime-logging.md) |
+| change-76c5d0ed9fac48cb970da4f0329c2454 | 2026-08-21 | 组合 launcher 启动共享 opencode serve，专员会话可原生查看（方案 B） | done | [link](changes/2026-08-21-change-76c5d0ed9fac48cb970da4f0329c2454-shared-opencode-serve-plan-b.md) |
 | change-856058c87cf3450e8460263aeef5cb2a | 2026-08-20 | Add configurable Guardian capabilities and optional SyberMem memory integration | done | [link](changes/2026-08-20-change-856058c87cf3450e8460263aeef5cb2a-guardian-capability-memory.md) |
 | change-8566e0c1beed41e28dc4c9b6eed93fa8 | 2026-08-20 | Guardian target worktree and QA runtime separation |  | [link](changes/2026-08-20-change-8566e0c1beed41e28dc4c9b6eed93fa8-guardian-target-worktree-runtime.md) |
 | change-9075ddb15f55461cba237c8f6c302f95 | 2026-08-19 | Fix Windows spawn of opencode \(resolve opencode.exe\) | done | [link](changes/2026-08-19-change-9075ddb15f55461cba237c8f6c302f95-windows-opencode-spawn-fix.md) |
@@ -314,7 +316,7 @@ This file summarizes all project changes, decisions, requirements, and bug recor
 - gate2: bug-8a5db6c7aa0447189f0e23d02741516c
 - git: bug-986e8e7b64f046c1bedbacbcbc65a083, bug-9ea4fabc7f0948ac9dcdf159659e61de
 - guardian-investigation: change-0042ab69c2b94eb49a3576bfaadea0e4
-- guardian-launcher: decision-038091b9b1ca447db6c8a2d2a86719b4
+- guardian-launcher: change-76c5d0ed9fac48cb970da4f0329c2454, decision-038091b9b1ca447db6c8a2d2a86719b4
 - guardian-timeout: change-30d32899761b40d8ac9f442695dfec62
 - guardian-tui: change-f78313d32e614657bce29b72264e20fb
 - human-approval: bug-68ea53ff66ef4f62b7f680db1ecebf19
@@ -332,6 +334,7 @@ This file summarizes all project changes, decisions, requirements, and bug recor
 - notification: change-c4f7796c3fa940589c4c90921c26455c
 - observability: change-6ff6c658477b423eae1d6e18a33f92b9
 - opencode-sdk: bug-09c23cce8bb443d7aadb0f5dea5ce3b7, bug-682f269c0050412797459f52712af366, bug-95af95c0c87348659c6d36a12974beb0, bug-b963cb3902ec472fba0747de51688475, change-09acc786cc4c4b53b58d1e9a5b7267ef, change-1a149adf92854c34938da07409ba28a9, change-2d00718e55fc479195377618f8fe8527, change-4e17ae8322d944be9acbbd5f14780594, change-9c651671735d41ca84cb71a1c1bd2213, change-bf2f029768594b7097870069da715a0a
+- opencode-serve: change-76c5d0ed9fac48cb970da4f0329c2454
 - opencode-server: bug-8c8b03fc6c9c4adbb115442b042dd400
 - operations: change-cabd52ea36184a8885927911ff2e029e
 - orchestration: change-ab75b9ee58354673b48b9c875f91a889
@@ -361,6 +364,7 @@ This file summarizes all project changes, decisions, requirements, and bug recor
 - scheduler: bug-a47057aaf97145de807476aef76844e3, change-df0e3cad054847b7a529c6246bd4d603
 - security: bug-19e5ffff30db46ccbca9f8ca73551ad1, change-4e17ae8322d944be9acbbd5f14780594, change-5abf095ac5524443a5d7a9038a01a1e8, change-a1a8b1267e6946a098431b0dfbd102b6
 - session-continuity: bug-09c23cce8bb443d7aadb0f5dea5ce3b7, bug-7cebbfc6c8794207aee4ccebd7974edf, bug-95af95c0c87348659c6d36a12974beb0, change-09acc786cc4c4b53b58d1e9a5b7267ef, change-2d00718e55fc479195377618f8fe8527, change-9c651671735d41ca84cb71a1c1bd2213
+- session-viewing: change-76c5d0ed9fac48cb970da4f0329c2454
 - spawn: change-9075ddb15f55461cba237c8f6c302f95
 - specialists: change-47dc8b8da91e4b6fa99315f0e3712686
 - state: change-0fcf1b08d1784c49b5e6ec1c2d6c527f, change-12b834a1483f4fad8368e33dfe64947a
