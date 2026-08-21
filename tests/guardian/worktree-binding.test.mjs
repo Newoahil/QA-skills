@@ -5,6 +5,7 @@ import test from 'node:test';
 import {
   makeStrictBinding,
   makeWorktreeBinding,
+  readBindingFile,
   readLauncherConfig,
   resolveAuthoritativeControlRepo,
   resolveLauncherBinding,
@@ -14,6 +15,11 @@ import {
   validateRepositoryRelativePath,
   validateRuntimeInputPaths,
 } from '../../tools/guardian/worktree-binding.mjs';
+
+test('readBindingFile treats an absent binding path as no binding', () => {
+  assert.equal(readBindingFile(undefined), null);
+  assert.equal(readBindingFile(''), null);
+});
 
 test('rejects traversal, absolute, and protected runtime input paths', () => {
   for (const value of ['../secret.env', '/secret.env', 'C:/secret.env', '.git/config', '.qa/guardian/1.json', 'node_modules/pkg/index.js']) {

@@ -131,6 +131,7 @@ export function resolveAuthoritativeControlRepo(repoDir, binding) {
 }
 
 export function readBindingFile(file) {
+  if (typeof file !== 'string' || file.trim() === '') return null;
   if (!existsSync(file)) return null;
   try { return JSON.parse(readFileSync(file, 'utf8').replace(/^\uFEFF/, '')); } catch { return null; }
 }
