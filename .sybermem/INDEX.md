@@ -38,6 +38,7 @@ This file summarizes all project changes, decisions, requirements, and bug recor
 - [bug-e4748d924c68474b878a8da0c79c88a2] #qa-guardian #powershell #launcher — scheduler-start.ps1 now captures benign Git diff/apply stderr safely and always asks for a target directory when no explicit target is passed, so CRLF warnings do not abort worktree startup and projects cannot be switched accidentally. (2026-08-20)
 - [change-0042ab69c2b94eb49a3576bfaadea0e4] #guardian-investigation #timeout-policy #telemetry #abort — 按产品决策取消 investigation/specialist 的强制超时（budgets 默认 0=不限时），改为记录每角色与整体调查耗时作为后续调优依据；失败路径也持久化 specialist 会话与耗时以支持重试恢复与 TUI 可见；investigation 与 fixer run 现在可被 Ctrl+C/abort 透传中止。 (2026-08-21)
 - [change-0071a9a0e32c40c28601c3ff7d6ad8b6] #qa-guardian #plan-gate #runtime — scheduler 现在消费 investigation_mode，在 shadow/enforced 模式读取 dossier/plan 并调用 assessFixingEntry，未通过计划门不启动 write-capable Guardian；legacy 保持兼容，190/190 测试通过。 (2026-08-18)
+- [change-0187155e93c44e53b0dd8b136d4386c6] #guardian-runtime #observability #logging — Guardian now logs the whole run chain \(issue discovery, per-issue routing, each investigation specialist begin/ok/failed, plan begin/ok, fixer/qa begin, and provider model fallback\) as structured events, so an operator can see whether issues were fetched and which agents ran instead of only seeing a final failure. (2026-08-21)
 - [change-09acc786cc4c4b53b58d1e9a5b7267ef] #qa-guardian #opencode-sdk #session-continuity — Added independent fixer and QA OpenCode SDK session runners with create-or-reuse session continuity, human-note-as-untrusted-data injection, and deadline-abort, so the same issue's fixer/QA sessions are reused across human approval and rework/followup flows. (2026-08-19)
 - [change-0fcf1b08d1784c49b5e6ec1c2d6c527f] #qa-guardian #artifacts #state — 新增 dossier/plan 原子 artifact store，state schema 增加调查阶段、specialist、evidence、plan、生产依赖、round 元数据并兼容旧记录，167/167 测试通过。 (2026-08-18)
 - [change-12b834a1483f4fad8368e33dfe64947a] #qa-guardian #qa #state — 新增 machine-readable qa-verdict contract，要求 PASS 前置 PR；scheduler 启动 command-driven run 前持久化 consumed comment、clearFixRounds 和 stall_retries；196/196 测试通过。 (2026-08-18)
@@ -184,6 +185,7 @@ This file summarizes all project changes, decisions, requirements, and bug recor
 <!-- add new records here -->
 | change-0042ab69c2b94eb49a3576bfaadea0e4 | 2026-08-21 | 调查阶段取消强制超时，改为记录耗时并在失败时保留会话 | done | [link](changes/2026-08-21-change-0042ab69c2b94eb49a3576bfaadea0e4-investigation-no-timeout-duration-telemetry.md) |
 | change-0071a9a0e32c40c28601c3ff7d6ad8b6 | 2026-08-18 | 强化 Guardian Phase 8：真实 scheduler plan gate 接入 | done | [link](changes/2026-08-18-change-0071a9a0e32c40c28601c3ff7d6ad8b6-plan-gate-runtime.md) |
+| change-0187155e93c44e53b0dd8b136d4386c6 | 2026-08-21 | Guardian emits full business event logs for a run | completed | [link](changes/2026-08-21-change-0187155e93c44e53b0dd8b136d4386c6-guardian-business-event-logging.md) |
 | change-09acc786cc4c4b53b58d1e9a5b7267ef | 2026-08-19 | Add fixer and QA SDK session runners \(方案 A\) | done | [link](changes/2026-08-19-change-09acc786cc4c4b53b58d1e9a5b7267ef-fixer-qa-sdk-session-runners.md) |
 | change-0fcf1b08d1784c49b5e6ec1c2d6c527f | 2026-08-18 | 强化 Guardian Phase 3：调查 artifact 持久化与状态扩展 | done | [link](changes/2026-08-18-change-0fcf1b08d1784c49b5e6ec1c2d6c527f-artifact-state.md) |
 | change-12b834a1483f4fad8368e33dfe64947a | 2026-08-18 | QA verdict contract 与 scheduler state reconciliation | done | [link](changes/2026-08-18-change-12b834a1483f4fad8368e33dfe64947a-qa-verdict-state.md) |
@@ -331,7 +333,7 @@ This file summarizes all project changes, decisions, requirements, and bug recor
 - git: bug-986e8e7b64f046c1bedbacbcbc65a083, bug-9ea4fabc7f0948ac9dcdf159659e61de
 - guardian-investigation: change-0042ab69c2b94eb49a3576bfaadea0e4
 - guardian-launcher: change-76c5d0ed9fac48cb970da4f0329c2454, change-fc28793f11104036ad20f0cb288bda6f, decision-038091b9b1ca447db6c8a2d2a86719b4
-- guardian-runtime: change-27078cb8ae6e43b19f65ab149bdb87ca, change-7dc3767885cd4c9cb2ff5a1b5d8ca73d
+- guardian-runtime: change-0187155e93c44e53b0dd8b136d4386c6, change-27078cb8ae6e43b19f65ab149bdb87ca, change-7dc3767885cd4c9cb2ff5a1b5d8ca73d
 - guardian-scheduler: change-60858dbd238d4a13a5190dc40a7a1965
 - guardian-timeout: change-30d32899761b40d8ac9f442695dfec62
 - guardian-tui: change-cd0869b5cfa74261b9cf4655935f2317, change-f78313d32e614657bce29b72264e20fb
@@ -344,13 +346,13 @@ This file summarizes all project changes, decisions, requirements, and bug recor
 - json-schema: bug-26ad869551cf43f585bbfc062876eccc, bug-8a392be541a943bdad199b2dd863ca7c
 - launcher: bug-01f49ed7e02b41eba58ccc630c6170d0, bug-1a8b3cf22fc9424ba73e009dd9c4556d, bug-5a7a143fe7f84b4e9ab88dc922c2511b, bug-72dbe209aad24697a5bf36ffdf0b7a88, bug-83b7d5b7c85e4316adc6fa751321262a, bug-986e8e7b64f046c1bedbacbcbc65a083, bug-9df5a75c67504f4fac0d315dd7cef2dd, bug-e4748d924c68474b878a8da0c79c88a2, change-5cb23fed3750411f9d0a01fddae5f6de, change-cabd52ea36184a8885927911ff2e029e
 - lock: change-d68ddced82a4440492d038e2b4aa8975
-- logging: change-5330fd1c1188484fa1647010616d8195
+- logging: change-0187155e93c44e53b0dd8b136d4386c6, change-5330fd1c1188484fa1647010616d8195
 - migration: change-41675aeea2c446eea10506e55cbbd08d
 - model-config: change-27078cb8ae6e43b19f65ab149bdb87ca
 - multi-project: change-5cb23fed3750411f9d0a01fddae5f6de
 - n1-concurrency: change-d68ddced82a4440492d038e2b4aa8975
 - notification: change-c4f7796c3fa940589c4c90921c26455c
-- observability: change-6ff6c658477b423eae1d6e18a33f92b9, change-cd0869b5cfa74261b9cf4655935f2317
+- observability: change-0187155e93c44e53b0dd8b136d4386c6, change-6ff6c658477b423eae1d6e18a33f92b9, change-cd0869b5cfa74261b9cf4655935f2317
 - opencode: change-27078cb8ae6e43b19f65ab149bdb87ca, change-5330fd1c1188484fa1647010616d8195, change-7dc3767885cd4c9cb2ff5a1b5d8ca73d, change-cd0869b5cfa74261b9cf4655935f2317
 - opencode-events: change-7e6fdf97764f412c921e2d9ab581c7b1
 - opencode-sdk: bug-09c23cce8bb443d7aadb0f5dea5ce3b7, bug-682f269c0050412797459f52712af366, bug-95af95c0c87348659c6d36a12974beb0, bug-b963cb3902ec472fba0747de51688475, change-09acc786cc4c4b53b58d1e9a5b7267ef, change-1a149adf92854c34938da07409ba28a9, change-2d00718e55fc479195377618f8fe8527, change-4e17ae8322d944be9acbbd5f14780594, change-9c651671735d41ca84cb71a1c1bd2213, change-bf2f029768594b7097870069da715a0a
