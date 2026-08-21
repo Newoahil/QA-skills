@@ -252,6 +252,43 @@ test('processSpecialistRunner aborts and fails when the prompt exceeds the deadl
   assert.equal(state.opencode.specialists['guardian-code'].last_status, 'failed');
 });
 
+test('processSpecialistRunner emits SDK prompt progress heartbeats until completion', async () => {
+  const progress = [];
+  let resolvePrompt;
+  const client = {
+    createSession: async () => 'ses_progress',
+    prompt: () => new Promise((resolve) => { resolvePrompt = resolve; }),
+    abort: async () => {},
+    getSession: async () => ({ kind: 'ok', session: { id: 'ses_progress', agent: 'guardian-code' } }),
+  };
+  const run = processSpecialistRunner({
+    role: 'guardian-code',
+    issue: 205,
+    issueDataPath: 'D:/repo/.qa/guardian/205/issue-data.json',
+    repoDir: 'D:/repo',
+    dossierPath: 'D:/repo/.qa/guardian/205/dossier.json',
+    opencodeClient: client,
+    deadlineMs: 500,
+    progressIntervalMs: 10,
+    progressSink: (fields) => progress.push(fields),
+  });
+
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  resolvePrompt({ kind: 'ok', result: { text: '{"specialist":"guardian-code","hypotheses":[],"evidence":[],"unresolved_facts":[],"acceptance_criteria":[]}' } });
+  const result = await run;
+  const countAtCompletion = progress.length;
+  await new Promise((resolve) => setTimeout(resolve, 25));
+
+  assert.equal(result.specialist, 'guardian-code');
+  assert.ok(countAtCompletion > 0, 'should emit at least one progress heartbeat');
+  assert.equal(progress.length, countAtCompletion, 'heartbeat should stop after prompt completion');
+  assert.equal(progress[0].issue, 205);
+  assert.equal(progress[0].role, 'guardian-code');
+  assert.equal(progress[0].session_id, 'ses_progress');
+  assert.equal(progress[0].deadline_ms, 500);
+  assert.equal(typeof progress[0].elapsed_ms, 'number');
+});
+
 test('processSpecialistRunner forwards the configured per-role model to the prompt', async () => {
   const seen = [];
   const client = {

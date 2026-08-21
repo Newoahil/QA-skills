@@ -12,6 +12,7 @@ import { PERMISSION_POLICY_VERSION } from './opencode-client.mjs';
 import { hasTimeout } from './budgets.mjs';
 
 const PREVIEW_LIMIT = 220;
+const SPECIALIST_PROGRESS_INTERVAL_MS = 60 * 1000;
 
 function redactedPreview(text) {
   return String(text)
@@ -256,7 +257,15 @@ async function withPromptDeadline(fn, deadlineMs, onTimeout) {
   }
 }
 
-export function processSpecialistRunner({ role, issue, issueDataPath, repoDir, qaRuntimeDir = repoDir, dossierPath, timeout_ms, spawnImpl, opencodeClient, state = null, round = 1, memoryContext = null, signal = null, fallbackModels = [], model = undefined, deadlineMs = 0 }) {
+function startSpecialistProgressHeartbeat({ issue, role, sessionId, startedAt, deadlineMs, sink, intervalMs = SPECIALIST_PROGRESS_INTERVAL_MS }) {
+  if (typeof sink !== 'function') return null;
+  const emit = () => sink({ issue: Number(issue), role, session_id: sessionId, elapsed_ms: Date.now() - startedAt, deadline_ms: deadlineMs > 0 ? Number(deadlineMs) : null });
+  const timer = setInterval(emit, Number(intervalMs));
+  if (typeof timer.unref === 'function') timer.unref();
+  return timer;
+}
+
+export function processSpecialistRunner({ role, issue, issueDataPath, repoDir, qaRuntimeDir = repoDir, dossierPath, timeout_ms, spawnImpl, opencodeClient, state = null, round = 1, memoryContext = null, signal = null, fallbackModels = [], model = undefined, deadlineMs = 0, progressSink = null, progressIntervalMs = SPECIALIST_PROGRESS_INTERVAL_MS }) {
   const prompt = [
     `Investigate issue #${issue} in ${qaRuntimeDir} as ${role}.`,
     `Read issue title/body DATA from ${JSON.stringify(issueDataPath)}.`,
@@ -297,6 +306,7 @@ export function processSpecialistRunner({ role, issue, issueDataPath, repoDir, q
       // Persist the session BEFORE the (possibly long) prompt so a mid-run abort still leaves a
       // resumable session id on state. Status is updated to ok/failed when the prompt settles.
       stampSpecialistSession(state, role, { ...baseRecord, last_status: 'running', last_seen_at: new Date(startedAt).toISOString() });
+      const progressTimer = startSpecialistProgressHeartbeat({ issue, role, sessionId, startedAt, deadlineMs, sink: progressSink, intervalMs: progressIntervalMs });
       try {
         const outcome = await withPromptDeadline(
           () => opencodeClient.prompt({
@@ -319,6 +329,8 @@ export function processSpecialistRunner({ role, issue, issueDataPath, repoDir, q
       } catch (error) {
         stampSpecialistSession(state, role, { last_status: 'failed', last_seen_at: new Date().toISOString(), duration_ms: Date.now() - startedAt, last_error: error instanceof Error ? error.message : 'unknown' });
         throw error;
+      } finally {
+        if (progressTimer) clearInterval(progressTimer);
       }
     })();
   }
