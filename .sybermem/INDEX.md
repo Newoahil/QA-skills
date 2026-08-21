@@ -36,6 +36,7 @@ This file summarizes all project changes, decisions, requirements, and bug recor
 - [bug-b963cb3902ec472fba0747de51688475] #opencode-sdk #structured-output #qa-guardian — Fixed SDK wrapper response handling: createSession now unwraps data.id, prompt/get/abort bypass the broken 1.18.18 path template using explicit low-level URLs, and json_schema results are read from data.info.structured rather than text parts. (2026-08-19)
 - [bug-c9d39c21fcd640948f061bf092488b1b] #qa-guardian #powershell #worktree — The real NewerThan failure was caused by an unparenthesized Test-Path boolean expression in Windows PowerShell 5.1, and the same startup path now preserves the existing control worktree config as authoritative instead of comparing it to the developer checkout. (2026-08-20)
 - [bug-e4748d924c68474b878a8da0c79c88a2] #qa-guardian #powershell #launcher — scheduler-start.ps1 now captures benign Git diff/apply stderr safely and always asks for a target directory when no explicit target is passed, so CRLF warnings do not abort worktree startup and projects cannot be switched accidentally. (2026-08-20)
+- [change-0042ab69c2b94eb49a3576bfaadea0e4] #guardian-investigation #timeout-policy #telemetry #abort — 按产品决策取消 investigation/specialist 的强制超时（budgets 默认 0=不限时），改为记录每角色与整体调查耗时作为后续调优依据；失败路径也持久化 specialist 会话与耗时以支持重试恢复与 TUI 可见；investigation 与 fixer run 现在可被 Ctrl+C/abort 透传中止。 (2026-08-21)
 - [change-0071a9a0e32c40c28601c3ff7d6ad8b6] #qa-guardian #plan-gate #runtime — scheduler 现在消费 investigation_mode，在 shadow/enforced 模式读取 dossier/plan 并调用 assessFixingEntry，未通过计划门不启动 write-capable Guardian；legacy 保持兼容，190/190 测试通过。 (2026-08-18)
 - [change-09acc786cc4c4b53b58d1e9a5b7267ef] #qa-guardian #opencode-sdk #session-continuity — Added independent fixer and QA OpenCode SDK session runners with create-or-reuse session continuity, human-note-as-untrusted-data injection, and deadline-abort, so the same issue's fixer/QA sessions are reused across human approval and rework/followup flows. (2026-08-19)
 - [change-0fcf1b08d1784c49b5e6ec1c2d6c527f] #qa-guardian #artifacts #state — 新增 dossier/plan 原子 artifact store，state schema 增加调查阶段、specialist、evidence、plan、生产依赖、round 元数据并兼容旧记录，167/167 测试通过。 (2026-08-18)
@@ -172,6 +173,7 @@ This file summarizes all project changes, decisions, requirements, and bug recor
 | ID | Date | Title | Status | Link |
 |----|------|-------|--------|------|
 <!-- add new records here -->
+| change-0042ab69c2b94eb49a3576bfaadea0e4 | 2026-08-21 | 调查阶段取消强制超时，改为记录耗时并在失败时保留会话 | done | [link](changes/2026-08-21-change-0042ab69c2b94eb49a3576bfaadea0e4-investigation-no-timeout-duration-telemetry.md) |
 | change-0071a9a0e32c40c28601c3ff7d6ad8b6 | 2026-08-18 | 强化 Guardian Phase 8：真实 scheduler plan gate 接入 | done | [link](changes/2026-08-18-change-0071a9a0e32c40c28601c3ff7d6ad8b6-plan-gate-runtime.md) |
 | change-09acc786cc4c4b53b58d1e9a5b7267ef | 2026-08-19 | Add fixer and QA SDK session runners \(方案 A\) | done | [link](changes/2026-08-19-change-09acc786cc4c4b53b58d1e9a5b7267ef-fixer-qa-sdk-session-runners.md) |
 | change-0fcf1b08d1784c49b5e6ec1c2d6c527f | 2026-08-18 | 强化 Guardian Phase 3：调查 artifact 持久化与状态扩展 | done | [link](changes/2026-08-18-change-0fcf1b08d1784c49b5e6ec1c2d6c527f-artifact-state.md) |
@@ -283,6 +285,7 @@ This file summarizes all project changes, decisions, requirements, and bug recor
 ## Topic Index
 
 <!-- Auto-maintained: maps topic tags to record IDs for fast lookup -->
+- abort: change-0042ab69c2b94eb49a3576bfaadea0e4
 - actor-routing: change-62abfd75f0104cce826232f15679e2d3
 - architecture: change-24402a071a3a4c84a3a6f56e78cca33b
 - artifacts: change-0fcf1b08d1784c49b5e6ec1c2d6c527f, change-a4cb962beea34d6491bc3c850bbd7590
@@ -306,6 +309,7 @@ This file summarizes all project changes, decisions, requirements, and bug recor
 - gate1: bug-68ea53ff66ef4f62b7f680db1ecebf19, bug-7cebbfc6c8794207aee4ccebd7974edf
 - gate2: bug-8a5db6c7aa0447189f0e23d02741516c
 - git: bug-986e8e7b64f046c1bedbacbcbc65a083, bug-9ea4fabc7f0948ac9dcdf159659e61de
+- guardian-investigation: change-0042ab69c2b94eb49a3576bfaadea0e4
 - guardian-launcher: decision-038091b9b1ca447db6c8a2d2a86719b4
 - guardian-tui: change-f78313d32e614657bce29b72264e20fb
 - human-approval: bug-68ea53ff66ef4f62b7f680db1ecebf19
@@ -358,7 +362,9 @@ This file summarizes all project changes, decisions, requirements, and bug recor
 - state-consistency: bug-8a5db6c7aa0447189f0e23d02741516c
 - structured-output: bug-b963cb3902ec472fba0747de51688475
 - sybermem: change-856058c87cf3450e8460263aeef5cb2a
+- telemetry: change-0042ab69c2b94eb49a3576bfaadea0e4
 - timeout: change-2955e2780a8b4097bfdf09d765453605
+- timeout-policy: change-0042ab69c2b94eb49a3576bfaadea0e4
 - unattended-quality: change-559f7f25f2834bb2b50e4b7bcf9a3bfb
 - usability: change-c783251f5b134af9b8bd7e15628fc7c6, change-d4732a411e254c618517828d62e5ed70, change-f78313d32e614657bce29b72264e20fb
 - validation: bug-26ad869551cf43f585bbfc062876eccc
