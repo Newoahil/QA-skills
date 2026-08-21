@@ -19,6 +19,10 @@ export const DEFAULT_BUDGETS = Object.freeze({
 export const DEFAULT_SESSION_DEADLINES = Object.freeze({
   fixer_deadline_ms: 60 * 60 * 1000, // 60 min
   qa_deadline_ms: 60 * 60 * 1000, // 60 min
+  // Specialist SDK prompts always get a positive safety deadline: undici header/body timeouts are
+  // disabled for long model runs, so without an app-level bound a hung/queued prompt could hold the
+  // N=1 lock indefinitely. 30 min is generous for a read-only investigation while still self-healing.
+  specialist_deadline_ms: 30 * 60 * 1000, // 30 min
 });
 
 // Resolve a positive session deadline: explicit key → legacy child_timeout_ms (only if positive)

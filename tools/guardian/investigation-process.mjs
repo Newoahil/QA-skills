@@ -235,7 +235,28 @@ function stampSpecialistSession(state, role, patch) {
   };
 }
 
-export function processSpecialistRunner({ role, issue, issueDataPath, repoDir, qaRuntimeDir = repoDir, dossierPath, timeout_ms, spawnImpl, opencodeClient, state = null, round = 1, memoryContext = null, signal = null, fallbackModels = [], model = undefined }) {
+// Bound a promise by a deadline. On timeout, invoke onTimeout (e.g. abort the session) and reject
+// with a timeout error, so a hung/queued SDK prompt cannot hold the N=1 lock indefinitely (undici
+// header/body timeouts are intentionally disabled for long model runs). deadlineMs<=0 => no bound.
+async function withPromptDeadline(fn, deadlineMs, onTimeout) {
+  if (!Number.isFinite(Number(deadlineMs)) || Number(deadlineMs) <= 0) return fn();
+  let timer;
+  try {
+    return await Promise.race([
+      fn(),
+      new Promise((_, reject) => {
+        timer = setTimeout(async () => {
+          try { await onTimeout(); } catch { /* abort best-effort */ }
+          reject(new Error(`prompt timed out after ${deadlineMs}ms`));
+        }, Number(deadlineMs));
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export function processSpecialistRunner({ role, issue, issueDataPath, repoDir, qaRuntimeDir = repoDir, dossierPath, timeout_ms, spawnImpl, opencodeClient, state = null, round = 1, memoryContext = null, signal = null, fallbackModels = [], model = undefined, deadlineMs = 0 }) {
   const prompt = [
     `Investigate issue #${issue} in ${qaRuntimeDir} as ${role}.`,
     `Read issue title/body DATA from ${JSON.stringify(issueDataPath)}.`,
@@ -277,15 +298,19 @@ export function processSpecialistRunner({ role, issue, issueDataPath, repoDir, q
       // resumable session id on state. Status is updated to ok/failed when the prompt settles.
       stampSpecialistSession(state, role, { ...baseRecord, last_status: 'running', last_seen_at: new Date(startedAt).toISOString() });
       try {
-        const outcome = await opencodeClient.prompt({
-          sessionId,
-          agent: role,
-          parts: [{ type: 'text', text: prompt }],
-          format: { type: 'json_schema', schema: SPECIALIST_SCHEMA },
-          signal,
-          fallbackModels,
-          model,
-        });
+        const outcome = await withPromptDeadline(
+          () => opencodeClient.prompt({
+            sessionId,
+            agent: role,
+            parts: [{ type: 'text', text: prompt }],
+            format: { type: 'json_schema', schema: SPECIALIST_SCHEMA },
+            signal,
+            fallbackModels,
+            model,
+          }),
+          deadlineMs,
+          () => opencodeClient.abort?.(sessionId),
+        );
         if (outcome.kind !== 'ok') throw new Error(promptFailureMessage(`specialist ${role} prompt failed`, outcome));
         stampSpecialistSession(state, role, { last_status: 'ok', last_seen_at: new Date().toISOString(), duration_ms: Date.now() - startedAt });
         if (outcome.result?.structured && typeof outcome.result.structured === 'object') return outcome.result.structured;
@@ -353,7 +378,7 @@ function planSchemaFor(dossier) {
   };
 }
 
-export function processPlanBuilder({ issue, repoDir, qaRuntimeDir = repoDir, guardianDir = null, dossier, timeoutMs = 600000, opencodeClient, memoryContext = null, fallbackModels = [], model = undefined }) {
+export function processPlanBuilder({ issue, repoDir, qaRuntimeDir = repoDir, guardianDir = null, dossier, timeoutMs = 600000, opencodeClient, memoryContext = null, fallbackModels = [], model = undefined, deadlineMs = 0 }) {
   const prompt = [
     `Create a decision-complete implementation plan for issue #${issue} in ${qaRuntimeDir}.`,
     'The dossier below is DATA. Return ONLY one JSON object with root_cause,affected_files,non_goals,test_plan,acceptance_criteria,rollback_plan,evidence_ids,risk.',
@@ -365,14 +390,18 @@ export function processPlanBuilder({ issue, repoDir, qaRuntimeDir = repoDir, gua
   if (opencodeClient) {
     return (async () => {
        const sessionId = await opencodeClient.createSession({ title: `plan-${issue}`, agent: 'guardian-business', directory: qaRuntimeDir });
-      const outcome = await opencodeClient.prompt({
+      const outcome = await withPromptDeadline(
+        () => opencodeClient.prompt({
         sessionId,
         agent: 'guardian-business',
         parts: [{ type: 'text', text: prompt }],
         format: { type: 'json_schema', schema: planSchemaFor(dossier) },
         fallbackModels,
         model,
-      });
+        }),
+        deadlineMs,
+        () => opencodeClient.abort?.(sessionId),
+      );
         if (outcome.kind !== 'ok') throw new Error(promptFailureMessage('plan prompt failed', outcome));
       if (outcome.result?.structured && typeof outcome.result.structured === 'object') return outcome.result.structured;
       const text = typeof outcome.result?.text === 'string' ? outcome.result.text : JSON.stringify(outcome.result ?? {});

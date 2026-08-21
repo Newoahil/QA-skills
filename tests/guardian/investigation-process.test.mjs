@@ -226,6 +226,32 @@ test('processSpecialistRunner reports SDK prompt response shape on empty text JS
   });
 });
 
+test('processSpecialistRunner aborts and fails when the prompt exceeds the deadline', async () => {
+  let aborted = false;
+  const client = {
+    createSession: async () => 'ses_dl',
+    // prompt never resolves on its own — only the deadline can end it.
+    prompt: () => new Promise(() => {}),
+    abort: async () => { aborted = true; },
+    getSession: async () => ({ kind: 'ok', session: { id: 'ses_dl', agent: 'guardian-code' } }),
+  };
+  const state = { opencode: { specialists: {} } };
+  const failure = await processSpecialistRunner({
+    role: 'guardian-code',
+    issue: 205,
+    issueDataPath: 'D:/repo/.qa/guardian/205/issue-data.json',
+    repoDir: 'D:/repo',
+    dossierPath: 'D:/repo/.qa/guardian/205/dossier.json',
+    opencodeClient: client,
+    state,
+    deadlineMs: 50,
+  }).then(() => null, (e) => e);
+  assert.ok(failure instanceof Error, 'should reject on deadline');
+  assert.match(failure.message, /timed out|deadline/i);
+  assert.equal(aborted, true, 'should abort the session on deadline');
+  assert.equal(state.opencode.specialists['guardian-code'].last_status, 'failed');
+});
+
 test('processSpecialistRunner forwards the configured per-role model to the prompt', async () => {
   const seen = [];
   const client = {

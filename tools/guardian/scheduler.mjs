@@ -359,8 +359,8 @@ async function tick(repoDir, config, logger, signal = null) {
           round: investigationState.processing_round ?? 1,
           signal,
           logger,
-          runSpecialist: (args) => processSpecialistRunner({ ...args, opencodeClient, fallbackModels, model: resolveModelForRole(config, args.role) }),
-           buildPlan: (args) => processPlanBuilder({ ...args, repoDir, qaRuntimeDir, guardianDir, opencodeClient, fallbackModels, model: resolveModelForRole(config, 'plan') }),
+          runSpecialist: (args) => processSpecialistRunner({ ...args, opencodeClient, fallbackModels, model: resolveModelForRole(config, args.role), deadlineMs: resolveSessionDeadlineMs(config, 'specialist_deadline_ms') }),
+           buildPlan: (args) => processPlanBuilder({ ...args, repoDir, qaRuntimeDir, guardianDir, opencodeClient, fallbackModels, model: resolveModelForRole(config, 'plan'), deadlineMs: resolveSessionDeadlineMs(config, 'specialist_deadline_ms') }),
         });
         const state = readState(guardianDir, issue) ?? { issue };
         writeState(guardianDir, {
