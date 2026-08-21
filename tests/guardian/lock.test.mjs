@@ -33,7 +33,7 @@ test('acquireLock creates the lock atomically and returns a handle', () => {
 test('a second acquire while a LIVE lock is held returns null (true N=1)', () => {
   const { dir, file } = tmpLock();
   try {
-    const h1 = acquireLock(file, { pid: 1, leaseMs: LEASE, now: 1000, dir });
+    const h1 = acquireLock(file, { pid: process.pid, leaseMs: LEASE, now: 1000, dir });
     assert.ok(h1);
     const h2 = acquireLock(file, { pid: 2, leaseMs: LEASE, now: 1000 + 60_000, dir });
     assert.equal(h2, null);
@@ -48,6 +48,26 @@ test('a STALE (lease-expired) lock is reclaimed by a new acquirer', () => {
     acquireLock(file, { pid: 1, leaseMs: LEASE, now: 1000, dir });
     const h2 = acquireLock(file, { pid: 2, leaseMs: LEASE, now: 1000 + LEASE + 1, dir });
     assert.ok(h2, 'expired lock should be reclaimable');
+    const payload = JSON.parse(readFileSync(file, 'utf8'));
+    assert.equal(payload.pid, 2);
+    assert.equal(payload.token, h2.token);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a lock whose owner process is gone is reclaimed before lease expiry', () => {
+  const { dir, file } = tmpLock();
+  try {
+    acquireLock(file, { pid: 12345, leaseMs: LEASE, now: 1000, dir });
+    const h2 = acquireLock(file, {
+      pid: 2,
+      leaseMs: LEASE,
+      now: 1000 + 60_000,
+      dir,
+      processExists: (pid) => pid !== 12345,
+    });
+    assert.ok(h2, 'dead owner lock should be reclaimable even inside the lease window');
     const payload = JSON.parse(readFileSync(file, 'utf8'));
     assert.equal(payload.pid, 2);
     assert.equal(payload.token, h2.token);
@@ -73,7 +93,7 @@ test('renewLock refreshes renewed_at only for the owning token', () => {
 test('renew keeps a long run live past the lease so N=1 still holds', () => {
   const { dir, file } = tmpLock();
   try {
-    const h = acquireLock(file, { pid: 1, leaseMs: LEASE, now: 0, dir });
+    const h = acquireLock(file, { pid: process.pid, leaseMs: LEASE, now: 0, dir });
     renewLock(file, h, { now: LEASE - 1 }); // heartbeat before expiry
     const later = LEASE + 100; // past original acquire, but within renewed lease
     const other = acquireLock(file, { pid: 2, leaseMs: LEASE, now: later, dir });

@@ -42,14 +42,27 @@ export function isLockLive(lock, { leaseMs, now }) {
 // Default fs surface (injectable for tests).
 const realFs = { existsSync, mkdirSync, openSync, writeSync, closeSync, readFileSync, writeFileSync, rmSync, renameSync };
 
+function defaultProcessExists(pid) {
+  const n = Number(pid);
+  if (!Number.isInteger(n) || n <= 0) return false;
+  try {
+    process.kill(n, 0);
+    return true;
+  } catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === 'ESRCH') return false;
+    return true;
+  }
+}
+
 /**
  * Try to acquire the lock atomically. Returns an owner handle { token } on success, or null
- * when a LIVE lock is already held by someone else. A stale (lease-expired) lock is reclaimed.
+ * when a LIVE lock is already held by someone else. A stale or dead-owner lock is reclaimed.
  * @param {string} lockFile
  * @param {object} opts { pid, leaseMs, now?, fs?, dir? }
  */
 export function acquireLock(lockFile, opts) {
   const fs = opts.fs ?? realFs;
+  const processExists = opts.processExists ?? defaultProcessExists;
   const now = opts.now ?? Date.now();
   const token = randomUUID();
   if (opts.dir) fs.mkdirSync(opts.dir, { recursive: true });
@@ -67,9 +80,9 @@ export function acquireLock(lockFile, opts) {
     if (!(e && e.code === 'EEXIST')) throw e;
   }
 
-  // 2. A lock file exists. Reclaim ONLY if it is stale (lease expired); never steal a live lock.
+  // 2. A lock file exists. Reclaim only if it is lease-stale or its owner PID is gone.
   const existing = readLockRaw(fs, lockFile);
-  if (isLockLive(existing, { leaseMs: opts.leaseMs, now })) {
+  if (isLockLive(existing, { leaseMs: opts.leaseMs, now }) && processExists(existing.pid)) {
     return null; // someone else holds a live lock → N=1 respected
   }
   // Stale takeover: atomically move the old lock out of the canonical path. Only one contender
