@@ -244,6 +244,53 @@ node tools/guardian/session-view.mjs --session ses_abc123 --full
 Windows 上也可以直接双击两个 bat 分开启动，日常入口严格只有两个：`tools/guardian/scheduler-start.bat` 负责值守，
 `tools/guardian/dashboard-start.bat` 负责只读 Dashboard（内部调用 `dashboard-start.ps1` 解析 node）。两个 bat 都可传目标项目路径；显式路径只切换到该项目的 binding，不会复用另一项目的 control worktree 或配置。无参启动时会交互要求输入本次目标目录，避免误监控上次项目。
 
+如果希望一次双击同时启动 scheduler 和新的单终端 TUI，使用组合入口：
+
+```text
+tools\guardian\guardian-start.bat D:\tuantuanrent
+```
+
+它会打开两个窗口：scheduler 在独立 PowerShell 窗口持续值守，当前窗口进入只读 TUI。TUI 中按 `q` 只退出视图，不会停止 scheduler；需要停止值守时，在 scheduler 窗口按 `Ctrl+C`。组合入口只读取已有项目 binding，不会重复询问模式或 `command_authors`；新项目首次使用前，先运行一次 `scheduler-start.bat D:\tuantuanrent` 完成初始化。
+
+### 单终端只读 ANSI TUI（独立入口）
+
+如果想在一个终端里同时看队列、详情和上下文，可以使用新的只读 TUI：
+
+```bash
+node tools/guardian/dashboard-tui.mjs --repo <repo>
+node tools/guardian/dashboard-tui.mjs --repo <repo> --refresh 8
+npm run guardian:dashboard:tui -- --repo <repo>
+```
+
+特性与边界：
+
+- 启动前会先通过 `resolveViewerRepo` 找到 authoritative control repo，再读取 `.qa/guardian`。
+- **严格只读**：只读 issue state、artifact 文件和 OpenCode transcript；不会写 state、不会发 GitHub 评论、不会改 git、不会触发 approve/retry/rework/reject。
+- 三栏单终端布局：左侧 issue queue，中间 selected issue details，右侧 context tabs。
+- 右侧标签页：`1 摘要`、`2 transcript`、`3 logs`、`4 产物/错误`。
+- transcript 通过现有 OpenCode 读取链路获取；如果 OpenCode 不可达，会在右栏直接显示中文问题/原因/下一步。
+- 适配 Windows Terminal / PowerShell 5.1：只使用 Node built-ins + 原生 ANSI alternate screen/raw mode，不增加依赖。
+- 非 TTY 环境不会强行进入 raw mode；此时请改用 `dashboard.mjs`，或仅执行 `--help` 查看说明。
+
+默认快捷键：
+
+| 键位 | 作用 |
+|---|---|
+| `q` | 退出并恢复终端 |
+| `↑/↓` 或 `j/k` | 队列导航；若焦点在详情/上下文，则改为滚动 |
+| `←/→` 或 `h/l` | 在队列 / 详情 / 上下文三栏之间切换焦点 |
+| `Enter` | 进入详情滚动模式 |
+| `Esc` | 返回队列焦点 |
+| `1/2/3/4` | 切换摘要 / transcript / logs / 产物错误 |
+| `r` | 手动刷新 |
+| `a` | 打开/关闭自动刷新 |
+| `?` | 帮助 |
+| `F` | transcript 完整模式（含更长内容） |
+| `G` | 跳到 logs 末尾并开启 follow |
+| `p` | 暂停 logs follow |
+
+如果终端过窄，TUI 会降级为只读提示页并要求扩大窗口；如果收到 `SIGINT`/`SIGTERM`，会恢复 cursor、alternate screen 和 raw mode 后退出。
+
 ## Run the single-issue chain (MVP, §15.2)
 
 Drive one issue directly through the guardian agent:
