@@ -249,6 +249,9 @@ function Assert-PersistedBinding($Binding, [string]$CanonicalTarget, [string]$Gu
 
 function Normalize-CommandAuthors($Value) {
   if ($null -eq $Value) { return @() }
+  if ($Value -is [string]) {
+    $Value = @($Value -split '[,\s]+' | Where-Object { $_ })
+  }
   if ($Value -isnot [System.Array]) { throw "command_authors 必须是非空登录名数组。" }
   if (@($Value | Where-Object { $_ -isnot [string] }).Count -gt 0) { throw "command_authors 必须是非空登录名数组。" }
   $authors = @($Value | ForEach-Object { $_.Trim() } | Where-Object { $_ })
@@ -479,7 +482,7 @@ if ($bindingAuthors.Count -gt 0) {
   if ($Yes) { throw "command_authors 为空：请先不带 -Yes 运行一次，输入可信 GitHub 登录名，例如 goudaren0528。" }
   $authorInput = Read-Host "    请输入可信 GitHub 登录名（多个用逗号或空格分隔；只需首次输入）"
   if (-not $authorInput) { throw "已取消：未配置可信 GitHub 登录名。" }
-  $authors = @($authorInput -split '[,\s]+' | Where-Object { $_ })
+  $authors = Normalize-CommandAuthors $authorInput
   $cfg | Add-Member -NotePropertyName command_authors -NotePropertyValue $authors -Force
   $changedCfg = $true
 }

@@ -53,6 +53,14 @@ test('guardian-start.ps1 starts a shared opencode serve and points scheduler + T
   assert.match(text, /Where-Object \{ \$_ -ne '-OpenCodeServerUrl'/);
 });
 
+test('guardian-start.ps1 avoids launching npm PowerShell shims as plain files', () => {
+  const text = readFileSync('tools/guardian/guardian-start.ps1', 'utf8');
+  assert.match(text, /npm\\opencode\.cmd/);
+  assert.match(text, /npm\\opencode\.ps1/);
+  assert.ok(text.indexOf('npm\\opencode.cmd') < text.indexOf('Get-Command opencode'));
+  assert.ok(text.indexOf('npm\\opencode.cmd') < text.indexOf('npm\\opencode.ps1'));
+});
+
 test('scheduler-start.ps1 applies shared server + progress env to both polling and combined runtimes', () => {
   const text = readFileSync('tools/guardian/scheduler-start.ps1', 'utf8');
   // The env wiring must be ABOVE the SchedulerOnly branch so both runtimes inherit it.

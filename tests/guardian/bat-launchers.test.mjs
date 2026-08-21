@@ -154,6 +154,8 @@ test('scheduler launcher keeps binding author authorization fail-closed under -Y
   assert.match(text, /if \(\$Yes -and -not \$CommandAuthors\) \{ throw "启动绑定缺少 command_authors/);
   assert.match(text, /请先不带 -Yes 运行一次，输入可信 GitHub 登录名/);
   assert.match(text, /Normalize-CommandAuthors \$Binding\.command_authors/);
+  assert.match(text, /\$authorInput = if \(\$CommandAuthors\) \{ \$CommandAuthors \}/);
+  assert.match(text, /Normalize-CommandAuthors \$authorInput/);
 });
 
 test('launcher docs and config describe explicit project switching and independent bindings', () => {

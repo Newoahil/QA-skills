@@ -28,13 +28,14 @@ $schedulerScript = Join-Path $PSScriptRoot "scheduler-start.ps1"
 $tuiScript = Join-Path $PSScriptRoot "dashboard-tui.mjs"
 
 function Resolve-OpencodeBin {
-  $command = Get-Command opencode -ErrorAction SilentlyContinue
-  if ($command) { return $command.Source }
   $candidates = @(
     (Join-Path $env:APPDATA 'npm\opencode.cmd'),
+    (Join-Path $env:APPDATA 'npm\opencode.ps1'),
     (Join-Path $env:APPDATA 'npm\node_modules\opencode-ai\bin\opencode.exe')
   )
   foreach ($candidate in $candidates) { if (Test-Path -LiteralPath $candidate) { return $candidate } }
+  $command = Get-Command opencode -ErrorAction SilentlyContinue
+  if ($command) { return $command.Source }
   return $null
 }
 
