@@ -88,6 +88,7 @@ This file summarizes all project changes, decisions, requirements, and bug recor
 - [change-e34b035b981b4224a44621ba7457d5b2] #qa-guardian #budgets #reliability — 新增 budgets.mjs 纯预算核心，支持标准/复杂调查预算、specialist 数量/截止时间、剩余预算和 timeout 分类，179/179 测试通过；尚未接入 runtime。 (2026-08-18)
 - [change-eb83465c334b4e88b55e83d019123930] #qa-guardian #webhook #idempotency — Implemented the webhook ingest \(cloud, durable dedupe by delivery_id, never a state writer\) and the scheduler wake-drain planner \(coalesce + application-token guard\) so webhook and compensation-poll triggers converge to exactly one application without breaking single-writer N=1 or comment-chronology authorization. (2026-08-19)
 - [change-f78313d32e614657bce29b72264e20fb] #guardian-tui #dashboard-filter #usability — Guardian 只读 TUI 默认用 current\(active+waiting\) 过滤，隐藏 DONE/交回等历史记录，避免误以为在监控已完成/远程已删除的 issue；历史仍保留可按 t 切到 all 审计。 (2026-08-21)
+- [change-fc28793f11104036ad20f0cb288bda6f] #guardian-launcher #windows-powershell #startup — 组合启动器在 Windows 上优先使用 npm opencode.cmd，避免把 opencode.ps1 shim 直接交给 Start-Process 导致打开为文本；scheduler-start 的 CommandAuthors 预检现在接受逗号/空格字符串并规范化为数组，避免 -CommandAuthors goudaren 在 dry-run/preflight 被误判为非法。 (2026-08-21)
 - [decision-038091b9b1ca447db6c8a2d2a86719b4] #workflow #guardian-launcher #commit-discipline — 约定 QA-skills 每次修改（含 SyberMem 记录与重建的 INDEX.md）完成后必须立即 commit 到工作区 clean，因为 Guardian scheduler preflight 要求 tools 仓库干净才能启动，dirty 会直接阻断 guardian-start。 (2026-08-21)
 
 ## Archived Conclusions
@@ -228,6 +229,7 @@ This file summarizes all project changes, decisions, requirements, and bug recor
 | change-e34b035b981b4224a44621ba7457d5b2 | 2026-08-18 | 强化 Guardian Phase 7：调查与子任务预算核心 | done | [link](changes/2026-08-18-change-e34b035b981b4224a44621ba7457d5b2-runtime-budgets.md) |
 | change-eb83465c334b4e88b55e83d019123930 | 2026-08-19 | Add Phase 4 webhook ingest and scheduler wake-drain planner | done | [link](changes/2026-08-19-change-eb83465c334b4e88b55e83d019123930-phase4-webhook-ingest-wake-drain.md) |
 | change-f78313d32e614657bce29b72264e20fb | 2026-08-21 | Guardian 只读 TUI 默认只显示当前值守队列 | done | [link](changes/2026-08-21-change-f78313d32e614657bce29b72264e20fb-guardian-tui-current-filter.md) |
+| change-fc28793f11104036ad20f0cb288bda6f | 2026-08-21 | 修复 Guardian 组合启动器 Windows 启动回归 | done | [link](changes/2026-08-21-change-fc28793f11104036ad20f0cb288bda6f-guardian-launcher-windows-startup.md) |
 
 ## Technical Decisions
 
@@ -318,7 +320,7 @@ This file summarizes all project changes, decisions, requirements, and bug recor
 - gate2: bug-8a5db6c7aa0447189f0e23d02741516c
 - git: bug-986e8e7b64f046c1bedbacbcbc65a083, bug-9ea4fabc7f0948ac9dcdf159659e61de
 - guardian-investigation: change-0042ab69c2b94eb49a3576bfaadea0e4
-- guardian-launcher: change-76c5d0ed9fac48cb970da4f0329c2454, decision-038091b9b1ca447db6c8a2d2a86719b4
+- guardian-launcher: change-76c5d0ed9fac48cb970da4f0329c2454, change-fc28793f11104036ad20f0cb288bda6f, decision-038091b9b1ca447db6c8a2d2a86719b4
 - guardian-timeout: change-30d32899761b40d8ac9f442695dfec62
 - guardian-tui: change-f78313d32e614657bce29b72264e20fb
 - human-approval: bug-68ea53ff66ef4f62b7f680db1ecebf19
@@ -370,6 +372,7 @@ This file summarizes all project changes, decisions, requirements, and bug recor
 - session-viewing: change-76c5d0ed9fac48cb970da4f0329c2454, change-7e6fdf97764f412c921e2d9ab581c7b1
 - spawn: change-9075ddb15f55461cba237c8f6c302f95
 - specialists: change-47dc8b8da91e4b6fa99315f0e3712686
+- startup: change-fc28793f11104036ad20f0cb288bda6f
 - state: change-0fcf1b08d1784c49b5e6ec1c2d6c527f, change-12b834a1483f4fad8368e33dfe64947a
 - state-consistency: bug-8a5db6c7aa0447189f0e23d02741516c
 - structured-output: bug-b963cb3902ec472fba0747de51688475
@@ -386,5 +389,6 @@ This file summarizes all project changes, decisions, requirements, and bug recor
 - watch-mode: change-66dd4c4f08114b48899480c39d8052a7
 - webhook: change-5e5f9e3456464cb598ba51d705ffc945, change-df0e3cad054847b7a529c6246bd4d603, change-eb83465c334b4e88b55e83d019123930
 - windows: bug-541a9d6211594221a5ceb08950e80881, bug-72dbe209aad24697a5bf36ffdf0b7a88, bug-83b7d5b7c85e4316adc6fa751321262a, bug-8c8b03fc6c9c4adbb115442b042dd400, bug-9df5a75c67504f4fac0d315dd7cef2dd, bug-addaeb3484574da4898bc2d0d5a022d6, change-6ff6c658477b423eae1d6e18a33f92b9, change-9075ddb15f55461cba237c8f6c302f95
+- windows-powershell: change-fc28793f11104036ad20f0cb288bda6f
 - workflow: decision-038091b9b1ca447db6c8a2d2a86719b4
 - worktree: bug-4efe5578aa8742ad884e419e62a1126d, bug-5a7a143fe7f84b4e9ab88dc922c2511b, bug-9ea4fabc7f0948ac9dcdf159659e61de, bug-c9d39c21fcd640948f061bf092488b1b, change-8566e0c1beed41e28dc4c9b6eed93fa8
