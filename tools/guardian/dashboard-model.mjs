@@ -37,8 +37,9 @@ export function filterByState(records, filter) {
   if (!filter) return records;
   const normalized = String(filter).toLowerCase();
   if (normalized === 'all') return records;
+  // "current" = 还没结束的（含刚认领的 DISCOVERED 及任何非终态中间态），只排除 DONE / HANDED_BACK。
   if (normalized === 'current') {
-    return records.filter((record) => ACTIVE_STATES.includes(record.state) || WAITING_STATES.includes(record.state));
+    return records.filter((record) => !isTerminalState(record.state));
   }
   if (normalized === 'active') return records.filter((record) => ACTIVE_STATES.includes(record.state));
   if (normalized === 'terminal') return records.filter((record) => isTerminalState(record.state));
