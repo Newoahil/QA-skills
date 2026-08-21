@@ -13,6 +13,24 @@ export const DEFAULT_BUDGETS = Object.freeze({
   max_investigation_rounds: 2,
 });
 
+// Fixer / QA SDK sessions poll for a completion message, so they need a finite deadline (a 0 here
+// would mean "give up immediately"). These are lengthened, configurable ceilings — not the tight
+// 20-minute default they used to share with child_timeout_ms. Override per project in config.
+export const DEFAULT_SESSION_DEADLINES = Object.freeze({
+  fixer_deadline_ms: 60 * 60 * 1000, // 60 min
+  qa_deadline_ms: 60 * 60 * 1000, // 60 min
+});
+
+// Resolve a positive session deadline: explicit key → legacy child_timeout_ms (only if positive)
+// → lengthened default. Never returns 0/negative, so the polling runners always have a real bound.
+export function resolveSessionDeadlineMs(config = {}, key) {
+  const explicit = Number(config?.[key]);
+  if (hasTimeout(explicit)) return explicit;
+  const legacy = Number(config?.child_timeout_ms);
+  if (hasTimeout(legacy)) return legacy;
+  return DEFAULT_SESSION_DEADLINES[key];
+}
+
 // A timeout is active only when a positive, finite millisecond value is configured.
 // null / undefined / 0 / negative / NaN → no timeout.
 export function hasTimeout(ms) {

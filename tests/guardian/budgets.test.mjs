@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { canStartSpecialist, classifyTimeout, createDeadline, hasTimeout, remainingBudget, resolveBudgets } from '../../tools/guardian/budgets.mjs';
+import { canStartSpecialist, classifyTimeout, createDeadline, DEFAULT_SESSION_DEADLINES, hasTimeout, remainingBudget, resolveBudgets, resolveSessionDeadlineMs } from '../../tools/guardian/budgets.mjs';
 
 test('resolveBudgets selects standard/complex configured defaults', () => {
   const standard = resolveBudgets({ investigation_budget_ms: 1000 }, 'standard');
@@ -22,6 +22,19 @@ test('time budgets default to unlimited (0) and hasTimeout gates only positive v
   assert.equal(hasTimeout(NaN), false);
   assert.equal(hasTimeout(1), true);
   assert.equal(hasTimeout(600000), true);
+});
+
+test('resolveSessionDeadlineMs is configurable, lengthened by default, and never zero', () => {
+  // Explicit per-key config wins.
+  assert.equal(resolveSessionDeadlineMs({ fixer_deadline_ms: 90 * 60 * 1000 }, 'fixer_deadline_ms'), 90 * 60 * 1000);
+  assert.equal(resolveSessionDeadlineMs({ qa_deadline_ms: 45 * 60 * 1000 }, 'qa_deadline_ms'), 45 * 60 * 1000);
+  // Legacy child_timeout_ms is honored only when positive (back-compat).
+  assert.equal(resolveSessionDeadlineMs({ child_timeout_ms: 30 * 60 * 1000 }, 'fixer_deadline_ms'), 30 * 60 * 1000);
+  // child_timeout_ms=0 (unlimited investigation) must NOT zero out the session deadline → default.
+  assert.equal(resolveSessionDeadlineMs({ child_timeout_ms: 0 }, 'qa_deadline_ms'), DEFAULT_SESSION_DEADLINES.qa_deadline_ms);
+  // No config → lengthened default (60 min).
+  assert.equal(resolveSessionDeadlineMs({}, 'fixer_deadline_ms'), 60 * 60 * 1000);
+  assert.equal(resolveSessionDeadlineMs({}, 'qa_deadline_ms'), 60 * 60 * 1000);
 });
 
 test('deadline and remaining budget never go negative', () => {
