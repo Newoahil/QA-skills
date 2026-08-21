@@ -212,12 +212,39 @@ export function toModelObject(model) {
   return { providerID: trimmed.slice(0, slash), modelID: trimmed.slice(slash + 1) };
 }
 
-export function createOpencodeClient({ baseUrl, sdk, logger = null, sdkFactory = createSdkClient } = {}) {
+export function createOpencodeClient({ baseUrl, sdk, logger = null, sdkFactory = createSdkClient, fetchImpl = null } = {}) {
   // Build the SDK client with a long-lived fetch (undici header/body timeouts disabled) so
   // multi-minute prompts do not abort with `fetch failed` at ~300s. `dispatcher`/`dispatcherOptions`
   // are stripped before handing config to the SDK factory (the SDK only consumes baseUrl/fetch).
   const { dispatcher: _dispatcher, dispatcherOptions: _dispatcherOptions, ...sdkConfig } = createLongLivedSdkConfig({ baseUrl });
   const client = sdk ?? sdkFactory(sdkConfig);
+  const messageFetch = fetchImpl ?? sdkConfig.fetch;
+  const messageBaseUrl = typeof baseUrl === 'string' && baseUrl.trim() ? baseUrl.replace(/\/+$/, '') : null;
+
+  async function postSessionMessage({ sessionId, body, signal }) {
+    if (!messageBaseUrl) {
+      return client._client.post({
+        url: `/session/${encodeURIComponent(sessionId)}/message`,
+        body,
+        headers: { 'Content-Type': 'application/json' },
+        ...(signal ? { signal } : {}),
+      });
+    }
+    const response = await messageFetch(`${messageBaseUrl}/session/${encodeURIComponent(sessionId)}/message`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      ...(signal ? { signal } : {}),
+    });
+    const text = await response.text();
+    const data = text ? safeJson(text) : null;
+    if (!response.ok) {
+      const error = new Error(data?.message ?? data?.error ?? text.slice(0, 300) ?? `OpenCode message failed (${response.status})`);
+      error.status = response.status;
+      throw error;
+    }
+    return data;
+  }
 
   async function createSession({ title, agent, parentID = null, directory = null }) {
     const body = { title, agent, permission: permissionRulesFor(agent) };
@@ -232,7 +259,7 @@ export function createOpencodeClient({ baseUrl, sdk, logger = null, sdkFactory =
   async function promptOnce({ sessionId, agent, parts, format, system, signal, model }) {
     try {
       const body = { agent, parts };
-      if (format) body.format = format;
+      if (format && !messageBaseUrl) body.format = format;
       if (system) body.system = system;
       // OpenCode POST /session/:id/message expects model as { providerID, modelID }; a raw string is
       // silently ignored and yields an empty response. Accept either a `provider/model` string or an
@@ -247,15 +274,11 @@ export function createOpencodeClient({ baseUrl, sdk, logger = null, sdkFactory =
         if (signal.aborted) onAbort();
         else signal.addEventListener('abort', onAbort, { once: true });
       }
-      // SDK 1.18.18 generated path template is broken (`/session/%7Bid%7D/message`) even when
-      // path.sessionID is supplied. Use the SDK's low-level client with an explicit URL until the
-      // upstream codegen bug is fixed. Still uses the official SDK transport/interceptors.
-      const result = await client._client.post({
-        url: `/session/${encodeURIComponent(sessionId)}/message`,
-        body,
-        headers: { 'Content-Type': 'application/json' },
-        ...(signal ? { signal } : {}),
-      }).finally(() => { if (signal) signal.removeEventListener('abort', onAbort); });
+      // SDK 1.18.18 generated path template is broken (`/session/%7Bid%7D/message`) and its
+      // low-level post mutates json_schema formats by injecting retryCount. The shared-server path
+      // omits `format` entirely and relies on Guardian's own JSON parsing of the text response.
+      const result = await postSessionMessage({ sessionId, body, signal })
+        .finally(() => { if (signal) signal.removeEventListener('abort', onAbort); });
       const data = result?.data ?? result;
       if (data?.info?.error) return { kind: 'provider-error', error: normalizeProviderError(data.info.error) };
       const responseParts = Array.isArray(data?.parts) ? data.parts : [];

@@ -53,6 +53,34 @@ test('createOpencodeClient passes the long-lived fetch config to the SDK factory
   assert.equal(received.baseUrl, 'http://127.0.0.1:4096');
 });
 
+test('prompt uses raw fetch with baseUrl and omits format to avoid OpenCode schema mutation', async () => {
+  const requests = [];
+  const sdk = {
+    _client: { post: async () => { throw new Error('SDK post must not handle prompt messages when baseUrl is set'); } },
+    session: { create: async () => ({ id: 'ses_raw' }) },
+  };
+  const fetchImpl = async (url, init) => {
+    const body = JSON.parse(init.body);
+    requests.push({ url, init, body });
+    return new Response(JSON.stringify({ info: { structured: { ok: true } }, parts: [{ type: 'text', text: 'fallback' }] }), { status: 200, headers: { 'content-type': 'application/json' } });
+  };
+  const client = createOpencodeClient({ baseUrl: 'http://127.0.0.1:4096/', sdk, fetchImpl });
+  const result = await client.prompt({
+    sessionId: 'ses_raw',
+    agent: 'guardian-code',
+    parts: [{ type: 'text', text: 'investigate' }],
+    format: { type: 'json_schema', schema: { type: 'object' } },
+    model: 'cpa/gpt-5.5',
+  });
+
+  assert.equal(result.kind, 'ok');
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].url, 'http://127.0.0.1:4096/session/ses_raw/message');
+  assert.equal(requests[0].body.format, undefined);
+  assert.deepEqual(requests[0].body.model, { providerID: 'cpa', modelID: 'gpt-5.5' });
+  assert.deepEqual(result.result.structured, { ok: true });
+});
+
 test('exports the stable current permission policy version and compatibility helper', () => {
   assert.equal(PERMISSION_POLICY_VERSION, 2);
   assert.equal(isPermissionCompatible('fixer', permissionRulesFor('qa-guardian')), true);
