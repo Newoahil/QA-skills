@@ -36,6 +36,10 @@ export function loadAllIssueStates(guardianDir) {
 export function filterByState(records, filter) {
   if (!filter) return records;
   const normalized = String(filter).toLowerCase();
+  if (normalized === 'all') return records;
+  if (normalized === 'current') {
+    return records.filter((record) => ACTIVE_STATES.includes(record.state) || WAITING_STATES.includes(record.state));
+  }
   if (normalized === 'active') return records.filter((record) => ACTIVE_STATES.includes(record.state));
   if (normalized === 'terminal') return records.filter((record) => isTerminalState(record.state));
   if (normalized === 'waiting') return records.filter((record) => WAITING_STATES.includes(record.state));

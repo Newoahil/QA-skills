@@ -82,6 +82,18 @@ test('filterByState supports exact active waiting and terminal groups', () => {
   assert.deepEqual(dashboardStats(records), { active: 1, waiting: 1, terminal: 1, total: 3 });
 });
 
+test('filterByState current hides terminal records while all keeps them', () => {
+  const records = [
+    { ...newState(1), state: STATES.FIXING },
+    { ...newState(2), state: STATES.GATE_2_WAIT },
+    { ...newState(3), state: STATES.HANDED_BACK },
+    { ...newState(4), state: STATES.DONE },
+  ];
+  assert.deepEqual(filterByState(records, 'current').map((record) => record.issue), [1, 2]);
+  assert.deepEqual(filterByState(records, 'all').map((record) => record.issue), [1, 2, 3, 4]);
+  assert.deepEqual(filterByState(records, null).map((record) => record.issue), [1, 2, 3, 4]);
+});
+
 test('loadAllIssueStates returns normalized sorted records from disk', () => {
   const repo = tempRepo();
   const guardianDir = guardianDirFor(repo);
