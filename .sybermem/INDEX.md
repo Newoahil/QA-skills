@@ -46,6 +46,7 @@ This file summarizes all project changes, decisions, requirements, and bug recor
 - [change-260993fcf6504e8eb9e54f84f0dd45f4] #qa-guardian #integration #investigation — 新增 investigation-runtime.mjs，把注入的 specialist runner、coordinator dossier synthesis、artifact persistence、plan builder 和 plan validation 串成可调用 runtime adapter，192/192 测试通过。 ()
 - [change-2955e2780a8b4097bfdf09d765453605] #qa-guardian #reliability #timeout — scheduler child invocation 增加 child_timeout_ms 与 kill/timeout code，investigation failure 写入 dossier/plan failed、attempts/error/phase 状态，192/192 测试通过。 (2026-08-18)
 - [change-2d00718e55fc479195377618f8fe8527] #qa-guardian #opencode-sdk #session-continuity — Replaced the unreliable multi-process `opencode run --attach` fan-out with the official one-serve + @opencode-ai/sdk pattern, and added per-issue OpenCode session metadata so human-approval and rework/followup flows continue the prior fixer/QA session with full context. (2026-08-19)
+- [change-30d32899761b40d8ac9f442695dfec62] #guardian-timeout #config #fixer-qa-session — 将 Fixer/QA SDK 会话的硬编码 20 分钟 deadline 改为可配置（fixer_deadline_ms/qa_deadline_ms），默认拉长到 60 分钟；用 resolveSessionDeadlineMs 保证始终为正（child_timeout_ms=0 的“调查不限时”不会把会话 deadline 归零），保留轮询运行器的有限上界语义。 (2026-08-21)
 - [change-39d97b0a4c854e3893e13ba9e9a5859d] #qa-guardian #documentation #deployment — 修复 review-work 文档缺口——README 更正 scheduler 已交付状态+补运行段+config 键表+作者授权安全项，验收用例新增 UC-H..UC-K（授权/N=1/通知/飞书回调）并把测试数更新到 128，设计文档 §11B.5-a 补记飞书通道/回调/command_authors/FR-21 接线为已交付范围，文档与代码对齐。 (2026-08-18)
 - [change-41675aeea2c446eea10506e55cbbd08d] #qa-guardian #documentation #migration — README/DEPLOY/验收文档补充 investigation_mode legacy/shadow/enforced、dossier/plan artifact 和 rollback 说明，187/187 测试通过。 (2026-08-18)
 - [change-43665fbe15694f7a94ae63d97c21396e] #qa-guardian #issue-discovery #doing — QA Guardian now considers every OPEN issue without requiring a discovery label, claims new issues under the existing N=1 lock, projects qa-guardian:doing for active states, and sources command authors from the per-project launcher binding. (2026-08-20)
@@ -183,6 +184,7 @@ This file summarizes all project changes, decisions, requirements, and bug recor
 | change-260993fcf6504e8eb9e54f84f0dd45f4 |  |  | done | [link](changes/2026-08-18-change-260993fcf6504e8eb9e54f84f0dd45f4-investigation-runtime.md) |
 | change-2955e2780a8b4097bfdf09d765453605 | 2026-08-18 | 修复 Strong Guardian runtime timeout 与调查失败持久化 | done | [link](changes/2026-08-18-change-2955e2780a8b4097bfdf09d765453605-runtime-reliability.md) |
 | change-2d00718e55fc479195377618f8fe8527 | 2026-08-19 | Adopt OpenCode SDK multi-session runtime with session continuity | done | [link](changes/2026-08-19-change-2d00718e55fc479195377618f8fe8527-adopt-opencode-sdk-session-continuity.md) |
+| change-30d32899761b40d8ac9f442695dfec62 | 2026-08-21 | Fixer/QA 会话 deadline 可配置且默认拉长到 60 分钟 | done | [link](changes/2026-08-21-change-30d32899761b40d8ac9f442695dfec62-configurable-session-deadlines.md) |
 | change-39d97b0a4c854e3893e13ba9e9a5859d | 2026-08-18 | QA Guardian 文档收尾第三批（README/验收用例/设计文档对齐） | done | [link](changes/2026-08-18-change-39d97b0a4c854e3893e13ba9e9a5859d-guardian-docs-batch3.md) |
 | change-41675aeea2c446eea10506e55cbbd08d | 2026-08-18 | 强化 Guardian Phase 10：dossier/plan 迁移文档与 shadow/enforced 回滚说明 | done | [link](changes/2026-08-18-change-41675aeea2c446eea10506e55cbbd08d-phase10-docs.md) |
 | change-43665fbe15694f7a94ae63d97c21396e | 2026-08-20 | All-open Guardian discovery and doing projection |  | [link](changes/2026-08-20-change-43665fbe15694f7a94ae63d97c21396e-open-issue-doing-flow.md) |
@@ -295,6 +297,7 @@ This file summarizes all project changes, decisions, requirements, and bug recor
 - capabilities: change-856058c87cf3450e8460263aeef5cb2a
 - commit-discipline: decision-038091b9b1ca447db6c8a2d2a86719b4
 - concurrency: change-5abf095ac5524443a5d7a9038a01a1e8
+- config: change-30d32899761b40d8ac9f442695dfec62
 - configuration: bug-addaeb3484574da4898bc2d0d5a022d6
 - dashboard-filter: change-f78313d32e614657bce29b72264e20fb
 - deployment: bug-1a88afaf58fe4f13859d209b49b49027, change-39d97b0a4c854e3893e13ba9e9a5859d, change-c4f7796c3fa940589c4c90921c26455c, change-c783251f5b134af9b8bd7e15628fc7c6, change-d4732a411e254c618517828d62e5ed70
@@ -305,12 +308,14 @@ This file summarizes all project changes, decisions, requirements, and bug recor
 - evidence: change-559f7f25f2834bb2b50e4b7bcf9a3bfb
 - feishu: change-c9452e10a1264645a06915267c49e44d
 - fixer: bug-aebf3f8b068f48b59ce275467409fa20
+- fixer-qa-session: change-30d32899761b40d8ac9f442695dfec62
 - followup: change-66dd4c4f08114b48899480c39d8052a7, change-c79535dd171745ee98a74bae8ca3c2ba, change-c9452e10a1264645a06915267c49e44d
 - gate1: bug-68ea53ff66ef4f62b7f680db1ecebf19, bug-7cebbfc6c8794207aee4ccebd7974edf
 - gate2: bug-8a5db6c7aa0447189f0e23d02741516c
 - git: bug-986e8e7b64f046c1bedbacbcbc65a083, bug-9ea4fabc7f0948ac9dcdf159659e61de
 - guardian-investigation: change-0042ab69c2b94eb49a3576bfaadea0e4
 - guardian-launcher: decision-038091b9b1ca447db6c8a2d2a86719b4
+- guardian-timeout: change-30d32899761b40d8ac9f442695dfec62
 - guardian-tui: change-f78313d32e614657bce29b72264e20fb
 - human-approval: bug-68ea53ff66ef4f62b7f680db1ecebf19
 - idempotency: change-5e5f9e3456464cb598ba51d705ffc945, change-eb83465c334b4e88b55e83d019123930
