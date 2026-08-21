@@ -14,6 +14,18 @@ function valueOrDash(value) {
   return value === undefined || value === null || value === '' ? '-' : String(value);
 }
 
+// Human-readable duration. null/undefined/non-number → '-'. Sub-minute shows seconds.
+function formatDuration(ms) {
+  const n = Number(ms);
+  if (!Number.isFinite(n) || n < 0) return '-';
+  if (n < 1000) return `${n}ms`;
+  const seconds = Math.round(n / 1000);
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  const remSeconds = seconds % 60;
+  return `${minutes}m${remSeconds}s`;
+}
+
 function progressDirForIssue(guardianDir, issue) {
   return path.join(guardianDir, 'progress', String(issue));
 }
@@ -72,12 +84,18 @@ function buildProgressLogLinesForGuardianDir(guardianDir, record) {
     `- 调查次数: ${valueOrDash(record.investigation_attempts)}`,
     `- 调查开始: ${valueOrDash(record.investigation_started_at)}`,
     `- 调查完成: ${valueOrDash(record.investigation_completed_at)}`,
+    `- 调查耗时: ${formatDuration(record.investigation_duration_ms)}`,
+    `- 计划耗时: ${formatDuration(record.plan_duration_ms)}`,
     `- 处理轮次: ${valueOrDash(record.processing_round)}`,
     `- 修复次数: ${valueOrDash(record.fix_rounds)}`,
     `- stall 重试: ${valueOrDash(record.stall_retries)}`,
-    '',
-    '会话活跃度',
   ];
+  const durations = record.specialist_durations_ms;
+  if (durations && typeof durations === 'object' && Object.keys(durations).length > 0) {
+    lines.push('', '各角色耗时');
+    for (const [role, ms] of Object.entries(durations)) lines.push(`- ${role}: ${formatDuration(ms)}`);
+  }
+  lines.push('', '会话活跃度');
   const sessions = extractSessionIds(record);
   if (sessions.length === 0) {
     lines.push('- 暂无会话记录');

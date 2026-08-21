@@ -96,6 +96,29 @@ test('buildProgressLogLines and artifacts/errors surface readonly state and prev
   }
 });
 
+test('buildProgressLogLines surfaces investigation and per-role durations', () => {
+  const repo = tempRepo();
+  const guardianDir = guardianDirFor(repo);
+  try {
+    mkdirSync(guardianDir, { recursive: true });
+    const record = {
+      ...newState(205),
+      state: STATES.DISCOVERED,
+      investigation_duration_ms: 65000,
+      plan_duration_ms: 2000,
+      specialist_durations_ms: { 'guardian-code': 61000, 'guardian-runtime': 4000 },
+    };
+    const text = buildProgressLogLines(guardianDir, record).join('\n');
+    assert.match(text, /调查耗时: 1m5s/);
+    assert.match(text, /计划耗时: 2s/);
+    assert.match(text, /各角色耗时/);
+    assert.match(text, /guardian-code: 1m1s/);
+    assert.match(text, /guardian-runtime: 4s/);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
 test('buildProgressLogLines shows clear guidance when no progress logs exist', () => {
   const repo = tempRepo();
   const guardianDir = guardianDirFor(repo);
