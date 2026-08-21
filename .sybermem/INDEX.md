@@ -9,6 +9,7 @@ This file summarizes all project changes, decisions, requirements, and bug recor
 <!-- One-line core conclusion per record. Format: [id] #topic1 #topic2 — description (date) -->
 <!-- add new conclusions here -->
 - [bug-01f49ed7e02b41eba58ccc630c6170d0] #qa-guardian #launcher #powershell — scheduler-start.ps1 now captures git stderr without PowerShell promoting successful fetch progress to a terminating error, so launcher preflight can continue after benign fetch output. (2026-08-20)
+- [bug-0555bcc31a2e4b2a81d7d41fe989ac86] #guardian-runtime #opencode #undici-timeout — Long specialist/fixer/QA prompts aborted with "fetch failed" at ~307s because Node's built-in undici default headersTimeout/bodyTimeout is 300s and the SDK's req.timeout=false does not affect it; fixed by giving the OpenCode SDK client a custom fetch backed by an undici Agent with header/body timeouts disabled. (2026-08-21)
 - [bug-09c23cce8bb443d7aadb0f5dea5ce3b7] #opencode-sdk #session-continuity #qa-guardian — Fixed SDK session operations by unwrapping createSession's data.id and using the SDK low-level client with explicit /session/<id>/ URLs, because the generated 1.18.18 path methods request /session/%7Bid%7D/... and fail every prompt. (2026-08-19)
 - [bug-19e5ffff30db46ccbca9f8ca73551ad1] #qa-guardian #security #runtime — Phase 11 发现生产镜像可能包含本地 secrets、unattended 默认 legacy 绕过 plan gate、stale lock takeover 非原子和 non-idempotent STALLED rerun 风险；本批已加 .dockerignore/env-only production loader、enforced 默认、原子 stale-lock takeover 和 stall guard，仍待 QA machine enforcement/timeout/state persistence。 ()
 - [bug-1a88afaf58fe4f13859d209b49b49027] #qa-guardian #deployment #docker — docker-compose.yml 用 ports 8787:8787 硬绑宿主端口，在共享 Dokploy 主机上 8787 已被占用导致 "port is already allocated" 启动失败；改为仅 expose 8787、由 Dokploy Domain 反代路由到容器端口，部署不再抢宿主端口。 (2026-08-18)
@@ -47,6 +48,7 @@ This file summarizes all project changes, decisions, requirements, and bug recor
 - [change-260993fcf6504e8eb9e54f84f0dd45f4] #qa-guardian #integration #investigation — 新增 investigation-runtime.mjs，把注入的 specialist runner、coordinator dossier synthesis、artifact persistence、plan builder 和 plan validation 串成可调用 runtime adapter，192/192 测试通过。 ()
 - [change-27078cb8ae6e43b19f65ab149bdb87ca] #guardian-runtime #opencode #model-config — Guardian agents now pin explicit per-role models instead of inheriting the global default, and prompts auto-retry on the next fallback model when a provider cooldown \(429\) occurs, so a single model cooldown no longer bricks the whole investigation. (2026-08-21)
 - [change-2955e2780a8b4097bfdf09d765453605] #qa-guardian #reliability #timeout — scheduler child invocation 增加 child_timeout_ms 与 kill/timeout code，investigation failure 写入 dossier/plan failed、attempts/error/phase 状态，192/192 测试通过。 (2026-08-18)
+- [change-2b02bc5e4e534535a15f2ef47dc9986d] #guardian-runtime #opencode #model-config — Removed hardcoded cpa/gpt-5.5 models from Guardian agent definitions and made per-role model selection read from .qa/guardian/config.json models map \(with default and OpenCode global-default fallback\), so the repo no longer bakes in a private provider/model and runs out of the box on any user's provider. (2026-08-21)
 - [change-2d00718e55fc479195377618f8fe8527] #qa-guardian #opencode-sdk #session-continuity — Replaced the unreliable multi-process `opencode run --attach` fan-out with the official one-serve + @opencode-ai/sdk pattern, and added per-issue OpenCode session metadata so human-approval and rework/followup flows continue the prior fixer/QA session with full context. (2026-08-19)
 - [change-30d32899761b40d8ac9f442695dfec62] #guardian-timeout #config #fixer-qa-session — 将 Fixer/QA SDK 会话的硬编码 20 分钟 deadline 改为可配置（fixer_deadline_ms/qa_deadline_ms），默认拉长到 60 分钟；用 resolveSessionDeadlineMs 保证始终为正（child_timeout_ms=0 的“调查不限时”不会把会话 deadline 归零），保留轮询运行器的有限上界语义。 (2026-08-21)
 - [change-39d97b0a4c854e3893e13ba9e9a5859d] #qa-guardian #documentation #deployment — 修复 review-work 文档缺口——README 更正 scheduler 已交付状态+补运行段+config 键表+作者授权安全项，验收用例新增 UC-H..UC-K（授权/N=1/通知/飞书回调）并把测试数更新到 128，设计文档 §11B.5-a 补记飞书通道/回调/command_authors/FR-21 接线为已交付范围，文档与代码对齐。 (2026-08-18)
@@ -194,6 +196,7 @@ This file summarizes all project changes, decisions, requirements, and bug recor
 | change-260993fcf6504e8eb9e54f84f0dd45f4 |  |  | done | [link](changes/2026-08-18-change-260993fcf6504e8eb9e54f84f0dd45f4-investigation-runtime.md) |
 | change-27078cb8ae6e43b19f65ab149bdb87ca | 2026-08-21 | Guardian pins per-role models and adds provider cooldown fallback | completed | [link](changes/2026-08-21-change-27078cb8ae6e43b19f65ab149bdb87ca-guardian-per-role-models-cooldown-fallback.md) |
 | change-2955e2780a8b4097bfdf09d765453605 | 2026-08-18 | 修复 Strong Guardian runtime timeout 与调查失败持久化 | done | [link](changes/2026-08-18-change-2955e2780a8b4097bfdf09d765453605-runtime-reliability.md) |
+| change-2b02bc5e4e534535a15f2ef47dc9986d | 2026-08-21 | Make Guardian model selection config-driven and portable | completed | [link](changes/2026-08-21-change-2b02bc5e4e534535a15f2ef47dc9986d-config-driven-portable-models.md) |
 | change-2d00718e55fc479195377618f8fe8527 | 2026-08-19 | Adopt OpenCode SDK multi-session runtime with session continuity | done | [link](changes/2026-08-19-change-2d00718e55fc479195377618f8fe8527-adopt-opencode-sdk-session-continuity.md) |
 | change-30d32899761b40d8ac9f442695dfec62 | 2026-08-21 | Fixer/QA 会话 deadline 可配置且默认拉长到 60 分钟 | done | [link](changes/2026-08-21-change-30d32899761b40d8ac9f442695dfec62-configurable-session-deadlines.md) |
 | change-39d97b0a4c854e3893e13ba9e9a5859d | 2026-08-18 | QA Guardian 文档收尾第三批（README/验收用例/设计文档对齐） | done | [link](changes/2026-08-18-change-39d97b0a4c854e3893e13ba9e9a5859d-guardian-docs-batch3.md) |
@@ -262,6 +265,7 @@ This file summarizes all project changes, decisions, requirements, and bug recor
 |----|------|-------|----------|------|
 <!-- add new records here -->
 | bug-01f49ed7e02b41eba58ccc630c6170d0 | 2026-08-20 | scheduler-start git fetch stderr |  | [link](bugs/2026-08-20-bug-01f49ed7e02b41eba58ccc630c6170d0-scheduler-start-git-stderr.md) |
+| bug-0555bcc31a2e4b2a81d7d41fe989ac86 | 2026-08-21 | Specialist prompts failed with fetch failed at ~300s \(undici timeout\) |  | [link](bugs/2026-08-21-bug-0555bcc31a2e4b2a81d7d41fe989ac86-specialist-prompt-fetch-failed-undici-timeout.md) |
 | bug-09c23cce8bb443d7aadb0f5dea5ce3b7 | 2026-08-19 | OpenCode SDK 1.18.18 session path template prevents prompt/get/abort | high | [link](bugs/2026-08-19-bug-09c23cce8bb443d7aadb0f5dea5ce3b7-sdk-session-path-template.md) |
 | bug-19e5ffff30db46ccbca9f8ca73551ad1 |  |  | high | [link](bugs/2026-08-18-bug-19e5ffff30db46ccbca9f8ca73551ad1-security-review-blockers.md) |
 | bug-1a88afaf58fe4f13859d209b49b49027 | 2026-08-18 | 飞书回调服务 Dokploy 部署失败——compose 硬绑宿主端口 8787 冲突 | high | [link](bugs/2026-08-18-bug-1a88afaf58fe4f13859d209b49b49027-dokploy-port-collision.md) |
@@ -333,7 +337,7 @@ This file summarizes all project changes, decisions, requirements, and bug recor
 - git: bug-986e8e7b64f046c1bedbacbcbc65a083, bug-9ea4fabc7f0948ac9dcdf159659e61de
 - guardian-investigation: change-0042ab69c2b94eb49a3576bfaadea0e4
 - guardian-launcher: change-76c5d0ed9fac48cb970da4f0329c2454, change-fc28793f11104036ad20f0cb288bda6f, decision-038091b9b1ca447db6c8a2d2a86719b4
-- guardian-runtime: change-0187155e93c44e53b0dd8b136d4386c6, change-27078cb8ae6e43b19f65ab149bdb87ca, change-7dc3767885cd4c9cb2ff5a1b5d8ca73d
+- guardian-runtime: bug-0555bcc31a2e4b2a81d7d41fe989ac86, change-0187155e93c44e53b0dd8b136d4386c6, change-27078cb8ae6e43b19f65ab149bdb87ca, change-2b02bc5e4e534535a15f2ef47dc9986d, change-7dc3767885cd4c9cb2ff5a1b5d8ca73d
 - guardian-scheduler: change-60858dbd238d4a13a5190dc40a7a1965
 - guardian-timeout: change-30d32899761b40d8ac9f442695dfec62
 - guardian-tui: change-cd0869b5cfa74261b9cf4655935f2317, change-f78313d32e614657bce29b72264e20fb
@@ -348,12 +352,12 @@ This file summarizes all project changes, decisions, requirements, and bug recor
 - lock: change-d68ddced82a4440492d038e2b4aa8975
 - logging: change-0187155e93c44e53b0dd8b136d4386c6, change-5330fd1c1188484fa1647010616d8195
 - migration: change-41675aeea2c446eea10506e55cbbd08d
-- model-config: change-27078cb8ae6e43b19f65ab149bdb87ca
+- model-config: change-27078cb8ae6e43b19f65ab149bdb87ca, change-2b02bc5e4e534535a15f2ef47dc9986d
 - multi-project: change-5cb23fed3750411f9d0a01fddae5f6de
 - n1-concurrency: change-d68ddced82a4440492d038e2b4aa8975
 - notification: change-c4f7796c3fa940589c4c90921c26455c
 - observability: change-0187155e93c44e53b0dd8b136d4386c6, change-6ff6c658477b423eae1d6e18a33f92b9, change-cd0869b5cfa74261b9cf4655935f2317
-- opencode: change-27078cb8ae6e43b19f65ab149bdb87ca, change-5330fd1c1188484fa1647010616d8195, change-7dc3767885cd4c9cb2ff5a1b5d8ca73d, change-cd0869b5cfa74261b9cf4655935f2317
+- opencode: bug-0555bcc31a2e4b2a81d7d41fe989ac86, change-27078cb8ae6e43b19f65ab149bdb87ca, change-2b02bc5e4e534535a15f2ef47dc9986d, change-5330fd1c1188484fa1647010616d8195, change-7dc3767885cd4c9cb2ff5a1b5d8ca73d, change-cd0869b5cfa74261b9cf4655935f2317
 - opencode-events: change-7e6fdf97764f412c921e2d9ab581c7b1
 - opencode-sdk: bug-09c23cce8bb443d7aadb0f5dea5ce3b7, bug-682f269c0050412797459f52712af366, bug-95af95c0c87348659c6d36a12974beb0, bug-b963cb3902ec472fba0747de51688475, change-09acc786cc4c4b53b58d1e9a5b7267ef, change-1a149adf92854c34938da07409ba28a9, change-2d00718e55fc479195377618f8fe8527, change-4e17ae8322d944be9acbbd5f14780594, change-9c651671735d41ca84cb71a1c1bd2213, change-bf2f029768594b7097870069da715a0a
 - opencode-serve: change-76c5d0ed9fac48cb970da4f0329c2454
@@ -401,6 +405,7 @@ This file summarizes all project changes, decisions, requirements, and bug recor
 - timeout-policy: change-0042ab69c2b94eb49a3576bfaadea0e4
 - tui-live-view: change-7e6fdf97764f412c921e2d9ab581c7b1
 - unattended-quality: change-559f7f25f2834bb2b50e4b7bcf9a3bfb
+- undici-timeout: bug-0555bcc31a2e4b2a81d7d41fe989ac86
 - usability: change-c783251f5b134af9b8bd7e15628fc7c6, change-d4732a411e254c618517828d62e5ed70, change-f78313d32e614657bce29b72264e20fb
 - validation: bug-26ad869551cf43f585bbfc062876eccc
 - verdict: change-a42d82b9641948eab4109dd13795f675
