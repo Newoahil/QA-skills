@@ -23,6 +23,7 @@ import { deliverNotifications, defaultGhComment, defaultCurlPost } from './notif
 import { createLogger } from './runtime-io.mjs';
 import { projectLabels } from './label-io.mjs';
 import { prepareInvestigation } from './investigation-runtime.mjs';
+import { hasTimeout } from './budgets.mjs';
 import { processPlanBuilder, processSpecialistRunner } from './investigation-process.mjs';
 import { discoverCapabilities } from './capabilities.mjs';
 import { artifactIdentity, quarantineArtifacts, readArtifact, readArtifactPair, writeArtifact, writeMarkdownArtifact } from './artifacts.mjs';
@@ -131,7 +132,7 @@ function guardianDirOf(repoDir) {
 // Run one issue's guardian invocation to completion, holding + heartbeating the N=1 lock for
 // its whole duration. Spawns WITHOUT a shell (argv array), so issue-derived prompt text can
 // never be interpreted by a shell. Returns the child's exit code.
-function runInvocation(repoDir, invokeArgv, lockFile, handle, leaseMs, timeoutMs = 20 * 60 * 1000, signal) {
+function runInvocation(repoDir, invokeArgv, lockFile, handle, leaseMs, timeoutMs = 0, signal) {
   return new Promise((resolve) => {
     // Resolve the real opencode executable at the spawn point (Windows needs opencode.cmd). The
     // invokeArgv.cmd descriptor stays the logical name 'opencode'; only the actual spawn resolves it.
@@ -148,18 +149,23 @@ function runInvocation(repoDir, invokeArgv, lockFile, handle, leaseMs, timeoutMs
     // lease-stale mid-run (E2E bug #2). No heartbeat here; the outer one renews for us.
     let timedOut = false;
     const done = (code) => {
-      clearTimeout(timer);
+      if (timer) clearTimeout(timer);
+      if (signal) signal.removeEventListener('abort', stop);
       resolve(code);
     };
     const stop = () => { if (!child.killed) child.kill(); };
-    const timer = setTimeout(() => { timedOut = true; stop(); }, timeoutMs);
-    if (signal) signal.addEventListener('abort', stop, { once: true });
+    // No forced timeout by default (timeoutMs<=0). A positive value opts back into a hard kill.
+    const timer = hasTimeout(timeoutMs) ? setTimeout(() => { timedOut = true; stop(); }, Number(timeoutMs)) : null;
+    if (signal) {
+      if (signal.aborted) stop();
+      else signal.addEventListener('abort', stop, { once: true });
+    }
     child.on('exit', (code) => done(timedOut ? 124 : (code ?? 0)));
     child.on('error', () => done(1));
   });
 }
 
-async function tick(repoDir, config, logger) {
+async function tick(repoDir, config, logger, signal = null) {
   const qaRuntimeDir = config.qa_runtime_dir ?? repoDir;
   const leaseMs = Number(config.lease_ms ?? DEFAULT_LEASE_MS);
   const now = Date.now();
@@ -302,6 +308,7 @@ async function tick(repoDir, config, logger) {
           memoryContext,
           state: investigationState,
           round: investigationState.processing_round ?? 1,
+          signal,
           runSpecialist: (args) => processSpecialistRunner({ ...args, opencodeClient }),
            buildPlan: (args) => processPlanBuilder({ ...args, repoDir, qaRuntimeDir, guardianDir, opencodeClient }),
         });
@@ -314,17 +321,40 @@ async function tick(repoDir, config, logger) {
           plan_status: prepared.planResult.valid ? 'valid' : 'invalid',
           ...artifactIdentity({ dossier: prepared.dossier, plan: prepared.plan }),
           opencode: prepared.opencode ?? investigationState.opencode,
+          specialists_requested: prepared.specialists ?? state.specialists_requested,
+          investigation_started_at: prepared.timing?.investigation_started_at ?? state.investigation_started_at,
+          investigation_completed_at: prepared.timing?.investigation_completed_at ?? state.investigation_completed_at,
+          investigation_duration_ms: prepared.timing?.investigation_duration_ms ?? state.investigation_duration_ms,
+          plan_duration_ms: prepared.timing?.plan_duration_ms ?? state.plan_duration_ms,
+          specialist_durations_ms: prepared.timing?.specialist_durations_ms ?? state.specialist_durations_ms,
           evidence_count: prepared.dossier.evidence.length,
           hypothesis_ids: prepared.dossier.hypotheses.map((item) => item.id),
           unresolved_fact_count: prepared.dossier.unresolved_facts.length,
           acceptance_criteria_count: prepared.dossier.acceptance_criteria.length,
           last_phase: 'plan-validated',
         }, { touch: false });
-        logger.info('investigation.artifacts_ready', { issue, mode: investigationMode });
+        logger.info('investigation.artifacts_ready', {
+          issue,
+          mode: investigationMode,
+          investigation_duration_ms: prepared.timing?.investigation_duration_ms ?? null,
+        });
       } catch (error) {
         const failureState = readState(guardianDir, issue) ?? { issue };
+        // Persist session metadata + measured durations even on failure so a retry can resume the
+        // same specialist sessions and the read-only TUI can show which roles ran and how long.
+        const failedSpecialists = Object.entries(investigationState.opencode?.specialists ?? {})
+          .filter(([, session]) => session?.last_status === 'failed')
+          .map(([role]) => role);
+        const failedDurations = Object.fromEntries(
+          Object.entries(investigationState.opencode?.specialists ?? {})
+            .filter(([, session]) => typeof session?.duration_ms === 'number')
+            .map(([role, session]) => [role, session.duration_ms]),
+        );
         writeState(guardianDir, {
           ...failureState,
+          opencode: investigationState.opencode ?? failureState.opencode,
+          specialist_failures: failedSpecialists.length > 0 ? failedSpecialists : failureState.specialist_failures,
+          specialist_durations_ms: Object.keys(failedDurations).length > 0 ? failedDurations : failureState.specialist_durations_ms,
           dossier_status: 'failed',
           plan_status: 'failed',
           investigation_attempts: (failureState.investigation_attempts ?? 0) + 1,
@@ -492,7 +522,7 @@ async function tick(repoDir, config, logger) {
       }
     } else {
       // Legacy path: fixer spawns and internally dispatches qa (writes qa-verdict.json itself).
-      code = await runInvocation(repoDir, invokeArgv, lockFile, handle, leaseMs, Number(config.child_timeout_ms ?? 20 * 60 * 1000));
+      code = await runInvocation(repoDir, invokeArgv, lockFile, handle, leaseMs, Number(config.child_timeout_ms ?? 0), signal);
       qaVerdict = readArtifact(guardianDir, issue, 'qa-verdict');
     }
 
@@ -669,7 +699,7 @@ export async function runScheduler({ repoDir, config = readConfig(repoDir), sign
   while (!signal?.aborted) {
     try {
       logger.info('tick.begin');
-      await tick(repoDir, config, logger);
+      await tick(repoDir, config, logger, signal);
     } catch (e) {
       // no-excuse-ok: catch — resident loop must survive a transient gh/network error and retry
       const msg = e instanceof Error ? e.message : 'unknown';
