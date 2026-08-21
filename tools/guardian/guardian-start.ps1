@@ -47,6 +47,37 @@ function Select-LauncherBinding($Config, [string]$CanonicalTarget) {
   return $null
 }
 
+function Normalize-LauncherCommandAuthors($Value) {
+  if ($null -eq $Value) { return @() }
+  if ($Value -is [System.Array]) {
+    return @($Value | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ })
+  }
+  return @(([string]$Value -split '[,\s]+' | ForEach-Object { $_.Trim() } | Where-Object { $_ }))
+}
+
+function Read-GuardianCommandAuthors([string]$Repo) {
+  $configPath = Join-Path $Repo '.qa\guardian\config.json'
+  if (-not (Test-Path -LiteralPath $configPath)) { return @() }
+  try {
+    $config = Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json
+    return Normalize-LauncherCommandAuthors $config.command_authors
+  } catch { return @() }
+}
+
+function Resolve-LauncherCommandAuthors($Binding, [string]$TargetRepo, [string]$ControlRepo) {
+  if ($Binding -and ($Binding.PSObject.Properties.Name -contains 'command_authors')) {
+    $authors = Normalize-LauncherCommandAuthors $Binding.command_authors
+    if ($authors.Count -gt 0) { return $authors }
+  }
+  $authors = Read-GuardianCommandAuthors $ControlRepo
+  if ($authors.Count -gt 0) { return $authors }
+  if ((Canonical-LauncherPath $ControlRepo) -ne (Canonical-LauncherPath $TargetRepo)) {
+    $authors = Read-GuardianCommandAuthors $TargetRepo
+    if ($authors.Count -gt 0) { return $authors }
+  }
+  return @()
+}
+
 function Find-Node {
   $command = Get-Command node -ErrorAction SilentlyContinue
   if ($command) { return $command.Source }
@@ -83,11 +114,19 @@ $controlRepo = $TargetRepo
 if ($binding.mode -eq 'worktree' -and $binding.control_worktree_path) {
   $controlRepo = [string]$binding.control_worktree_path
 }
+$commandAuthors = Resolve-LauncherCommandAuthors $binding $TargetRepo $controlRepo
+if ($commandAuthors.Count -eq 0 -and -not $DryRun) {
+  $authorInput = Read-Host -Prompt 'Trusted GitHub command authors (comma or space separated, blank to cancel)'
+  $commandAuthors = Normalize-LauncherCommandAuthors $authorInput
+  if ($commandAuthors.Count -eq 0) { throw 'Cancelled: trusted GitHub command authors are required.' }
+}
+$commandAuthorArgument = ($commandAuthors -join ',')
 
 $schedulerArguments = @(
   '-NoLogo', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $schedulerScript,
   '-TargetRepo', $TargetRepo, '-Yes'
 )
+if ($commandAuthorArgument) { $schedulerArguments += @('-CommandAuthors', $commandAuthorArgument) }
 if ($SchedulerOnly) { $schedulerArguments += '-SchedulerOnly' }
 $schedulerPreflightArguments = $schedulerArguments + '-DryRun'
 $tuiArguments = @($tuiScript, '--repo', $TargetRepo)
@@ -97,6 +136,7 @@ $launchPlan = [ordered]@{
   scheduler = [ordered]@{ file_path = 'powershell.exe'; arguments = $schedulerArguments }
   scheduler_preflight = [ordered]@{ file_path = 'powershell.exe'; arguments = $schedulerPreflightArguments }
   tui = [ordered]@{ file_path = $nodeExe; arguments = $tuiArguments }
+  command_authors_source = if ($commandAuthorArgument) { 'binding_or_config' } else { 'missing' }
   read_only_tui = $true
 }
 
@@ -119,6 +159,10 @@ $schedulerTitle = "QA Guardian Scheduler - $TargetRepo"
 $quotedSchedulerScript = $schedulerScript.Replace("'", "''")
 $quotedTargetRepo = $TargetRepo.Replace("'", "''")
 $schedulerCommand = "& '$quotedSchedulerScript' -TargetRepo '$quotedTargetRepo' -Yes"
+if ($commandAuthorArgument) {
+  $quotedCommandAuthors = $commandAuthorArgument.Replace("'", "''")
+  $schedulerCommand += " -CommandAuthors '$quotedCommandAuthors'"
+}
 if ($SchedulerOnly) { $schedulerCommand += ' -SchedulerOnly' }
 $schedulerWindowArguments = @('-NoLogo', '-NoExit', '-ExecutionPolicy', 'Bypass', '-Command', $schedulerCommand)
 Start-Process -FilePath 'powershell.exe' -WorkingDirectory $GuardianRepo -WindowStyle Normal -ArgumentList $schedulerWindowArguments -PassThru | Out-Null

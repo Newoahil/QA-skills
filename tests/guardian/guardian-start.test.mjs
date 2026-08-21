@@ -22,6 +22,16 @@ test('guardian-start.ps1 starts scheduler separately and keeps TUI in the curren
   assert.match(text, /read_only_tui = \$true/);
 });
 
+test('guardian-start.ps1 backfills legacy binding command authors from Guardian config', () => {
+  const text = readFileSync('tools/guardian/guardian-start.ps1', 'utf8');
+  assert.match(text, /function Resolve-LauncherCommandAuthors/);
+  assert.match(text, /Read-GuardianCommandAuthors \$ControlRepo/);
+  assert.match(text, /Read-GuardianCommandAuthors \$TargetRepo/);
+  assert.match(text, /\$schedulerArguments \+= @\('-CommandAuthors', \$commandAuthorArgument\)/);
+  assert.match(text, /\$schedulerCommand \+= " -CommandAuthors '\$quotedCommandAuthors'"/);
+  assert.match(text, /Trusted GitHub command authors/);
+});
+
 test('guardian-start.ps1 fails closed without an existing per-project binding', () => {
   const text = readFileSync('tools/guardian/guardian-start.ps1', 'utf8');
   assert.match(text, /No Guardian binding found for this project/);
@@ -35,5 +45,6 @@ test('guardian-start.ps1 dry run exposes scheduler and TUI launch plans without 
   assert.match(text, /if \(\$DryRun\)/);
   assert.match(text, /ConvertTo-Json -Depth 6 -Compress/);
   assert.match(text, /-SchedulerOnly/);
+  assert.match(text, /command_authors_source/);
   assert.doesNotMatch(text, /writeState|gh\s+(pr|issue)|git\s+(push|commit)/);
 });
