@@ -37,6 +37,7 @@ This file summarizes all project changes, decisions, requirements, and bug recor
 - [bug-b963cb3902ec472fba0747de51688475] #opencode-sdk #structured-output #qa-guardian — Fixed SDK wrapper response handling: createSession now unwraps data.id, prompt/get/abort bypass the broken 1.18.18 path template using explicit low-level URLs, and json_schema results are read from data.info.structured rather than text parts. (2026-08-19)
 - [bug-c9d39c21fcd640948f061bf092488b1b] #qa-guardian #powershell #worktree — The real NewerThan failure was caused by an unparenthesized Test-Path boolean expression in Windows PowerShell 5.1, and the same startup path now preserves the existing control worktree config as authoritative instead of comparing it to the developer checkout. (2026-08-20)
 - [bug-e4748d924c68474b878a8da0c79c88a2] #qa-guardian #powershell #launcher — scheduler-start.ps1 now captures benign Git diff/apply stderr safely and always asks for a target directory when no explicit target is passed, so CRLF warnings do not abort worktree startup and projects cannot be switched accidentally. (2026-08-20)
+- [bug-ed371946bdd44873af961a30f33378f8] #guardian-runtime #opencode #model-config — Passing a per-prompt model as a raw "provider/model" string to POST /session/:id/message made OpenCode silently return an empty response \(parts_count=0\) which then failed JSON parse as "Unexpected end of JSON input"; fixed by converting the string to OpenCode's required { providerID, modelID } object in the client. (2026-08-21)
 - [change-0042ab69c2b94eb49a3576bfaadea0e4] #guardian-investigation #timeout-policy #telemetry #abort — 按产品决策取消 investigation/specialist 的强制超时（budgets 默认 0=不限时），改为记录每角色与整体调查耗时作为后续调优依据；失败路径也持久化 specialist 会话与耗时以支持重试恢复与 TUI 可见；investigation 与 fixer run 现在可被 Ctrl+C/abort 透传中止。 (2026-08-21)
 - [change-0071a9a0e32c40c28601c3ff7d6ad8b6] #qa-guardian #plan-gate #runtime — scheduler 现在消费 investigation_mode，在 shadow/enforced 模式读取 dossier/plan 并调用 assessFixingEntry，未通过计划门不启动 write-capable Guardian；legacy 保持兼容，190/190 测试通过。 (2026-08-18)
 - [change-0187155e93c44e53b0dd8b136d4386c6] #guardian-runtime #observability #logging — Guardian now logs the whole run chain \(issue discovery, per-issue routing, each investigation specialist begin/ok/failed, plan begin/ok, fixer/qa begin, and provider model fallback\) as structured events, so an operator can see whether issues were fetched and which agents ran instead of only seeing a final failure. (2026-08-21)
@@ -293,6 +294,7 @@ This file summarizes all project changes, decisions, requirements, and bug recor
 | bug-b963cb3902ec472fba0747de51688475 | 2026-08-19 | Unwrap OpenCode SDK response envelopes and structured output | high | [link](bugs/2026-08-19-bug-b963cb3902ec472fba0747de51688475-sdk-response-envelope.md) |
 | bug-c9d39c21fcd640948f061bf092488b1b | 2026-08-20 | NewerThan root cause and control config authority |  | [link](bugs/2026-08-20-bug-c9d39c21fcd640948f061bf092488b1b-newerthan-root-and-control-config.md) |
 | bug-e4748d924c68474b878a8da0c79c88a2 | 2026-08-20 | Snapshot diff stderr and per-run target selection |  | [link](bugs/2026-08-20-bug-e4748d924c68474b878a8da0c79c88a2-snapshot-diff-and-target-prompt.md) |
+| bug-ed371946bdd44873af961a30f33378f8 | 2026-08-21 | Per-prompt model sent as string yielded empty response \(must be object\) |  | [link](bugs/2026-08-21-bug-ed371946bdd44873af961a30f33378f8-prompt-model-must-be-object.md) |
 
 ## Usage
 
@@ -337,7 +339,7 @@ This file summarizes all project changes, decisions, requirements, and bug recor
 - git: bug-986e8e7b64f046c1bedbacbcbc65a083, bug-9ea4fabc7f0948ac9dcdf159659e61de
 - guardian-investigation: change-0042ab69c2b94eb49a3576bfaadea0e4
 - guardian-launcher: change-76c5d0ed9fac48cb970da4f0329c2454, change-fc28793f11104036ad20f0cb288bda6f, decision-038091b9b1ca447db6c8a2d2a86719b4
-- guardian-runtime: bug-0555bcc31a2e4b2a81d7d41fe989ac86, change-0187155e93c44e53b0dd8b136d4386c6, change-27078cb8ae6e43b19f65ab149bdb87ca, change-2b02bc5e4e534535a15f2ef47dc9986d, change-7dc3767885cd4c9cb2ff5a1b5d8ca73d
+- guardian-runtime: bug-0555bcc31a2e4b2a81d7d41fe989ac86, bug-ed371946bdd44873af961a30f33378f8, change-0187155e93c44e53b0dd8b136d4386c6, change-27078cb8ae6e43b19f65ab149bdb87ca, change-2b02bc5e4e534535a15f2ef47dc9986d, change-7dc3767885cd4c9cb2ff5a1b5d8ca73d
 - guardian-scheduler: change-60858dbd238d4a13a5190dc40a7a1965
 - guardian-timeout: change-30d32899761b40d8ac9f442695dfec62
 - guardian-tui: change-cd0869b5cfa74261b9cf4655935f2317, change-f78313d32e614657bce29b72264e20fb
@@ -352,12 +354,12 @@ This file summarizes all project changes, decisions, requirements, and bug recor
 - lock: change-d68ddced82a4440492d038e2b4aa8975
 - logging: change-0187155e93c44e53b0dd8b136d4386c6, change-5330fd1c1188484fa1647010616d8195
 - migration: change-41675aeea2c446eea10506e55cbbd08d
-- model-config: change-27078cb8ae6e43b19f65ab149bdb87ca, change-2b02bc5e4e534535a15f2ef47dc9986d
+- model-config: bug-ed371946bdd44873af961a30f33378f8, change-27078cb8ae6e43b19f65ab149bdb87ca, change-2b02bc5e4e534535a15f2ef47dc9986d
 - multi-project: change-5cb23fed3750411f9d0a01fddae5f6de
 - n1-concurrency: change-d68ddced82a4440492d038e2b4aa8975
 - notification: change-c4f7796c3fa940589c4c90921c26455c
 - observability: change-0187155e93c44e53b0dd8b136d4386c6, change-6ff6c658477b423eae1d6e18a33f92b9, change-cd0869b5cfa74261b9cf4655935f2317
-- opencode: bug-0555bcc31a2e4b2a81d7d41fe989ac86, change-27078cb8ae6e43b19f65ab149bdb87ca, change-2b02bc5e4e534535a15f2ef47dc9986d, change-5330fd1c1188484fa1647010616d8195, change-7dc3767885cd4c9cb2ff5a1b5d8ca73d, change-cd0869b5cfa74261b9cf4655935f2317
+- opencode: bug-0555bcc31a2e4b2a81d7d41fe989ac86, bug-ed371946bdd44873af961a30f33378f8, change-27078cb8ae6e43b19f65ab149bdb87ca, change-2b02bc5e4e534535a15f2ef47dc9986d, change-5330fd1c1188484fa1647010616d8195, change-7dc3767885cd4c9cb2ff5a1b5d8ca73d, change-cd0869b5cfa74261b9cf4655935f2317
 - opencode-events: change-7e6fdf97764f412c921e2d9ab581c7b1
 - opencode-sdk: bug-09c23cce8bb443d7aadb0f5dea5ce3b7, bug-682f269c0050412797459f52712af366, bug-95af95c0c87348659c6d36a12974beb0, bug-b963cb3902ec472fba0747de51688475, change-09acc786cc4c4b53b58d1e9a5b7267ef, change-1a149adf92854c34938da07409ba28a9, change-2d00718e55fc479195377618f8fe8527, change-4e17ae8322d944be9acbbd5f14780594, change-9c651671735d41ca84cb71a1c1bd2213, change-bf2f029768594b7097870069da715a0a
 - opencode-serve: change-76c5d0ed9fac48cb970da4f0329c2454
