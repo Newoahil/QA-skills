@@ -96,6 +96,51 @@ test('prepareInvestigation records overall + per-role durations without enforcin
   }
 });
 
+test('prepareInvestigation waits for all started specialists before failing', async () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'guardian-investigation-'));
+  const state = { opencode: { specialists: {} } };
+  let clock = 1000;
+  const calls = [];
+  try {
+    const failure = await prepareInvestigation({
+      issue: 205,
+      repoDir: 'D:/repo',
+      guardianDir: root,
+      issueClass: 'bug',
+      complexity: 'simple',
+      capabilities: {},
+      state,
+      now: () => clock,
+      runSpecialist: async ({ role }) => {
+        calls.push(role);
+        state.opencode.specialists[role] = { role, last_status: 'running' };
+        clock += role === 'guardian-code' ? 10 : 20;
+        if (role === 'guardian-runtime') {
+          state.opencode.specialists[role].last_status = 'failed';
+          state.opencode.specialists[role].last_error = 'model_cooldown';
+          throw new Error('model_cooldown');
+        }
+        state.opencode.specialists[role].last_status = 'ok';
+        return { specialist: role, hypotheses: [{ id: 'H1', statement: 'root' }], evidence: [{ id: `E-${role}`, kind: 'source_invariant', source: role, observation: 'ok', supports: ['H1'], contradicts: [] }], unresolved_facts: [], acceptance_criteria: [] };
+      },
+      buildPlan: async () => ({ root_cause: 'root', affected_files: ['a.mjs'], non_goals: ['b'], test_plan: ['t'], acceptance_criteria: ['works'], rollback_plan: 'revert', evidence_ids: ['E-guardian-code'], risk: 'LOW' }),
+    }).then(
+      () => null,
+      (error) => error,
+    );
+
+    assert.ok(failure instanceof Error);
+    assert.match(failure.message, /model_cooldown/);
+    assert.deepEqual(Object.keys(failure.specialist_durations_ms).sort(), ['guardian-code', 'guardian-runtime']);
+    assert.deepEqual(failure.specialist_failures, ['guardian-runtime']);
+    assert.deepEqual(calls.sort(), ['guardian-code', 'guardian-runtime']);
+    assert.equal(state.opencode.specialists['guardian-code'].last_status, 'ok');
+    assert.equal(state.opencode.specialists['guardian-runtime'].last_status, 'failed');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('prepareInvestigation fails closed without specialist runner', async () => {
   const root = mkdtempSync(path.join(tmpdir(), 'guardian-investigation-'));
   try {

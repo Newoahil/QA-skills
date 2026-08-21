@@ -372,10 +372,12 @@ async function tick(repoDir, config, logger, signal = null) {
         const failureState = readState(guardianDir, issue) ?? { issue };
         // Persist session metadata + measured durations even on failure so a retry can resume the
         // same specialist sessions and the read-only TUI can show which roles ran and how long.
-        const failedSpecialists = Object.entries(investigationState.opencode?.specialists ?? {})
+        const failureRoles = Array.isArray(error?.specialist_failures) ? error.specialist_failures : null;
+        const failedSpecialists = failureRoles ?? Object.entries(investigationState.opencode?.specialists ?? {})
           .filter(([, session]) => session?.last_status === 'failed')
           .map(([role]) => role);
-        const failedDurations = Object.fromEntries(
+        const failureDurations = error?.specialist_durations_ms && typeof error.specialist_durations_ms === 'object' ? error.specialist_durations_ms : null;
+        const failedDurations = failureDurations ?? Object.fromEntries(
           Object.entries(investigationState.opencode?.specialists ?? {})
             .filter(([, session]) => typeof session?.duration_ms === 'number')
             .map(([role, session]) => [role, session.duration_ms]),

@@ -25,7 +25,7 @@ export async function prepareInvestigation({ issue, issueData, repoDir, qaRuntim
   // evidence-based. No time budget is enforced here (budgets default to unlimited).
   const investigationStartedAt = now();
   const specialistDurations = {};
-  const results = await Promise.all(selectedRoles.map(async (role) => {
+  const settled = await Promise.allSettled(selectedRoles.map(async (role) => {
     const startedAt = now();
     try {
       return await runSpecialist({
@@ -46,6 +46,20 @@ export async function prepareInvestigation({ issue, issueData, repoDir, qaRuntim
       specialistDurations[role] = now() - startedAt;
     }
   }));
+  const failures = settled
+    .map((result, index) => ({ result, role: selectedRoles[index] }))
+    .filter((item) => item.result.status === 'rejected');
+  if (failures.length > 0) {
+    const first = failures[0];
+    const reason = first.result.reason;
+    const message = reason instanceof Error ? reason.message : String(reason ?? 'specialist failed');
+    const error = new Error(message);
+    error.cause = reason;
+    error.specialist_failures = failures.map((item) => item.role);
+    error.specialist_durations_ms = specialistDurations;
+    throw error;
+  }
+  const results = settled.map((item) => item.value);
   const synthesis = synthesizeDossier({ issue, issueClass, specialistResults: results, capabilities, memoryContext });
   const dossier = { ...synthesis.dossier, investigation_id: investigationId };
   writeArtifact(guardianDir, issue, 'dossier', dossier);
