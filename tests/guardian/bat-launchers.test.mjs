@@ -40,6 +40,18 @@ test('scheduler-start.ps1 captures benign git stderr without promoting it to a t
   assert.match(text, /& git -C \$Repo @GitArgs 2>&1/);
 });
 
+test('scheduler-start.ps1 captures benign gh preflight stderr before checking exit codes', () => {
+  const text = readFileSync('tools/guardian/scheduler-start.ps1', 'utf8');
+  const ghBlock = text.slice(text.indexOf('# gh is required only by scheduler startup.'), text.indexOf('if (-not $Dashboard -and -not $DryRun -and -not $binding)'));
+  assert.match(ghBlock, /\$previousErrorActionPreference = \$ErrorActionPreference/);
+  assert.match(ghBlock, /\$ErrorActionPreference = "Continue"/);
+  assert.match(ghBlock, /& gh auth status \*> \$null[\s\S]*\$ghAuthExitCode = \$LASTEXITCODE/);
+  assert.match(ghBlock, /& gh repo view \$targetGithub \*> \$null[\s\S]*\$ghRepoExitCode = \$LASTEXITCODE/);
+  assert.match(ghBlock, /finally \{ \$ErrorActionPreference = \$previousErrorActionPreference \}/);
+  assert.match(ghBlock, /if \(\$ghAuthExitCode -ne 0\) \{ throw "gh 尚未登录，请先执行 gh auth login。" \}/);
+  assert.match(ghBlock, /if \(\$ghRepoExitCode -ne 0\) \{ throw "无法访问 GitHub 仓库 \$targetGithub，请检查 repo 名称和 gh 权限。" \}/);
+});
+
 test('scheduler-start.ps1 does not use stale NewerThan-based launcher discovery', () => {
   const text = readFileSync('tools/guardian/scheduler-start.ps1', 'utf8');
   assert.doesNotMatch(text, /NewerThan/);

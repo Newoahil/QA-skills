@@ -403,10 +403,20 @@ if (-not $targetGithub) {
 if (-not $Dashboard) {
   $gh = Get-Command gh -ErrorAction SilentlyContinue
   if (-not $gh) { throw "未找到 gh，请先安装 GitHub CLI 并执行 gh auth login。" }
-  & gh auth status *> $null
-  if ($LASTEXITCODE -ne 0) { throw "gh 尚未登录，请先执行 gh auth login。" }
-  & gh repo view $targetGithub *> $null
-  if ($LASTEXITCODE -ne 0) { throw "无法访问 GitHub 仓库 $targetGithub，请检查 repo 名称和 gh 权限。" }
+  $previousErrorActionPreference = $ErrorActionPreference
+  $ErrorActionPreference = "Continue"
+  try {
+    & gh auth status *> $null
+    $ghAuthExitCode = $LASTEXITCODE
+  } finally { $ErrorActionPreference = $previousErrorActionPreference }
+  if ($ghAuthExitCode -ne 0) { throw "gh 尚未登录，请先执行 gh auth login。" }
+  $previousErrorActionPreference = $ErrorActionPreference
+  $ErrorActionPreference = "Continue"
+  try {
+    & gh repo view $targetGithub *> $null
+    $ghRepoExitCode = $LASTEXITCODE
+  } finally { $ErrorActionPreference = $previousErrorActionPreference }
+  if ($ghRepoExitCode -ne 0) { throw "无法访问 GitHub 仓库 $targetGithub，请检查 repo 名称和 gh 权限。" }
 }
 
 if (-not $Dashboard -and -not $DryRun -and -not $binding) {
