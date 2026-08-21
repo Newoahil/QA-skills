@@ -1,14 +1,23 @@
 // Investigation/runtime budget calculations (Phase 7).
 // Pure helpers consumed by future specialist/child-run adapters.
 
+// Time budgets default to 0 = UNLIMITED. Product decision: do not force-kill investigation on a
+// timer; instead record how long each run actually takes (durations telemetry) so future tuning is
+// evidence-based. A positive config value still opts back into a hard timeout when explicitly set.
 export const DEFAULT_BUDGETS = Object.freeze({
-  investigation_ms: 30 * 60 * 1000,
-  complex_investigation_ms: 60 * 60 * 1000,
-  specialist_timeout_ms: 10 * 60 * 1000,
-  child_timeout_ms: 20 * 60 * 1000,
+  investigation_ms: 0,
+  complex_investigation_ms: 0,
+  specialist_timeout_ms: 0,
+  child_timeout_ms: 0,
   max_specialists: 4,
   max_investigation_rounds: 2,
 });
+
+// A timeout is active only when a positive, finite millisecond value is configured.
+// null / undefined / 0 / negative / NaN → no timeout.
+export function hasTimeout(ms) {
+  return Number.isFinite(Number(ms)) && Number(ms) > 0;
+}
 
 export function resolveBudgets(config = {}, complexity = 'standard') {
   const investigation = complexity === 'complex'

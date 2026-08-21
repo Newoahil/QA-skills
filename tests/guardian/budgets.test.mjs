@@ -1,13 +1,27 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { canStartSpecialist, classifyTimeout, createDeadline, remainingBudget, resolveBudgets } from '../../tools/guardian/budgets.mjs';
+import { canStartSpecialist, classifyTimeout, createDeadline, hasTimeout, remainingBudget, resolveBudgets } from '../../tools/guardian/budgets.mjs';
 
 test('resolveBudgets selects standard/complex configured defaults', () => {
   const standard = resolveBudgets({ investigation_budget_ms: 1000 }, 'standard');
   const complex = resolveBudgets({ complex_investigation_budget_ms: 2000 }, 'complex');
   assert.equal(standard.investigation_ms, 1000);
   assert.equal(complex.investigation_ms, 2000);
+});
+
+test('time budgets default to unlimited (0) and hasTimeout gates only positive values', () => {
+  const defaults = resolveBudgets({}, 'complex');
+  assert.equal(defaults.investigation_ms, 0);
+  assert.equal(defaults.specialist_timeout_ms, 0);
+  assert.equal(defaults.child_timeout_ms, 0);
+  assert.equal(hasTimeout(0), false);
+  assert.equal(hasTimeout(null), false);
+  assert.equal(hasTimeout(undefined), false);
+  assert.equal(hasTimeout(-5), false);
+  assert.equal(hasTimeout(NaN), false);
+  assert.equal(hasTimeout(1), true);
+  assert.equal(hasTimeout(600000), true);
 });
 
 test('deadline and remaining budget never go negative', () => {
