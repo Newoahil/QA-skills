@@ -109,6 +109,7 @@ export async function runDashboardTuiCli(argv, deps = {}) {
   };
   let intervalId = null;
   let escapeFlushTimer = null;
+  let liveRefreshTimer = null;
   let cleaned = false;
   let resolveExit;
   let rejectExit;
@@ -188,6 +189,13 @@ export async function runDashboardTuiCli(argv, deps = {}) {
   // reconnects on stream end/error until cleanup. A repaint fires only while the live tab is visible.
   let eventCancel = null;
   let eventStopped = false;
+  function scheduleLiveRefresh() {
+    if (cleaned || liveRefreshTimer) return;
+    liveRefreshTimer = setTimeout(() => {
+      liveRefreshTimer = null;
+      refreshNow('live').catch(() => undefined);
+    }, 0);
+  }
   function currentSessionIds() {
     const record = snapshot?.record;
     if (!record) return [];
@@ -222,7 +230,7 @@ export async function runDashboardTuiCli(argv, deps = {}) {
           eventBuffer.push(line);
           // Rebuild the snapshot (cheap, reads the buffer) so the live tab reflects the new line
           // immediately without any polling timer.
-          if (ui.tab === TUI_TABS.live) refreshNow('live').catch(() => undefined);
+          if (ui.tab === TUI_TABS.live) scheduleLiveRefresh();
         }
       } catch {
         // stream error → fall through to reconnect
@@ -240,6 +248,7 @@ export async function runDashboardTuiCli(argv, deps = {}) {
     if (typeof eventCancel === 'function') { try { eventCancel(); } catch { /* best-effort */ } }
     if (intervalId) clearIntervalImpl(intervalId);
     if (escapeFlushTimer) clearTimeout(escapeFlushTimer);
+    if (liveRefreshTimer) clearTimeout(liveRefreshTimer);
     stdin.removeListener('data', onData);
     stdout.removeListener('resize', onResize);
     process.removeListener('SIGINT', onSigint);

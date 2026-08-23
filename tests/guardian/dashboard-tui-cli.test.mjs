@@ -393,3 +393,79 @@ test('dashboard-tui CLI streams live specialist events from the shared server in
   assert.equal(exitCode, 0);
   assert.ok(liveSeen.some((lines) => lines.some((l) => /工具 grep \(running\)/.test(l))), 'live buffer should contain the mapped tool event');
 });
+
+test('dashboard-tui CLI coalesces live event burst refreshes', async () => {
+  const stdout = makeWriter();
+  stdout.isTTY = true;
+  stdout.columns = 120;
+  stdout.rows = 30;
+  stdout.on = () => {};
+  stdout.removeListener = () => {};
+
+  const stdin = new EventEmitter();
+  stdin.isTTY = true;
+  stdin.setRawMode = () => {};
+  stdin.resume = () => {};
+  stdin.pause = () => {};
+
+  const terminal = {
+    enter() {},
+    render() {},
+    restore() {},
+    viewport() { return { columns: 120, rows: 30 }; },
+  };
+  const record = {
+    issue: 205,
+    state: 'INVESTIGATING',
+    opencode: { schema_version: 1, fixer: null, qa: null, specialists: { 'guardian-code': { session_id: 'ses_code', role: 'guardian-code' } }, inflight: null },
+  };
+  let refreshCount = 0;
+  const liveSeen = [];
+  const snapshotLoader = async ({ liveLines }) => {
+    refreshCount += 1;
+    if (Array.isArray(liveLines)) liveSeen.push(liveLines.slice());
+    return {
+      kind: 'ok', repoDir: 'D:/repo', now: Date.now(),
+      records: [record], selectedIssue: 205, selectedIndex: 0,
+      detailLines: ['detail'], contextLines: liveLines ?? ['context'], record,
+    };
+  };
+
+  let releaseBurst;
+  const burstReady = new Promise((resolve) => { releaseBurst = resolve; });
+  let stopStream = () => {};
+  async function* burstEvents() {
+    await burstReady;
+    for (let index = 0; index < 20; index += 1) {
+      yield { type: 'message.part.updated', properties: { part: { type: 'tool', tool: 'grep', sessionID: 'ses_code', state: { status: 'running', input: { pattern: `x-${index}` } } } } };
+    }
+    await new Promise((resolve) => { stopStream = resolve; });
+  }
+  const eventClientFactory = () => ({
+    subscribeEvents: async () => ({ kind: 'ok', stream: burstEvents(), cancel: () => { stopStream(); } }),
+  });
+
+  const cliPromise = runDashboardTuiCli(['--repo', 'D:/repo', '--base-url', 'http://127.0.0.1:4096'], {
+    stdin,
+    stdout,
+    stderr: makeWriter(),
+    snapshotLoader,
+    terminalFactory: () => terminal,
+    eventClientFactory,
+    eventReconnectMs: 10_000,
+    setIntervalImpl() { return { id: 1 }; },
+    clearIntervalImpl() {},
+  });
+
+  await waitFor(() => refreshCount === 1);
+  stdin.emit('data', '5');
+  await waitFor(() => refreshCount === 2);
+  releaseBurst();
+  await new Promise((resolve) => setTimeout(resolve, 20));
+
+  assert.equal(refreshCount, 3, 'initial + tab selection + one coalesced live refresh');
+  assert.ok(liveSeen.some((lines) => lines.length >= 20), 'coalesced live refresh should include the full burst buffer');
+  stdin.emit('data', 'q');
+  const exitCode = await cliPromise;
+  assert.equal(exitCode, 0);
+});
