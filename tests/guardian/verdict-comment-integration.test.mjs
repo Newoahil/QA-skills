@@ -46,6 +46,29 @@ test('QA_VERIFIED: posts exactly one comment carrying the PR link + persists ide
   } finally { cleanup(dir); }
 });
 
+test('QA_VERIFIED comment carries the QA-authored acceptance markdown and PR title', () => {
+  const dir = tempGuardianDir();
+  try {
+    writeState(dir, { ...newState(193), branch: 'fix/issue-193' }, { touch: false });
+    const io = spy();
+    const acceptance = '## QA 验收结论\n\nUNIQUE_QA_ACCEPTANCE_193\n\n## 验收依据\n\n已验证';
+
+    writeVerdictComment(dir, 193, {
+      approved: true,
+      status: 'PASS',
+      branch: 'fix/issue-193',
+      prUrl: 'https://github.com/x/y/pull/193',
+      prTitle: 'Fix issue 193',
+      qaAcceptanceMarkdown: acceptance,
+      reportHash: 'sha256:abc193',
+    }, { actor: ACTORS.SUPERVISOR, ghComment: io.ghComment });
+
+    assert.equal(io.calls.length, 1);
+    assert.match(io.calls[0].body, /UNIQUE_QA_ACCEPTANCE_193/);
+    assert.doesNotMatch(io.calls[0].body, /PR 标题：未提供/);
+  } finally { cleanup(dir); }
+});
+
 test('idempotent across ticks: identical verdict does not re-post', () => {
   const dir = tempGuardianDir();
   try {

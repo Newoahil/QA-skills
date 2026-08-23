@@ -713,6 +713,8 @@ export function writeVerdictComment(guardianDir, issue, params, deps) {
     status: params.status ?? null,
     branch: params.branch ?? null,
     prUrl: params.prUrl ?? null,
+    prTitle: params.prTitle ?? null,
+    qaAcceptanceMarkdown: params.qaAcceptanceMarkdown ?? null,
     runId: params.runId ?? null,
     attempt: Number.isInteger(params.attempt) ? params.attempt : 1,
     reportHash: params.reportHash ?? null,
