@@ -23,6 +23,15 @@ function plan(overrides = {}) {
     rollback_plan: 'revert one commit',
     evidence_ids: ['E1'],
     risk: 'LOW',
+    risk_assessment: {
+      certain: true,
+      lowDangerSurfaceOnly: true,
+      touchedSurfaces: [],
+      localImpact: true,
+      diffLines: 10,
+      reproducibleOracle: true,
+      scopeExpansionRequested: false,
+    },
     ...overrides,
   };
 }
@@ -67,4 +76,22 @@ test('HIGH plan is structurally valid but still requires Gate 1', () => {
   assert.equal(result.valid, true);
   assert.equal(result.autonomousReady, false);
   assert.equal(result.gateRequired, true);
+});
+
+test('model LOW without mechanical risk assessment requires Gate 1', () => {
+  const result = validatePlan(plan({ risk_assessment: undefined }), dossier);
+  assert.equal(result.valid, true);
+  assert.equal(result.autonomousReady, false);
+  assert.equal(result.gateRequired, true);
+  assert.equal(result.mechanicalRisk.risk, 'HIGH');
+  assert.ok(result.errors.includes('plan:risk-assessment-not-low:uncertain-or-insufficient-info'));
+});
+
+test('mechanical HIGH overrides model LOW and blocks autonomous fixing', () => {
+  const result = validatePlan(plan({ risk_assessment: { certain: true, lowDangerSurfaceOnly: false } }), dossier);
+  assert.equal(result.valid, true);
+  assert.equal(result.autonomousReady, false);
+  assert.equal(result.gateRequired, true);
+  assert.equal(result.mechanicalRisk.risk, 'HIGH');
+  assert.ok(result.errors.some((error) => error.startsWith('plan:risk-assessment-not-low:')));
 });

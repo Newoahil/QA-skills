@@ -7,7 +7,16 @@ const dossierEvidence = [
   { id: 'E1', kind: 'runtime_reproduction', source: 'test', observation: 'fails', supports: ['H1'], contradicts: [] },
   { id: 'E2', kind: 'source_invariant', source: 'file:1', observation: 'guard', supports: ['H1'], contradicts: [] },
 ];
-const plan = { root_cause: 'guard', affected_files: ['a.mjs'], non_goals: ['b'], test_plan: ['regression'], acceptance_criteria: ['works'], rollback_plan: 'revert', evidence_ids: ['E1', 'E2'], risk: 'LOW' };
+const riskAssessment = {
+  certain: true,
+  lowDangerSurfaceOnly: true,
+  touchedSurfaces: [],
+  localImpact: true,
+  diffLines: 10,
+  reproducibleOracle: true,
+  scopeExpansionRequested: false,
+};
+const plan = { root_cause: 'guard', affected_files: ['a.mjs'], non_goals: ['b'], test_plan: ['regression'], acceptance_criteria: ['works'], rollback_plan: 'revert', evidence_ids: ['E1', 'E2'], risk: 'LOW', risk_assessment: riskAssessment };
 
 test('clear bug pipeline reaches Gate2 only after independent QA PASS', async () => {
   const result = await runInjectedPipeline({
@@ -42,6 +51,18 @@ test('QA FAIL never opens a PR', async () => {
     qaVerdict: 'FAIL',
   });
   assert.equal(result.stage, 'HANDED_BACK');
+  assert.equal(result.pr, null);
+});
+
+test('model LOW without mechanical risk proof stops at Gate1', async () => {
+  const result = await runInjectedPipeline({
+    issue: 46,
+    issueClass: 'bug',
+    specialistResults: [{ specialist: 'guardian-code', hypotheses: [{ id: 'H1', statement: 'guard' }], evidence: dossierEvidence, unresolved_facts: [] }],
+    plan: { ...plan, risk_assessment: undefined },
+    qaVerdict: 'PASS',
+  });
+  assert.equal(result.stage, 'GATE_1_WAIT');
   assert.equal(result.pr, null);
 });
 

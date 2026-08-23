@@ -15,6 +15,15 @@ const dossier = {
 const plan = {
   root_cause: 'root', affected_files: ['a.mjs'], non_goals: ['b'], test_plan: ['test'],
   acceptance_criteria: ['works'], rollback_plan: 'revert', evidence_ids: ['E1'], risk: 'LOW',
+  risk_assessment: {
+    certain: true,
+    lowDangerSurfaceOnly: true,
+    touchedSurfaces: [],
+    localImpact: true,
+    diffLines: 10,
+    reproducibleOracle: true,
+    scopeExpansionRequested: false,
+  },
 };
 
 test('legacy mode preserves existing behavior', () => {
@@ -31,6 +40,13 @@ test('shadow mode reports validation but does not silently claim autonomous read
 test('enforced mode allows only valid evidence-backed autonomous plan', () => {
   assert.equal(assessFixingEntry({ plan, dossier, investigationMode: 'enforced' }).allowed, true);
   assert.equal(assessFixingEntry({ plan: { risk: 'LOW' }, dossier, investigationMode: 'enforced' }).allowed, false);
+});
+
+test('enforced mode blocks model LOW without mechanical low-risk proof', () => {
+  const result = assessFixingEntry({ plan: { ...plan, risk_assessment: undefined }, dossier, investigationMode: 'enforced' });
+  assert.equal(result.allowed, false);
+  assert.equal(result.reason, 'plan-not-autonomous-ready');
+  assert.equal(result.plan_result.mechanicalRisk.risk, 'HIGH');
 });
 
 test('trusted Gate 1 approval allows a structurally valid non-autonomous plan', () => {

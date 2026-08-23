@@ -2,6 +2,7 @@
 // Pure gate between investigation artifacts and any write-capable FIXING phase.
 
 import { isDecisionReady, validateDossier } from './evidence.mjs';
+import { gradeRisk, RISK } from './risk.mjs';
 
 const REQUIRED_PLAN_FIELDS = Object.freeze([
   'root_cause',
@@ -49,12 +50,18 @@ export function validatePlan(plan, dossier) {
   }
 
   const readiness = isDecisionReady(d);
-  const gateRequired = p.risk === 'HIGH' || !readiness.ready || errors.length > 0;
+  const mechanicalRisk = gradeRisk(p.risk_assessment);
+  const riskMismatch = p.risk === 'LOW' && mechanicalRisk.risk !== RISK.LOW;
+  const riskErrors = riskMismatch
+    ? mechanicalRisk.reasons.map((reason) => `plan:risk-assessment-not-low:${reason}`)
+    : [];
+  const gateRequired = p.risk === 'HIGH' || riskMismatch || !readiness.ready || errors.length > 0;
   return {
     valid: errors.length === 0,
-    autonomousReady: errors.length === 0 && p.risk === 'LOW' && readiness.ready,
+    autonomousReady: errors.length === 0 && p.risk === 'LOW' && mechanicalRisk.risk === RISK.LOW && readiness.ready,
     gateRequired,
-    errors,
+    errors: [...errors, ...riskErrors],
+    mechanicalRisk,
   };
 }
 
