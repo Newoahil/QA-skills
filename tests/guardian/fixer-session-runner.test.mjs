@@ -85,7 +85,7 @@ test('passes dossier/plan paths and human note as untrusted data in the prompt',
   assert.equal(text.includes('Do not create a PR'), true);
 });
 
-test('SDK fixer invokes supervisor finalization after the persistent session reports edits', async () => {
+test('SDK fixer reports completion without invoking supervisor finalization before QA', async () => {
   const { client } = fakeClient();
   const calls = [];
   const supervisor = { finalizeFix: async (args) => { calls.push(args); return { branch: 'fix/issue-211', status: 'ok' }; } };
@@ -96,12 +96,12 @@ test('SDK fixer invokes supervisor finalization after the persistent session rep
     planPath: 'D:/repo/.qa/guardian/211/plan.json',
     plan: { affected_files: ['tools/guardian/fix.mjs'], test_plan: ['run the focused regression'], test_commands: [['node', '--test', 'tests/guardian/fix.test.mjs']] },
   });
-  assert.equal(calls.length, 1);
-  assert.equal(calls[0].issue, 211);
-  assert.deepEqual(result.finalization, { branch: 'fix/issue-211', status: 'ok' });
+  assert.deepEqual(calls, []);
+  assert.equal(result.finalization, null);
+  assert.deepEqual(result.completion.changedFiles, ['tools/guardian/fix.mjs']);
 });
 
-test('normalizes an ok prompt kind to status ok before finalization', async () => {
+test('normalizes an ok prompt kind to status ok without finalization', async () => {
   const { client } = fakeClient();
   const calls = [];
   const supervisor = { finalizeFix: async () => { calls.push('finalize'); return { status: 'ok' }; } };
@@ -111,7 +111,7 @@ test('normalizes an ok prompt kind to status ok before finalization', async () =
     plan: { affected_files: ['tools/guardian/fix.mjs'] },
   });
   assert.equal(result.status, 'ok');
-  assert.deepEqual(calls, ['finalize']);
+  assert.deepEqual(calls, []);
 });
 
 test('accepts validated fixer completion from text JSON when structured output is unavailable', async () => {
@@ -143,7 +143,8 @@ test('accepts validated fixer completion from text JSON when structured output i
   });
 
   assert.equal(result.status, 'ok');
-  assert.deepEqual(calls, ['finalize']);
+  assert.deepEqual(calls, []);
+  assert.deepEqual(result.completion.changedFiles, ['tools/guardian/fix.mjs']);
 });
 
 test('does not finalize when fixer returns an empty or malformed ok result', async () => {

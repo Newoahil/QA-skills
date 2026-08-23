@@ -494,6 +494,7 @@ async function tick(repoDir, config, logger, signal = null) {
     const guardianDir = guardianDirOf(repoDir);
     let code = 0;
     let qaVerdict = null;
+    let finalization = null;
 
     if (opencodeClient) {
       // 方案 A: fixer runs via a persistent SDK session (reused across gates/rework/followup).
@@ -514,7 +515,6 @@ async function tick(repoDir, config, logger, signal = null) {
        logger.info('fixer.begin', { issue, round: currentState.processing_round ?? 1 });
        const fixerRun = await runFixerSession({
          client: opencodeClient,
-         supervisor,
          state: currentState,
         issue,
         repoDir,
@@ -539,8 +539,8 @@ async function tick(repoDir, config, logger, signal = null) {
          logger.warn('fixer.session_stopped', { issue, status: fixerRun.status });
          return;
        }
-       const fixedBranch = fixerRun.finalization?.branch ?? null;
-      writeState(guardianDir, { ...fixerRun.state, branch: fixedBranch }, { touch: false });
+       const fixedBranch = `fix/issue-${Number(issue)}`;
+       writeState(guardianDir, { ...fixerRun.state, branch: fixedBranch }, { touch: false });
 
       // 方案 A: QA runs via an independent SDK session (scheduler-invoked, not fixer-internal).
       const afterFix = readState(guardianDir, issue) ?? { issue };
@@ -551,9 +551,11 @@ async function tick(repoDir, config, logger, signal = null) {
         issue,
         repoDir,
         branch: afterFix.branch ?? null,
-         diffSummary: fixerRun.finalization
-           ? { evidence: fixerRun.finalization.evidence, tests: fixerRun.finalization.tests }
-           : `fix branch ${afterFix.branch ?? 'unknown'}`,
+        diffSummary: {
+          branch: afterFix.branch ?? 'unknown',
+          changed_files: fixerRun.completion?.changedFiles ?? [],
+          fixer_summary: fixerRun.completion?.summary ?? null,
+        },
         intendedBehavior: plan.toRun.issueTitle ?? `issue #${issue}`,
         round: afterFix.processing_round ?? 1,
         deadlineMs: resolveSessionDeadlineMs(config, 'qa_deadline_ms'),
@@ -608,6 +610,12 @@ async function tick(repoDir, config, logger, signal = null) {
     if (!qaAudit.approved) logger.warn('qa.verdict_unapproved', { issue, reason: qaAudit.reason, exit_code: code });
     else logger.info('qa.verdict_passed', { issue, exit_code: code });
 
+    if (opencodeClient && investigationMode === 'enforced' && qaAudit.approved) {
+      finalization = await supervisor.finalizeFix({ issue, plan: readArtifactPair(guardianDir, issue).plan, mode: investigationMode });
+      const finalizedState = readState(guardianDir, issue) ?? afterRun;
+      writeState(guardianDir, { ...finalizedState, branch: finalization.branch }, { touch: false });
+    }
+
     // Supervisor writes the authoritative [QA_FAILED] comment ONLY when an actual verdict artifact
     // exists and it did not approve (FAIL/BLOCKED/NHR). A missing verdict means the run stopped
     // mid-pipeline (e.g. at a gate) and is NOT a QA failure — do not post then. Enforced mode only.
@@ -623,7 +631,7 @@ async function tick(repoDir, config, logger, signal = null) {
     }
 
     if (investigationMode === 'enforced' && qaAudit.approved) {
-      const currentBranch = afterRun.branch;
+      const currentBranch = finalization?.branch ?? (readState(guardianDir, issue)?.branch ?? afterRun.branch);
       const qaGate = canCreatePr({
         verdict: qaVerdict,
         issue,

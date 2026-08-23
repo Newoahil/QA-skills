@@ -27,7 +27,7 @@ function buildFixerPrompt({ issue, repoDir, dossierPath, planPath, humanNote, ro
     'Make the minimal fix that resolves the reported root cause. Do not opportunistically refactor or widen scope.',
     'Return ONLY one JSON object with status, summary, pr_summary_markdown, and changed_files. status must be READY_FOR_FINALIZATION when edits are complete, or BLOCKED when you cannot proceed. changed_files must list only the scoped relative paths you modified.',
     'pr_summary_markdown MUST be written in Chinese and MUST include these Markdown sections: ## PR 概述, ## 本次变更内容, ## SQL / 数据库影响, ## 关联脚本与配置文件, ## 测试与验证说明. Write reviewer-ready prose based on the actual fix, not a mechanical template.',
-    'The supervisor will inspect the actual diff, run validated scoped tests, stage the exact plan files, commit and push the fix branch.',
+    'The scheduler will run independent QA first. Only after QA passes, the supervisor will inspect the actual diff, run validated scoped tests, stage the exact plan files, commit and push the fix branch.',
     'Do not create a PR; the scheduler owns the QA gate and PR creation.',
     'Do not grade your own fix. Do not write the QA verdict comment. Do not merge or close.',
   ];
@@ -55,7 +55,7 @@ function validateFixerCompletion(result, plan) {
   const affected = new Set(Array.isArray(plan?.affected_files) ? plan.affected_files : []);
   if (changed.some((file) => !affected.has(file))) return { ok: false, reason: 'changed-file-not-in-plan' };
   if (typeof structured.pr_summary_markdown !== 'string' || structured.pr_summary_markdown.trim() === '') return { ok: false, reason: 'missing-pr-summary-markdown' };
-  return { ok: true, changedFiles: changed, prSummaryMarkdown: structured.pr_summary_markdown };
+  return { ok: true, changedFiles: changed, prSummaryMarkdown: structured.pr_summary_markdown, summary: structured.summary ?? null };
 }
 
 function fixerCompletionObject(result) {
@@ -81,7 +81,6 @@ function parseCompletionJson(text) {
 
 export async function runFixerSession({
   client,
-  supervisor = null,
   state,
   issue,
   repoDir,
@@ -90,7 +89,6 @@ export async function runFixerSession({
   humanNote = null,
   round = 1,
   plan = null,
-  mode = 'enforced',
   deadlineMs = 60 * 60 * 1000,
   writePrSummary = null,
   model = undefined,
@@ -154,10 +152,17 @@ export async function runFixerSession({
       },
     },
   };
-  const finalization = supervisor && finalStatus === 'ok'
-    ? await supervisor.finalizeFix({ issue, plan, mode })
-    : null;
-  return { status: finalStatus, sessionId, state: nextState, result: outcome.result, error: outcome.error, abortError: outcome.abortError, finalization, recreateOnNextRun: finalStatus === 'unusable-session' };
+  return {
+    status: finalStatus,
+    sessionId,
+    state: nextState,
+    result: outcome.result,
+    error: outcome.error,
+    abortError: outcome.abortError,
+    completion: completion?.ok ? completion : null,
+    finalization: null,
+    recreateOnNextRun: finalStatus === 'unusable-session',
+  };
 }
 
 async function withDeadline(fn, deadlineMs, onTimeout) {
