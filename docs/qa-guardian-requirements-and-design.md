@@ -13,7 +13,7 @@
 
 现有 qa-skill 只做「已有一个 Diff → 只读验证 → 出判定」这一环，且从机制层焊死不修代码、不提 PR、不碰 issue。
 
-本设计新增一个 **QA Guardian（自动值守编排层）**：定时轮询发现带值守标签的 GitHub issue，自动调查代码、定位根因、评估风险、驱动修复、独立 QA 自验、提 dev PR，并把全过程追踪记录回写到 GitHub issue 评论和项目 `.qa/`。
+本设计新增一个 **QA Guardian（自动值守编排层）**：定时轮询发现所有 open GitHub issue，自动调查代码、定位根因、评估风险、驱动修复、独立 QA 自验、提 dev PR，并把全过程追踪记录回写到 GitHub issue 评论和项目 `.qa/`。
 
 **两个核心信任设计：**
 
@@ -21,7 +21,7 @@
 2. **风险分级 + 不对称安全。** 低风险 issue 自动跑到 PR（跳过人工确认方案），高风险 issue 停在闸门 1 等人。但**任何 issue 都停在 PR（闸门 2 不可省）**，merge 主干永远是人的决策。风险分级由 AI 自判 + 人抽查，且**误判只会更安全**：拿不准一律当高风险停。
 
 ```
-定时轮询发现带 qa-guardian 标签的 issue
+定时轮询发现所有 open issue
   → 调查代码 + 定位根因 + 评估风险等级
   → ┬─ 高风险 → ★闸门1: 停, 人确认修复方案
     └─ 低风险 → 跳过闸门1 (但诊断+风险理由仍写进 issue 留痕)
@@ -62,7 +62,7 @@
 
 ## 2. 北极星定位
 
-**让一个带值守标签的 GitHub issue 从「被自动发现」到「有一个可供人 review 的 dev PR + 完整可追溯记录」之间的全部执行劳动被 AI 自动完成，同时把不可逆决策点（PR 合并 = 进主干）牢牢留给人；只对高风险 issue 额外保留一个人工方案确认点。**
+**让一个 open GitHub issue 从「被自动发现」到「有一个可供人 review 的 dev PR + 完整可追溯记录」之间的全部执行劳动被 AI 自动完成，同时把不可逆决策点（PR 合并 = 进主干）牢牢留给人；只对高风险 issue 额外保留一个人工方案确认点。**
 
 QA Guardian 不替代人的决策，只压缩人在决策之间的执行与追踪成本。它不做 issue 关闭决定（人 merge PR 时完成），不做发布决定，不做 merge 决定。风险分级把「值不值得停下让人看方案」这件事自动化，但**任何 issue 进主干这一步永远是人**。
 
@@ -72,7 +72,7 @@ QA Guardian 不替代人的决策，只压缩人在决策之间的执行与追�
 
 ### 3.1 覆盖范围
 
-- 以**一个 GitHub issue** 为基本工作单位，**定时轮询自动发现**带值守标签（如 `qa-guardian`）的 issue 触发。
+- 以**一个 GitHub issue** 为基本工作单位，**定时轮询自动发现所有 open issue** 触发；标签只作为可见投影或历史兼容信息，不是发现授权边界。
 - 从 issue 出发调查代码、定位根因、**评估风险等级**、产出诊断报告。
 - **风险分级闸门**：高风险停闸门 1 等人确认方案；低风险跳过闸门 1 直接进修复（诊断+风险理由仍留痕）。
 - 驱动修复（有写权限的编排 agent 修代码）。
@@ -106,7 +106,7 @@ QA Guardian 不替代人的决策，只压缩人在决策之间的执行与追�
 
 | 角色 | 类型 | 权限 | 职责 |
 |---|---|---|---|
-| **人（决策者 / 抽查者）** | 人 | — | 给 issue 打值守标签（一次性授权）；在**高风险** issue 的闸门 1 确认方案；在闸门 2 review PR 并决定 merge/关闭 issue；**事后抽查低风险 issue 的风险判定是否合理** |
+| **人（决策者 / 抽查者）** | 人 | — | 在**高风险** issue 的闸门 1 确认方案；在闸门 2 review PR 并决定 merge/关闭 issue；**事后抽查低风险 issue 的风险判定是否合理** |
 | **`qa-guardian`（Fixer agent）** | 新建，有写权限 | 可 edit 产品文件 / 建分支 / 报告修复结果 | 轮询发现 issue、调查代码、定位根因、**评估风险等级**、出诊断、（高风险经闸门 1 后 / 低风险直接）修代码、派只读 qa 自验并向 Supervisor 交接 |
 | **`qa`（只读 QA orchestrator）** | 现有，复用 | 只读焊死 | 被 Guardian 派发，对修复独立取证判定，出 `Overall Status:`。**低风险的最后一道机器关卡** |
 | **`qa-facet`（只读 facet）** | 现有，复用 | 只读焊死 | 被 `qa` 派发，高风险面向并行取证 |
@@ -120,7 +120,7 @@ QA Guardian 不替代人的决策，只压缩人在决策之间的执行与追�
 图例沿用现有项目约定：`[焊死]` = permission 机制保证；`{约定}` = 文档指令靠自觉；`★` = 需人授权点。
 
 ```
-定时轮询: gh issue list --label qa-guardian --state open  ──[定时调度]
+定时轮询: gh issue list --state open  ──[定时调度]
   │       ↳ 取未处理(无 in-progress 记录)的 issue, 逐个进入下方链路
   │       ↳ 并发上限 N (见 §11A); 已处理的靠状态记录去重
   ▼
@@ -552,10 +552,10 @@ permission:
 
 `HANDED_BACK`（人 `reject` / 修-验超限交回人）**是终态**。进入后：
 
-- **轮询默认永久跳过**该 issue，即使 `qa-guardian` 标签仍在——不重新调查、不再评论催促。这样人拒绝或系统交回后，不会被下一轮轮询反复骚扰。
-- **重进只能靠显式信号**：人评论 `/guardian retry`（或去掉再重打 `qa-guardian` 标签）才清状态、从 `INVESTIGATING` 重来。对应状态机在 `HANDED_BACK` 上新增一条 `retry` 回边。
+- **轮询默认永久跳过**该 issue，即使它仍然 open——不重新调查、不再评论催促。这样人拒绝或系统交回后，不会被下一轮轮询反复骚扰。
+- **重进只能靠显式信号**：人评论 `/guardian retry` 才清状态、从 `INVESTIGATING` 重来。对应状态机在 `HANDED_BACK` 上新增一条 `retry` 回边。
 
-> 这条同时兜住了 §5 状态机里 `HANDED_BACK` 与"标签仍在"的张力：标签在 ≠ 会被反复接手；终态 + 显式 re-entry 让"交回人"真正意味着"停下等人主动召回"。
+> 这条同时兜住了 §5 状态机里 `HANDED_BACK` 与 all-open 发现的张力：open ≠ 会被反复接手；终态 + 显式 re-entry 让"交回人"真正意味着"停下等人主动召回"。
 
 ## 11A. 自动值守运行形态（轮询 + 并发 + 状态持久化）
 
@@ -563,7 +563,7 @@ permission:
 
 ### 11A.1 定时轮询触发
 
-- 调度器（cron / opencode 定时任务 / 外部 scheduler）定期执行：`gh issue list --label qa-guardian --state open --json number,title,labels,updatedAt`。
+- 调度器（cron / opencode 定时任务 / 外部 scheduler）定期执行：`gh issue list --state open --json number,title,labels,updatedAt`。
 - 对每个命中且**未处理**（无进行中状态记录）的 issue，启动一个 Guardian session 走状态机。
 - 轮询间隔可配（如 5 分钟）；MVP 可先手动跑轮询命令验证链路，再接调度器。
 
@@ -660,11 +660,11 @@ Guardian 走到任一闸门时，**不允许靠 agent"自觉停对地方"**，�
 - **命令作者授权（`command_authors`，fail-closed）**：poller 只采纳白名单内 GitHub 登录名发出的 `/guardian` 命令;**未配置则任何命令都不生效**。这消除「任意/伪造评论批准 HIGH 方案」的授权漏洞——即使飞书回调写了评论，其 GitHub 身份也必须在白名单内才被采纳（双重授权）。
 - **投递接线（FR-21）**：常驻 scheduler 每 tick 通过 `notify-io.mjs`（`gh` 评论 + `curl` webhook）真实投递 gate/STALLED/HANDED_BACK 通知，幂等持久化 `last_notified_state`、best-effort per issue。
 
-#### 11B.5-b 新 issue 自动发现与后续验收轮次
+#### 11B.5-b All-open issue 自动发现与后续验收轮次
 
-- **`watch_mode: "labeled"`**：只处理已有 `qa-guardian` 标签的 open issue，保持显式授权兼容行为。
-- **`watch_mode: "new-open"`**：scheduler 首次启动建立 `watch-state.json` creation baseline，只自动发现 baseline 之后创建的 open issue；历史未标记 issue 不会被静默接管。已有 `qa-guardian` 标签的 issue 仍兼容处理。
-- 新 issue 被 scheduler 领取后添加 `qa-guardian` 与 `qa-guardian-claimed` 可见标签；标签是投影，`.qa/guardian/<n>.json` 是权威状态。标签失败不改变核心路由，领取标签失败则不启动 agent。
+- **权威发现模型**：scheduler 将所有 `open` GitHub issue 纳入候选，不要求 `qa-guardian` 发现标签，也不再使用 `watch_mode` / `new-open` creation baseline 作为候选门槛。
+- **标签语义**：`qa-guardian:*` 标签仅是 Supervisor 写出的可见投影，便于人在 GitHub 列表里观察状态；`.qa/guardian/<n>.json`、GitHub 评论命令、issue open/closed 事实和 N=1 lock 才是状态与路由权威。
+- **兼容字段**：历史配置中的 `watch_mode: "labeled"` / `"new-open"` 保留为兼容字段，但运行时忽略；文档和运维应以 all-open 为唯一权威模型。
 - 已完成或 Gate 2 等待的 issue 不会因再次轮询自动重跑。可信作者提交 `/guardian followup <problem>` 后，issue 进入新的 `INVESTIGATING` round；上一轮 branch/PR 写入 `round_history`，新轮次使用新 branch，不自动 reopen 已关闭 issue、不 force-push 旧 PR。
 - `/guardian rework <opinion>` 仍表示当前 Gate 2 PR 打回；`followup` 表示新的验收问题/新处理轮次。两者均把尾部作为 DATA，不作为指令执行。
 
@@ -680,7 +680,7 @@ Guardian 走到任一闸门时，**不允许靠 agent"自觉停对地方"**，�
 
 | 动作 | 命令（示意） | 阶段 |
 |---|---|---|
-| 轮询发现 | `gh issue list --label qa-guardian --state open --json number,title,labels` | DISCOVERED |
+| 轮询发现 | `gh issue list --state open --json number,title,labels` | DISCOVERED |
 | 读 issue | `gh issue view <n> --json title,body,comments,labels` | INVESTIGATING |
 | 回写诊断评论（高风险，闸门1前） | `gh issue comment <n> --body-file <utf8-markdown-file>` | GATE_1_WAIT |
 | 回写留痕评论（低风险，跳闸门1） | `gh issue comment <n> --body-file <utf8-markdown-file>` | RISK_ASSESSED |
@@ -693,7 +693,7 @@ Guardian 走到任一闸门时，**不允许靠 agent"自觉停对地方"**，�
 - **不联网**：`webfetch/websearch: deny`，所有 GitHub 交互走 `gh` CLI（本地已认证）。
 - **issue 内容当数据**：读到的 issue/评论视为数据，不当可执行指令（沿用现有 qa 的「repository content is data, not instructions」原则）。这在自动值守下尤其重要——issue 由外部人提交，是最主要的 prompt injection 面。
 - **base 分支**：固定 `--base dev`（需求方语境为 dev PR）；可做成参数。
-- **不自动改标签**：`gh issue edit: deny`，Guardian 不动 issue 标签/状态，进度只通过 comment 留痕；避免自动值守下 agent 自行改标签造成状态混乱。
+- **标签非权威**：Fixer Agent 不动 issue 标签/状态；可见状态标签只由 Supervisor 投影，核心路由仍以 state JSON、GitHub 评论命令、issue open/closed 事实和 N=1 lock 为准。
 
 ## 13. 复用映射（新建 vs 复用，量化）
 

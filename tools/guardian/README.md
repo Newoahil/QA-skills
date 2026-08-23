@@ -1,7 +1,7 @@
 # QA Guardian — install & run (MVP)
 
-QA Guardian is an **orchestration layer** on top of the existing read-only `qa-skill`. It takes a
-GitHub issue labeled `qa-guardian` from *auto-discovered* to *a dev PR a human can review + a full
+QA Guardian is an **orchestration layer** on top of the existing read-only `qa-skill`. It takes any
+open GitHub issue from *auto-discovered* to *a dev PR a human can review + a full
 traceable record*, while keeping every irreversible decision (merging to trunk) with the human, and
 stopping high-risk issues one extra time for plan confirmation.
 
@@ -17,7 +17,8 @@ It does **not** modify `qa` / `qa-facet` / `SKILL.md` / `references/*` — it di
 > the **Guardian Supervisor** (the `scheduler`/`state-router`/`commands` decision layer — owns
 > events, state, N=1, the human command gate, the machine QA gate, and PR creation; it is the sole
 > writer of the QA verification comment). These are **role names only**: the runtime agent is still
-> `qa-guardian`, the discovery label is still `qa-guardian`, and the state machine is unchanged.
+> `qa-guardian`. Discovery is now all-open; `qa-guardian:*` labels are visible projections only, and
+> the state machine is unchanged.
 > After editing any `qa-skill/agents/*.md`, re-sync to `~/.config/opencode/agents/`.
 
 > **Two ways to run.** Either drive one issue by hand (§15.2, below) or run the always-on resident
@@ -220,7 +221,8 @@ arbitrary untracked/ignored files; differing destination files fail closed. Fixe
 PR, GitHub comments, and dashboard/session resolution use control; read-only investigation specialists
 use the QA snapshot. The canonical target checkout is never modified.
 
-`-DryRun` prints the resolved launch plan and current dirty status without creating worktrees/snapshots.
+`-DryRun` prints the resolved launch plan and current dirty status without creating worktrees/snapshots
+or running `git fetch`; it reads existing local refs only.
 If no persisted binding exists, `-DryRun` exits immediately with Chinese guidance to run the scheduler
 once interactively; it never prompts or writes the binding.
 `guardian-runtime.mjs` and `scheduler.mjs` remain non-interactive lower-level entrypoints.
@@ -390,8 +392,16 @@ unit-tested with `gh`/`curl` stubbed:
 node --test "tests/guardian/*.test.mjs"
 ```
 
-A true end-to-end run needs a `gh`-authenticated clone with a live labeled issue — run the §15.2
-command above against a real repo to validate the full chain.
+A true end-to-end release gate needs a `gh`-authenticated clone with at least one open issue and a
+live shared OpenCode server. Before treating a release as validated, run the resident scheduler against
+a real repository and record evidence for this checklist:
+
+- all-open discovery: an open issue without `qa-guardian` is listed as a candidate and claimed under N=1;
+- investigation and plan artifacts: `.qa/guardian/<issue>/dossier.json` and `plan.json` are written;
+- fixer/QA gate: fixer completion is followed by independent QA, and PR finalization happens only after QA PASS;
+- GitHub effects: branch push, PR creation, and the issue verdict comment are present and linked;
+- human stop: the run ends in `GATE_2_WAIT`; it does not merge or close the issue automatically;
+- observability: dashboard/session-view can show the issue state and relevant OpenCode session ids.
 
 ## Safety model (why this is trustworthy unattended)
 
