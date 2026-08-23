@@ -133,6 +133,15 @@ test('scheduler DryRun fails before first-run binding prompt or write', () => {
   assert.match(text, /if \(-not \$Dashboard -and -not \$DryRun -and -not \$binding\)/);
 });
 
+test('scheduler DryRun skips git fetch preflight mutation', () => {
+  const text = readFileSync('tools/guardian/scheduler-start.ps1', 'utf8');
+  const cleanLatestFunction = text.slice(text.indexOf('function Assert-CleanAndLatest'), text.indexOf('function Assert-CleanAndUpstreamLatest'));
+  assert.match(cleanLatestFunction, /\[switch\]\$SkipFetch/);
+  assert.match(cleanLatestFunction, /if \(-not \$SkipFetch\) \{\s*Invoke-Git \$Repo @\('fetch', 'origin', \$Branch\) \| Out-Null\s*\}/);
+  assert.match(text, /Assert-CleanAndUpstreamLatest \$GuardianRepo 'Guardian tools repo' -SkipFetch:\$DryRun/);
+  assert.match(text, /Assert-CleanAndLatest \$TargetRepo \$base 'Target watch repo' -SkipFetch:\$DryRun/);
+});
+
 test('scheduler binding example documents the complete local-only shape', () => {
   const text = readFileSync('tools/guardian/scheduler.config.example.json', 'utf8');
   for (const field of ['version', 'last_target_repo', 'projects', 'canonical_target_path', 'mode', 'control_worktree_path', 'qa_snapshot_path', 'selected_runtime_input_paths', 'base_branch', 'guardian_repo_path']) {

@@ -196,14 +196,16 @@ function Current-GitBranch([string]$Repo) {
   return $branch.output
 }
 
-function Assert-CleanAndLatest([string]$Repo, [string]$Branch, [string]$Label, [switch]$AllowBehind) {
+function Assert-CleanAndLatest([string]$Repo, [string]$Branch, [string]$Label, [switch]$AllowBehind, [switch]$SkipFetch) {
   $inside = Invoke-Git $Repo @('rev-parse', '--is-inside-work-tree')
   if ($inside.output -ne 'true') { throw "$Label is not a git repository: $Repo" }
   $status = Invoke-Git $Repo @('status', '--porcelain')
   if ($status.output) { throw "$Label worktree is dirty; commit/stash/clean before startup: $Repo" }
   $remote = Invoke-Git $Repo @('remote', 'get-url', 'origin')
   if (-not $remote.output) { throw "$Label is missing origin remote: $Repo" }
-  Invoke-Git $Repo @('fetch', 'origin', $Branch) | Out-Null
+  if (-not $SkipFetch) {
+    Invoke-Git $Repo @('fetch', 'origin', $Branch) | Out-Null
+  }
   $local = Invoke-Git $Repo @('rev-parse', $Branch)
   $upstream = Invoke-Git $Repo @('rev-parse', "origin/$Branch")
   $inSync = $local.output -eq $upstream.output
@@ -212,9 +214,9 @@ function Assert-CleanAndLatest([string]$Repo, [string]$Branch, [string]$Label, [
   return [ordered]@{ label = $Label; repo = $Repo; branch = $Branch; remote = $remote.output; commit = $local.output; upstream_commit = $upstream.output; in_sync = $inSync }
 }
 
-function Assert-CleanAndUpstreamLatest([string]$Repo, [string]$Label) {
+function Assert-CleanAndUpstreamLatest([string]$Repo, [string]$Label, [switch]$SkipFetch) {
   $branch = Current-GitBranch $Repo
-  return Assert-CleanAndLatest $Repo $branch $Label -AllowBehind
+  return Assert-CleanAndLatest $Repo $branch $Label -AllowBehind -SkipFetch:$SkipFetch
 }
 
 function Confirm-Start($message) {
@@ -507,14 +509,14 @@ if (-not $cfg.command_authors -or @($cfg.command_authors).Count -eq 0) {
 }
 
 $base = if ($cfg.base_branch) { [string]$cfg.base_branch } else { $BaseBranch }
-$guardianFacts = Assert-CleanAndUpstreamLatest $GuardianRepo 'Guardian tools repo'
+$guardianFacts = Assert-CleanAndUpstreamLatest $GuardianRepo 'Guardian tools repo' -SkipFetch:$DryRun
 $bindingMode = [string]$binding.mode
 
 $targetFacts = $null
 $controlRepo = $TargetRepo
 $qaRuntimeRepo = $TargetRepo
 if ($bindingMode -eq 'strict') {
-  $targetFacts = Assert-CleanAndLatest $TargetRepo $base 'Target watch repo'
+  $targetFacts = Assert-CleanAndLatest $TargetRepo $base 'Target watch repo' -SkipFetch:$DryRun
 } else {
   $controlRepo = [string]$binding.control_worktree_path
   $qaRuntimeRepo = [string]$binding.qa_snapshot_path
