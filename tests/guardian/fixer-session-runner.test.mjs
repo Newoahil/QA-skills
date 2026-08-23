@@ -114,8 +114,40 @@ test('normalizes an ok prompt kind to status ok before finalization', async () =
   assert.deepEqual(calls, ['finalize']);
 });
 
+test('accepts validated fixer completion from text JSON when structured output is unavailable', async () => {
+  const { client } = fakeClient();
+  client.prompt = async () => ({
+    kind: 'ok',
+    result: {
+      structured: null,
+      text: JSON.stringify({
+        status: 'READY_FOR_FINALIZATION',
+        summary: 'fix applied',
+        pr_summary_markdown: '## PR 概述\n\n中文摘要\n\n## 本次变更内容\n\n中文内容\n\n## SQL / 数据库影响\n\n无\n\n## 关联脚本与配置文件\n\n无\n\n## 测试与验证说明\n\n通过',
+        changed_files: ['tools/guardian/fix.mjs'],
+      }),
+    },
+  });
+  const calls = [];
+  const supervisor = { finalizeFix: async () => { calls.push('finalize'); return { status: 'ok' }; } };
+
+  const result = await runFixerSession({
+    client,
+    supervisor,
+    state: { opencode: { fixer: null, qa: null, specialists: {}, inflight: null } },
+    issue: 211,
+    repoDir: 'D:/repo',
+    dossierPath: 'dossier.json',
+    planPath: 'plan.json',
+    plan: { affected_files: ['tools/guardian/fix.mjs'] },
+  });
+
+  assert.equal(result.status, 'ok');
+  assert.deepEqual(calls, ['finalize']);
+});
+
 test('does not finalize when fixer returns an empty or malformed ok result', async () => {
-  for (const result of [{ kind: 'ok', result: {} }, { kind: 'ok', result: { structured: null } }, { kind: 'ok', result: { structured: { status: 'BLOCKED', summary: 'x', changed_files: [] } } }]) {
+  for (const result of [{ kind: 'ok', result: {} }, { kind: 'ok', result: { structured: null } }, { kind: 'ok', result: { structured: null, text: '{not-json' } }, { kind: 'ok', result: { structured: { status: 'BLOCKED', summary: 'x', changed_files: [] } } }]) {
     const { client } = fakeClient();
     client.prompt = async () => result;
     const calls = [];

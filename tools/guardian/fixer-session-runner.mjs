@@ -46,7 +46,7 @@ function scopedRelativePath(value) {
 }
 
 function validateFixerCompletion(result, plan) {
-  const structured = result?.structured ?? result?.result?.structured ?? null;
+  const structured = fixerCompletionObject(result);
   if (!structured || typeof structured !== 'object') return { ok: false, reason: 'missing-structured-completion' };
   if (structured.status !== 'READY_FOR_FINALIZATION') return { ok: false, reason: `fixer-status-${structured.status ?? 'unknown'}` };
   const changed = Array.isArray(structured.changed_files) ? structured.changed_files : [];
@@ -56,6 +56,27 @@ function validateFixerCompletion(result, plan) {
   if (changed.some((file) => !affected.has(file))) return { ok: false, reason: 'changed-file-not-in-plan' };
   if (typeof structured.pr_summary_markdown !== 'string' || structured.pr_summary_markdown.trim() === '') return { ok: false, reason: 'missing-pr-summary-markdown' };
   return { ok: true, changedFiles: changed, prSummaryMarkdown: structured.pr_summary_markdown };
+}
+
+function fixerCompletionObject(result) {
+  const structured = result?.structured ?? result?.result?.structured ?? null;
+  if (structured && typeof structured === 'object') return structured;
+  const text = typeof result?.text === 'string'
+    ? result.text
+    : (typeof result?.result?.text === 'string' ? result.result.text : '');
+  return parseCompletionJson(text);
+}
+
+function parseCompletionJson(text) {
+  const source = String(text ?? '').trim();
+  if (!source) return null;
+  const fenced = source.match(/```json\s*([\s\S]*?)```/i);
+  try {
+    const parsed = JSON.parse(fenced ? fenced[1] : source);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
 }
 
 export async function runFixerSession({
