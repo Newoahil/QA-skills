@@ -526,10 +526,11 @@ async function tick(repoDir, config, logger, signal = null) {
           plan: readArtifactPair(guardianDir, issue).plan,
           mode: investigationMode,
            deadlineMs: resolveSessionDeadlineMs(config, 'fixer_deadline_ms'),
-          writePrSummary: (content) => writeMarkdownArtifact(guardianDir, issue, 'pr-summary', content),
-          model: resolveModelForRole(config, 'fixer'),
-          fallbackModels,
-       });
+           writePrSummary: (content) => writeMarkdownArtifact(guardianDir, issue, 'pr-summary', content),
+           model: resolveModelForRole(config, 'fixer'),
+           fallbackModels,
+           signal,
+        });
        writeState(guardianDir, fixerRun.state, { touch: false });
        const fixerAction = sessionStatusAction(fixerRun.status);
        if (fixerAction.retry) {
@@ -563,6 +564,7 @@ async function tick(repoDir, config, logger, signal = null) {
         writeQaAcceptance: (content) => writeMarkdownArtifact(guardianDir, issue, 'qa-acceptance', content),
         model: resolveModelForRole(config, 'qa'),
         fallbackModels,
+        signal,
       });
        writeState(guardianDir, qaRun.state, { touch: false });
        const qaAction = sessionStatusAction(qaRun.status);

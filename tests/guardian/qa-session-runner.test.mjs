@@ -334,3 +334,20 @@ test('aborts the qa session on deadline instead of killing the serve', async () 
   assert.equal(calls.abort.length, 1);
   assert.equal(calls.abort[0], 'ses_qa');
 });
+
+test('passes scheduler AbortSignal into QA prompt', async () => {
+  const { client, calls } = fakeClient();
+  const controller = new AbortController();
+  await runQaSession({
+    client,
+    state: { opencode: { fixer: null, qa: null, specialists: {}, inflight: null } },
+    issue: 211,
+    repoDir: 'D:/repo',
+    branch: 'fix/issue-211',
+    diffSummary: 'changed color to pink',
+    intendedBehavior: 'bad debt amount shows pink',
+    signal: controller.signal,
+  });
+
+  assert.equal(calls.prompt[0].signal, controller.signal);
+});

@@ -247,3 +247,19 @@ test('deadline result does not wait for hung abort cleanup', async () => {
   assert.equal(result.status, 'aborted');
   assert.match(result.error.message, /timed out/);
 });
+
+test('passes scheduler AbortSignal into fixer prompt', async () => {
+  const { client, calls } = fakeClient();
+  const controller = new AbortController();
+  await runFixerSession({
+    client,
+    state: { opencode: { fixer: null, qa: null, specialists: {}, inflight: null } },
+    issue: 211,
+    repoDir: 'D:/repo',
+    dossierPath: 'dossier.json',
+    planPath: 'plan.json',
+    signal: controller.signal,
+  });
+
+  assert.equal(calls.prompt[0].signal, controller.signal);
+});

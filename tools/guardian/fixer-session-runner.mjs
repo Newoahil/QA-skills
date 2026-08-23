@@ -93,6 +93,7 @@ export async function runFixerSession({
   writePrSummary = null,
   model = undefined,
   fallbackModels = [],
+  signal = null,
 }) {
   const opencode = state.opencode ?? { schema_version: 1, fixer: null, qa: null, specialists: {}, inflight: null };
   const decision = await resolveSessionForRole({
@@ -122,6 +123,7 @@ export async function runFixerSession({
       format: { type: 'json_schema', schema: FIXER_SCHEMA },
       model,
       fallbackModels,
+      signal,
     }),
     deadlineMs,
     () => client.abort(sessionId),
