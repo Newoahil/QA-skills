@@ -246,8 +246,8 @@ async function withPromptDeadline(fn, deadlineMs, onTimeout) {
     return await Promise.race([
       fn(),
       new Promise((_, reject) => {
-        timer = setTimeout(async () => {
-          try { await onTimeout(); } catch { /* abort best-effort */ }
+        timer = setTimeout(() => {
+          Promise.resolve().then(onTimeout).catch(() => undefined);
           reject(new Error(`prompt timed out after ${deadlineMs}ms`));
         }, Number(deadlineMs));
       }),

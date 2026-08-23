@@ -168,15 +168,14 @@ async function raceDeadline(fn, timeoutMs) {
 async function withDeadline(fn, deadlineMs, onTimeout, onSettled = () => {}) {
   let timer;
   let cleanupStarted = false;
-  const timeoutResult = async (error) => {
+  const timeoutResult = (error) => {
     if (cleanupStarted) return { status: 'aborted', error };
     cleanupStarted = true;
-    let abortError = null;
-    try { await onTimeout(); } catch (cleanupError) { abortError = cleanupError; }
-    return { status: 'aborted', error, abortError };
+    Promise.resolve().then(onTimeout).catch(() => undefined);
+    return { status: 'aborted', error, abortError: null };
   };
   try {
-    return await Promise.race([fn(), new Promise((_, reject) => { timer = setTimeout(async () => reject(await timeoutResult(new Error('qa session timed out'))), deadlineMs); })]);
+    return await Promise.race([fn(), new Promise((_, reject) => { timer = setTimeout(() => reject(timeoutResult(new Error('qa session timed out'))), deadlineMs); })]);
   } catch (error) {
     if (error?.status === 'aborted') return error;
     if (error?.name === 'DeadlineError') return timeoutResult(error);

@@ -252,6 +252,34 @@ test('processSpecialistRunner aborts and fails when the prompt exceeds the deadl
   assert.equal(state.opencode.specialists['guardian-code'].last_status, 'failed');
 });
 
+test('processSpecialistRunner deadline does not wait for hung abort cleanup', async () => {
+  const client = {
+    createSession: async () => 'ses_hung_abort',
+    prompt: () => new Promise(() => {}),
+    abort: async () => new Promise(() => {}),
+    getSession: async () => ({ kind: 'ok', session: { id: 'ses_hung_abort', agent: 'guardian-code' } }),
+  };
+  const state = { opencode: { specialists: {} } };
+  const result = await Promise.race([
+    processSpecialistRunner({
+      role: 'guardian-code',
+      issue: 205,
+      issueDataPath: 'D:/repo/.qa/guardian/205/issue-data.json',
+      repoDir: 'D:/repo',
+      dossierPath: 'D:/repo/.qa/guardian/205/dossier.json',
+      opencodeClient: client,
+      state,
+      deadlineMs: 10,
+    }).then(() => null, (error) => error),
+    new Promise((resolve) => setTimeout(() => resolve('hung'), 80)),
+  ]);
+
+  assert.notEqual(result, 'hung');
+  assert.ok(result instanceof Error, 'should reject on deadline');
+  assert.match(result.message, /timed out|deadline/i);
+  assert.equal(state.opencode.specialists['guardian-code'].last_status, 'failed');
+});
+
 test('processSpecialistRunner emits SDK prompt progress heartbeats until completion', async () => {
   const progress = [];
   let resolvePrompt;

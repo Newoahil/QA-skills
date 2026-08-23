@@ -216,7 +216,7 @@ test('aborts the session on deadline instead of killing the serve', async () => 
   assert.equal(calls.abort[0], 'ses_fixer');
 });
 
-test('preserves timeout result and catches abort cleanup failures', async () => {
+test('preserves timeout result when abort cleanup fails', async () => {
   const { client } = fakeClient();
   client.prompt = async () => new Promise(() => {});
   client.abort = async () => { throw new Error('abort failed: secret-token'); };
@@ -227,5 +227,23 @@ test('preserves timeout result and catches abort cleanup failures', async () => 
   });
   assert.equal(result.status, 'aborted');
   assert.match(result.error.message, /timed out/);
-  assert.match(result.abortError.message, /abort failed/);
+  assert.equal(result.abortError, null);
+});
+
+test('deadline result does not wait for hung abort cleanup', async () => {
+  const { client } = fakeClient();
+  client.prompt = async () => new Promise(() => {});
+  client.abort = async () => new Promise(() => {});
+  const result = await Promise.race([
+    runFixerSession({
+      client,
+      state: { opencode: { fixer: null, qa: null, specialists: {}, inflight: null } },
+      issue: 211, repoDir: 'D:/repo', dossierPath: 'dossier.json', planPath: 'plan.json', deadlineMs: 10,
+    }),
+    new Promise((resolve) => setTimeout(() => resolve('hung'), 80)),
+  ]);
+
+  assert.notEqual(result, 'hung');
+  assert.equal(result.status, 'aborted');
+  assert.match(result.error.message, /timed out/);
 });

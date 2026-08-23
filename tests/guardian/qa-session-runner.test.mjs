@@ -247,14 +247,38 @@ test('polling is bounded by the deadline and does not scan without limit', async
   assert.notEqual(result.verdict, 'PASS');
 });
 
-test('timeout cleanup catches abort failures without changing aborted result', async () => {
+test('timeout cleanup failure does not change aborted result', async () => {
   const { client } = fakeClient();
   client.prompt = async () => new Promise(() => {});
   client.abort = async () => { throw new Error('abort failed: secret-token'); };
   const result = await runQaSession({ client, state: { opencode: { fixer: null, qa: null, specialists: {}, inflight: null } }, issue: 211, repoDir: 'D:/repo', branch: 'fix/issue-211', diffSummary: 'x', intendedBehavior: 'y', deadlineMs: 10, pollIntervalMs: 1 });
   assert.equal(result.status, 'aborted');
   assert.match(result.error.message, /timed out/);
-  assert.match(result.abortError.message, /abort failed/);
+  assert.equal(result.abortError, null);
+});
+
+test('deadline result does not wait for hung QA abort cleanup', async () => {
+  const { client } = fakeClient();
+  client.prompt = async () => new Promise(() => {});
+  client.abort = async () => new Promise(() => {});
+  const result = await Promise.race([
+    runQaSession({
+      client,
+      state: { opencode: { fixer: null, qa: null, specialists: {}, inflight: null } },
+      issue: 211,
+      repoDir: 'D:/repo',
+      branch: 'fix/issue-211',
+      diffSummary: 'x',
+      intendedBehavior: 'y',
+      deadlineMs: 10,
+      pollIntervalMs: 1,
+    }),
+    new Promise((resolve) => setTimeout(() => resolve('hung'), 80)),
+  ]);
+
+  assert.notEqual(result, 'hung');
+  assert.equal(result.status, 'aborted');
+  assert.match(result.error.message, /timed out/);
 });
 
 test('reuses an existing valid qa session across verification attempts', async () => {

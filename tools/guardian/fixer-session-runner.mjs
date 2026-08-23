@@ -171,11 +171,9 @@ async function withDeadline(fn, deadlineMs, onTimeout) {
     return await Promise.race([
       fn(),
       new Promise((_, reject) => {
-        timer = setTimeout(async () => {
-          let abortError = null;
-          try { await onTimeout(); } catch (error) { abortError = error; }
+        timer = setTimeout(() => {
+          Promise.resolve().then(onTimeout).catch(() => undefined);
           const timeout = new Error('fixer session timed out');
-          timeout.abortError = abortError;
           reject(timeout);
         }, deadlineMs);
       }),
