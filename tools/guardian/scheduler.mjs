@@ -210,6 +210,7 @@ async function tick(repoDir, config, logger, signal = null) {
     : [];
   const supervisor = opencodeClient ? createSupervisorExecutor({ repoDir }) : null;
 
+  try {
   const trustedAuthors = config.command_authors ?? [];
   const decisions = issues.map(({ issue, claim_source }) => ({
     ...pollIssue(path.join(repoDir, '.qa', 'guardian'), issue, defaultGhReader(repoDir), {
@@ -693,6 +694,9 @@ async function tick(repoDir, config, logger, signal = null) {
   } finally {
     clearInterval(criticalBeat);
     releaseLock(lockFile, handle);
+  }
+  } finally {
+    await opencodeClient?.close?.();
   }
 }
 

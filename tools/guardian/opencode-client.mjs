@@ -212,11 +212,11 @@ export function toModelObject(model) {
   return { providerID: trimmed.slice(0, slash), modelID: trimmed.slice(slash + 1) };
 }
 
-export function createOpencodeClient({ baseUrl, sdk, logger = null, sdkFactory = createSdkClient, fetchImpl = null } = {}) {
+export function createOpencodeClient({ baseUrl, sdk, logger = null, sdkFactory = createSdkClient, fetchImpl = null, sdkConfigFactory = createLongLivedSdkConfig } = {}) {
   // Build the SDK client with a long-lived fetch (undici header/body timeouts disabled) so
   // multi-minute prompts do not abort with `fetch failed` at ~300s. `dispatcher`/`dispatcherOptions`
   // are stripped before handing config to the SDK factory (the SDK only consumes baseUrl/fetch).
-  const { dispatcher: _dispatcher, dispatcherOptions: _dispatcherOptions, ...sdkConfig } = createLongLivedSdkConfig({ baseUrl });
+  const { dispatcher: _dispatcher, dispatcherOptions: _dispatcherOptions, ...sdkConfig } = sdkConfigFactory({ baseUrl });
   const client = sdk ?? sdkFactory(sdkConfig);
   const messageFetch = fetchImpl ?? sdkConfig.fetch;
   const messageBaseUrl = typeof baseUrl === 'string' && baseUrl.trim() ? baseUrl.replace(/\/+$/, '') : null;
@@ -380,5 +380,9 @@ export function createOpencodeClient({ baseUrl, sdk, logger = null, sdkFactory =
     }
   }
 
-  return { createSession, prompt, abort, getSession, getMessages, getAgents, subscribeEvents };
+  async function close() {
+    if (typeof _dispatcher?.close === 'function') await _dispatcher.close();
+  }
+
+  return { createSession, prompt, abort, getSession, getMessages, getAgents, subscribeEvents, close };
 }

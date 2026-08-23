@@ -5,6 +5,7 @@
 
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { readFileSync } from 'node:fs';
 
 import { createOpencodeClient, createLongLivedSdkConfig, isPermissionCompatible, PERMISSION_POLICY_VERSION, permissionRulesFor } from '../../tools/guardian/opencode-client.mjs';
 
@@ -51,6 +52,31 @@ test('createOpencodeClient passes the long-lived fetch config to the SDK factory
   assert.ok(received, 'sdk factory should be called when no sdk is injected');
   assert.equal(typeof received.fetch, 'function');
   assert.equal(received.baseUrl, 'http://127.0.0.1:4096');
+});
+
+test('createOpencodeClient exposes dispatcher close for long-lived fetch cleanup', async () => {
+  let closed = 0;
+  let received = null;
+  const dispatcher = { close: async () => { closed += 1; } };
+  const client = createOpencodeClient({
+    baseUrl: 'http://127.0.0.1:4096',
+    sdkFactory: (cfg) => {
+      received = cfg;
+      return { _client: {}, session: {} };
+    },
+    sdkConfigFactory: ({ baseUrl }) => ({ baseUrl, fetch: async () => new Response('{}'), dispatcher, dispatcherOptions: {} }),
+  });
+
+  assert.equal(typeof client.close, 'function');
+  assert.equal(received.dispatcher, undefined, 'dispatcher internals must not leak into SDK config');
+  await client.close();
+  assert.equal(closed, 1);
+});
+
+test('scheduler closes shared OpenCode client at the end of each tick', () => {
+  const source = readFileSync(new URL('../../tools/guardian/scheduler.mjs', import.meta.url), 'utf8');
+  assert.match(source, /const opencodeClient = serverUrl \? createOpencodeClient/);
+  assert.match(source, /finally \{\s*await opencodeClient\?\.close\?\.\(\);\s*\}/s);
 });
 
 test('prompt uses raw fetch with baseUrl and omits format to avoid OpenCode schema mutation', async () => {
