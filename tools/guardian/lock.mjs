@@ -24,13 +24,22 @@ export class LockError extends Error {
 
 function readLockRaw(fs, lockFile) {
   if (!fs.existsSync(lockFile)) return null;
-  const parsed = JSON.parse(stripUtf8Bom(fs.readFileSync(lockFile, 'utf8')));
-  return {
-    pid: Number(parsed.pid),
-    token: String(parsed.token ?? ''),
-    acquired_at: Number(parsed.acquired_at),
-    renewed_at: Number(parsed.renewed_at ?? parsed.acquired_at),
-  };
+  try {
+    const parsed = JSON.parse(stripUtf8Bom(fs.readFileSync(lockFile, 'utf8')));
+    const lock = {
+      pid: Number(parsed.pid),
+      token: String(parsed.token ?? ''),
+      acquired_at: Number(parsed.acquired_at),
+      renewed_at: Number(parsed.renewed_at ?? parsed.acquired_at),
+    };
+    if (!Number.isFinite(lock.pid) || !lock.token || !Number.isFinite(lock.acquired_at) || !Number.isFinite(lock.renewed_at)) {
+      throw new LockError('corrupt', 'scheduler lock payload is malformed');
+    }
+    return lock;
+  } catch (error) {
+    if (error instanceof LockError) throw error;
+    throw new LockError('corrupt', 'scheduler lock payload is not valid JSON');
+  }
 }
 
 // A lock is "live" while its most recent heartbeat is within the lease window.
@@ -81,7 +90,12 @@ export function acquireLock(lockFile, opts) {
   }
 
   // 2. A lock file exists. Reclaim only if it is lease-stale or its owner PID is gone.
-  const existing = readLockRaw(fs, lockFile);
+  let existing = null;
+  try {
+    existing = readLockRaw(fs, lockFile);
+  } catch (error) {
+    if (!(error instanceof LockError && error.code === 'corrupt')) throw error;
+  }
   if (isLockLive(existing, { leaseMs: opts.leaseMs, now }) && processExists(existing.pid)) {
     return null; // someone else holds a live lock → N=1 respected
   }
@@ -111,11 +125,25 @@ export function acquireLock(lockFile, opts) {
 export function renewLock(lockFile, handle, opts) {
   const fs = opts.fs ?? realFs;
   const now = opts.now ?? Date.now();
-  const existing = readLockRaw(fs, lockFile);
+  let existing = null;
+  try {
+    existing = readLockRaw(fs, lockFile);
+  } catch (error) {
+    if (error instanceof LockError && error.code === 'corrupt') return false;
+    throw error;
+  }
   if (!existing || existing.token !== handle.token) return false; // lost ownership
+  let current = null;
+  try {
+    current = readLockRaw(fs, lockFile);
+  } catch (error) {
+    if (error instanceof LockError && error.code === 'corrupt') return false;
+    throw error;
+  }
+  if (!current || current.token !== handle.token) return false;
   fs.writeFileSync(
     lockFile,
-    `${JSON.stringify({ ...existing, renewed_at: now })}\n`,
+    `${JSON.stringify({ ...current, renewed_at: now })}\n`,
   );
   return true;
 }
@@ -126,7 +154,13 @@ export function renewLock(lockFile, handle, opts) {
 export function releaseLock(lockFile, handle, opts = {}) {
   const fs = opts.fs ?? realFs;
   if (!fs.existsSync(lockFile)) return false;
-  const existing = readLockRaw(fs, lockFile);
+  let existing = null;
+  try {
+    existing = readLockRaw(fs, lockFile);
+  } catch (error) {
+    if (error instanceof LockError && error.code === 'corrupt') return false;
+    throw error;
+  }
   if (!existing || existing.token !== handle.token) return false; // not ours → do not delete
   fs.rmSync(lockFile);
   return true;

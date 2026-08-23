@@ -2,7 +2,7 @@
 
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { mkdtempSync, rmSync, existsSync, readFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -88,6 +88,48 @@ test('renewLock refreshes renewed_at only for the owning token', () => {
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('acquireLock reclaims a corrupt canonical lock file', () => {
+  const { dir, file } = tmpLock();
+  try {
+    writeFileSync(file, '{not-json', 'utf8');
+    const h = acquireLock(file, { pid: 2, leaseMs: LEASE, now: 5000, dir });
+    assert.ok(h, 'corrupt lock should be reclaimable');
+    const payload = JSON.parse(readFileSync(file, 'utf8'));
+    assert.equal(payload.pid, 2);
+    assert.equal(payload.token, h.token);
+    assert.equal(payload.renewed_at, 5000);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('renewLock does not overwrite a replacement owner observed after the first read', () => {
+  const oldLock = { pid: 1, token: 'old-token', acquired_at: 1000, renewed_at: 1000 };
+  const replacementLock = { pid: 2, token: 'new-token', acquired_at: 2000, renewed_at: 2000 };
+  let reads = 0;
+  let wrote = false;
+  const fs = {
+    existsSync: () => true,
+    readFileSync: () => JSON.stringify(reads++ === 0 ? oldLock : replacementLock),
+    writeFileSync: () => { wrote = true; },
+  };
+
+  assert.equal(renewLock('lock-file', { token: 'old-token' }, { now: 3000, fs }), false);
+  assert.equal(wrote, false, 'stale owner must not clobber a replacement lock');
+});
+
+test('renewLock and releaseLock fail closed on corrupt lock payloads', () => {
+  const fs = {
+    existsSync: () => true,
+    readFileSync: () => '{bad-json',
+    writeFileSync: () => { throw new Error('must not write corrupt lock'); },
+    rmSync: () => { throw new Error('must not remove corrupt lock'); },
+  };
+
+  assert.equal(renewLock('lock-file', { token: 'owner' }, { now: 3000, fs }), false);
+  assert.equal(releaseLock('lock-file', { token: 'owner' }, { fs }), false);
 });
 
 test('renew keeps a long run live past the lease so N=1 still holds', () => {
