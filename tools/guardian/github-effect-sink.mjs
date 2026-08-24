@@ -14,8 +14,13 @@ export function createGitHubEffectSink({ repoDir, io = {} }) {
 
   return createEffectSink((descriptor) => {
     assertActorMayPerform(descriptor.actor, descriptor.kind);
-    return effectResult(dispatchGitHubEffect({ repoDir, descriptor, ghComment, curlPost, labelProjector, prCreator }));
+    return normalizeDispatchResult(dispatchGitHubEffect({ repoDir, descriptor, ghComment, curlPost, labelProjector, prCreator }));
   });
+}
+
+function normalizeDispatchResult(result) {
+  if (result && typeof result === 'object' && typeof result.ok === 'boolean') return result;
+  return effectResult(result);
 }
 
 function dispatchGitHubEffect({ repoDir, descriptor, ghComment, curlPost, labelProjector, prCreator }) {
