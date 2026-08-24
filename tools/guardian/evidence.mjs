@@ -13,10 +13,105 @@ export const EVIDENCE_STRENGTH = Object.freeze({
   issue_assertion: 0,
 });
 
+export const EVIDENCE_KIND_ALIASES = Object.freeze({
+  'issue-data': 'issue_assertion',
+  grep: 'static_search',
+  source: 'source_invariant',
+  'test-inventory': 'static_search',
+});
+
 export const ISSUE_CLASSES = Object.freeze(['bug', 'request']);
 
 function isNonEmptyString(value) {
   return typeof value === 'string' && value.trim().length > 0;
+}
+
+function canonicalEvidenceKind(kind) {
+  if (!isNonEmptyString(kind)) return null;
+  const trimmed = kind.trim();
+  if (trimmed === 'tool-observation') return null;
+  return EVIDENCE_KIND_ALIASES[trimmed] ?? trimmed;
+}
+
+function inferEvidenceKind(item) {
+  const tool = isNonEmptyString(item?.tool) ? item.tool.trim().toLowerCase() : null;
+  if (tool === 'context7') return 'official_docs';
+  if (tool === 'codegraph') return 'codegraph';
+
+  const metadata = [item?.source, item?.provenance, item?.command, item?.tool]
+    .filter(isNonEmptyString)
+    .join(' ')
+    .toLowerCase();
+  if (/\bcodegraph\b/.test(metadata)) return 'codegraph';
+  if (/\bcontext7\b|official\s+docs?/.test(metadata)) return 'official_docs';
+  if (/\bgit\s+(?:log|show|blame|diff|history)\b|reflog|commit\s+[0-9a-f]{7,}/.test(metadata)) return 'git_history';
+  if (/\b(?:playwright|runtime|reproduc|browser|curl|http)\b/.test(metadata)) return 'runtime_reproduction';
+  if (/\b(?:test|npm\s+(?:run\s+)?test|node\s+--test)\b/.test(metadata) && /(?:pass|fail|exit[_ -]?code|executed|ran|运行)/.test(metadata)) return 'regression_test';
+  if (/\b(?:grep|rg|search|glob|inventory)\b|全文搜索|内容搜索/.test(metadata)) return 'static_search';
+  if (/\bissue(?:-data)?\b|issue\s*#?\d+|authoritative\s+snapshot/.test(metadata)) return 'issue_assertion';
+  if (/\b(?:read|source|file)\b|\.[a-z0-9]+:\d+|[\\/][^\\/]+\.[a-z0-9]+/.test(metadata)) return 'source_invariant';
+  return null;
+}
+
+function normalizeStringArray(value) {
+  if (value == null) return [];
+  if (!Array.isArray(value)) return value;
+  return value.map((item) => (typeof item === 'string' ? item.trim() : item));
+}
+
+function invalidEvidenceError(code, item) {
+  const detail = item && typeof item === 'object' && isNonEmptyString(item.id) ? `:${item.id.trim()}` : '';
+  return new Error(`${code}${detail}`);
+}
+
+export function normalizeEvidenceItem(item) {
+  if (!item || typeof item !== 'object' || Array.isArray(item)) throw invalidEvidenceError('evidence-not-object', item);
+
+  const id = isNonEmptyString(item.id) ? item.id.trim() : null;
+  if (!id) throw invalidEvidenceError('missing-id', item);
+
+  const kind = canonicalEvidenceKind(item.kind) ?? inferEvidenceKind(item);
+  if (!isNonEmptyString(kind) || !(kind in EVIDENCE_STRENGTH)) throw invalidEvidenceError('invalid-kind', { id });
+
+  const normalized = {
+    id,
+    kind,
+    source: [item.source, item.provenance, item.command, item.tool].find(isNonEmptyString)?.trim(),
+    observation: isNonEmptyString(item.observation) ? item.observation.trim() : item.observation,
+    supports: normalizeStringArray(item.supports),
+    contradicts: normalizeStringArray(item.contradicts),
+  };
+
+  const errors = validateEvidenceItem(normalized);
+  if (errors.length > 0) throw invalidEvidenceError(errors[0], { id });
+  return normalized;
+}
+
+export function normalizeSpecialistResult(result, options = {}) {
+  if (!result || typeof result !== 'object' || Array.isArray(result)) return result;
+
+  const seenEvidenceIds = options.seenEvidenceIds instanceof Set ? options.seenEvidenceIds : new Set();
+  const evidence = Array.isArray(result.evidence) ? result.evidence.map((item) => {
+    const normalized = normalizeEvidenceItem(item);
+    if (!seenEvidenceIds.has(normalized.id)) {
+      seenEvidenceIds.add(normalized.id);
+      return normalized;
+    }
+    const specialist = isNonEmptyString(result.specialist) ? result.specialist.trim() : 'specialist';
+    let suffix = 1;
+    let namespacedId = `${specialist}:${normalized.id}`;
+    while (seenEvidenceIds.has(namespacedId)) {
+      suffix += 1;
+      namespacedId = `${specialist}:${normalized.id}:${suffix}`;
+    }
+    seenEvidenceIds.add(namespacedId);
+    return { ...normalized, id: namespacedId };
+  }) : [];
+
+  return {
+    ...result,
+    evidence,
+  };
 }
 
 export function validateEvidenceItem(item) {

@@ -84,6 +84,83 @@ test('synthesis ranks hypotheses and exposes unresolved facts', () => {
   assert.deepEqual(output.dossier.memory, { provider: 'sybermem', item_count: 1 });
 });
 
+test('synthesis canonicalizes specialist evidence aliases before dossier validation', () => {
+  const output = synthesizeDossier({
+    issue: 263,
+    issueClass: 'bug',
+    capabilities: {},
+    specialistResults: [
+      {
+        specialist: 'guardian-code',
+        hypotheses: [{ id: 'H1', statement: 'root cause' }],
+        evidence: [
+          { id: 'E1', kind: 'source', source: 'src/feature.mjs:12', observation: 'the invariant rejects valid input', supports: ['H1'] },
+          { id: 'E2', kind: 'grep', source: 'rg match', observation: 'only one caller reaches this branch', supports: ['H1'], contradicts: undefined },
+        ],
+        unresolved_facts: [],
+      },
+      {
+        specialist: 'guardian-runtime',
+        hypotheses: [{ id: 'H1', statement: 'root cause' }],
+        evidence: [
+          { id: 'E3', kind: 'tool-observation', source: 'playwright', observation: 'the failing state is reproducible', supports: ['H1'], contradicts: [] },
+        ],
+        unresolved_facts: [],
+      },
+    ],
+  });
+
+  assert.deepEqual(output.dossier.evidence.map((item) => item.kind), [
+    'source_invariant',
+    'static_search',
+    'runtime_reproduction',
+  ]);
+  assert.deepEqual(output.validation, { valid: true, errors: [] });
+});
+
+test('synthesis fails closed on ungrounded kind and namespaces cross-specialist duplicate ids', () => {
+  assert.throws(() => synthesizeDossier({
+    issue: 263,
+    issueClass: 'bug',
+    capabilities: {},
+    specialistResults: [
+      {
+        specialist: 'guardian-runtime',
+        hypotheses: [{ id: 'H1', statement: 'root cause' }],
+        evidence: [
+          { id: 'E1', source: 'manual note', observation: 'no explicit provenance metadata', supports: ['H1'], contradicts: [] },
+        ],
+        unresolved_facts: [],
+      },
+    ],
+  }), /invalid-kind/);
+
+  const output = synthesizeDossier({
+    issue: 263,
+    issueClass: 'bug',
+    capabilities: {},
+    specialistResults: [
+      {
+        specialist: 'guardian-code',
+        hypotheses: [{ id: 'H1', statement: 'root cause' }],
+        evidence: [
+          { id: 'E1', kind: 'source', source: 'src/a.mjs:1', observation: 'first', supports: ['H1'], contradicts: [] },
+        ],
+        unresolved_facts: [],
+      },
+      {
+        specialist: 'guardian-runtime',
+        hypotheses: [{ id: 'H1', statement: 'root cause' }],
+        evidence: [
+          { id: 'E1', kind: 'tool-observation', source: 'playwright', observation: 'duplicate', supports: ['H1'], contradicts: [] },
+        ],
+        unresolved_facts: [],
+      },
+    ],
+  });
+  assert.deepEqual(output.dossier.evidence.map((item) => item.id), ['E1', 'guardian-runtime:E1']);
+});
+
 test('coordinator context lists only capabilities actually available', () => {
   const context = coordinatorContext({ capabilities: { codegraph: { available: false }, context7: { available: true }, git_history: { available: true }, plan_critic: { available: false } } });
   assert.deepEqual(context.available_tools, ['explore', 'guardian-code', 'guardian-business', 'guardian-runtime', 'context7', 'guardian-docs', 'guardian-history']);

@@ -2,7 +2,7 @@
 // Selects orthogonal read-only specialists and synthesizes their structured DATA into a dossier.
 // Actual task/MCP execution is injected by the future runtime adapter.
 
-import { isDecisionReady, rankHypotheses, validateDossier } from './evidence.mjs';
+import { isDecisionReady, normalizeSpecialistResult, rankHypotheses, validateDossier } from './evidence.mjs';
 import { agentEnabled, availableInvestigationTools } from './capabilities.mjs';
 import { BUILTIN_AGENT_REGISTRY, rolesForMode } from './agent-registry.mjs';
 
@@ -46,7 +46,10 @@ export function buildInvestigationPrompt({ issue, repoDir, role, dossierPath, av
 }
 
 export function synthesizeDossier({ issue, issueClass, specialistResults, capabilities, memoryContext = null }) {
-  const results = Array.isArray(specialistResults) ? specialistResults : [];
+  const evidenceIds = new Set();
+  const results = Array.isArray(specialistResults)
+    ? specialistResults.map((result) => normalizeSpecialistResult(result, { seenEvidenceIds: evidenceIds }))
+    : [];
   const hypotheses = results.flatMap((result) => result.hypotheses ?? []);
   const evidence = results.flatMap((result) => result.evidence ?? []);
   const unresolved = results.flatMap((result) => result.unresolved_facts ?? []);

@@ -1,7 +1,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { isDecisionReady, rankHypotheses, validateDossier } from '../../tools/guardian/evidence.mjs';
+import {
+  EVIDENCE_KIND_ALIASES,
+  isDecisionReady,
+  normalizeEvidenceItem,
+  normalizeSpecialistResult,
+  rankHypotheses,
+  validateDossier,
+} from '../../tools/guardian/evidence.mjs';
 
 const base = {
   issue: 42,
@@ -42,4 +49,105 @@ test('hypotheses rank by supporting minus contradicting evidence strength', () =
 test('malformed evidence cannot become decision-ready', () => {
   const invalid = validateDossier({ ...base, evidence: [{ id: 'E1', kind: 'static_search' }] });
   assert.equal(invalid.valid, false);
+});
+
+test('normalizeEvidenceItem maps explicit issue #263 aliases to canonical kinds', () => {
+  assert.equal(EVIDENCE_KIND_ALIASES['issue-data'], 'issue_assertion');
+  assert.equal(EVIDENCE_KIND_ALIASES.grep, 'static_search');
+  assert.equal(EVIDENCE_KIND_ALIASES.source, 'source_invariant');
+  assert.equal(EVIDENCE_KIND_ALIASES['test-inventory'], 'static_search');
+
+  const normalized = normalizeEvidenceItem({
+    id: 'E263',
+    kind: 'tool-observation',
+    source: 'playwright',
+    observation: 'the page renders the wrong state',
+    supports: ['H1'],
+    contradicts: undefined,
+  });
+
+  assert.deepEqual(normalized, {
+    id: 'E263',
+    kind: 'runtime_reproduction',
+    source: 'playwright',
+    observation: 'the page renders the wrong state',
+    supports: ['H1'],
+    contradicts: [],
+  });
+});
+
+test('normalizeEvidenceItem infers missing kind only from explicit source or tool metadata', () => {
+  assert.equal(normalizeEvidenceItem({
+    id: 'E-codegraph',
+    source: 'codegraph',
+    observation: 'call path proves the guard is reachable',
+    supports: ['H1'],
+    contradicts: [],
+  }).kind, 'codegraph');
+
+  assert.equal(normalizeEvidenceItem({
+    id: 'E-docs',
+    tool: 'context7',
+    source: 'context7:docs',
+    observation: 'official API docs require the field',
+    supports: ['H1'],
+    contradicts: [],
+  }).kind, 'official_docs');
+
+  assert.equal(normalizeEvidenceItem({
+    id: 'E-source-only',
+    provenance: 'frontend/apps/alipay-miniapp/src/pages/classifyAgain/index.js:886',
+    observation: 'the node is rendered unconditionally',
+    supports: ['H1'],
+    contradicts: [],
+  }).kind, 'source_invariant');
+
+  assert.equal(normalizeEvidenceItem({
+    id: 'E-grep-only',
+    command: 'rg 点击继续浏览 frontend/apps/alipay-miniapp/src',
+    observation: 'one match exists',
+    supports: ['H1'],
+    contradicts: [],
+  }).kind, 'static_search');
+
+  assert.throws(() => normalizeEvidenceItem({
+    id: 'E-missing-kind',
+    source: 'manual note',
+    observation: 'someone said this probably happens',
+    supports: ['H1'],
+    contradicts: [],
+  }), /invalid-kind/);
+});
+
+test('normalizeSpecialistResult namespaces duplicate evidence ids and rejects missing ids', () => {
+  const normalized = normalizeSpecialistResult({
+    specialist: 'guardian-code',
+    hypotheses: [{ id: 'H1', statement: 'root cause' }],
+    evidence: [
+      { id: 'E1', kind: 'source', source: 'src/a.mjs:10', observation: 'guard blocks valid input', supports: ['H1'] },
+      { id: 'E2', kind: 'grep', source: 'rg output', observation: 'the branch is only used here', supports: ['H1'], contradicts: undefined },
+    ],
+    unresolved_facts: [],
+  });
+
+  assert.deepEqual(normalized.evidence, [
+    { id: 'E1', kind: 'source_invariant', source: 'src/a.mjs:10', observation: 'guard blocks valid input', supports: ['H1'], contradicts: [] },
+    { id: 'E2', kind: 'static_search', source: 'rg output', observation: 'the branch is only used here', supports: ['H1'], contradicts: [] },
+  ]);
+
+  const seen = new Set(['E1']);
+  const namespaced = normalizeSpecialistResult({
+    specialist: 'guardian-code',
+    evidence: [
+      { id: 'E1', kind: 'source', source: 'src/a.mjs:10', observation: 'guard blocks valid input', supports: ['H1'], contradicts: [] },
+    ],
+  }, { seenEvidenceIds: seen });
+  assert.equal(namespaced.evidence[0].id, 'guardian-code:E1');
+
+  assert.throws(() => normalizeSpecialistResult({
+    specialist: 'guardian-code',
+    evidence: [
+      { kind: 'source', source: 'src/a.mjs:10', observation: 'guard blocks valid input', supports: ['H1'], contradicts: [] },
+    ],
+  }), /missing-id/);
 });
