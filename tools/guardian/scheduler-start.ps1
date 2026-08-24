@@ -254,10 +254,12 @@ function Normalize-CommandAuthors($Value) {
   if ($Value -is [string]) {
     $Value = @($Value -split '[,\s]+' | Where-Object { $_ })
   }
-  if ($Value -isnot [System.Array]) { throw "command_authors 必须是非空登录名数组。" }
-  if (@($Value | Where-Object { $_ -isnot [string] }).Count -gt 0) { throw "command_authors 必须是非空登录名数组。" }
-  $authors = @($Value | ForEach-Object { $_.Trim() } | Where-Object { $_ })
-  if ($authors.Count -eq 0 -or $authors.Count -ne @($Value).Count) { throw "command_authors 必须是非空登录名数组。" }
+  $items = @($Value)
+  if ($items.Count -eq 0 -or @($items | Where-Object { $_ -isnot [string] }).Count -gt 0) {
+    throw "command_authors 必须是非空登录名数组。"
+  }
+  $authors = @($items | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ })
+  if ($authors.Count -eq 0 -or $authors.Count -ne $items.Count) { throw "command_authors 必须是非空登录名数组。" }
   return $authors
 }
 
