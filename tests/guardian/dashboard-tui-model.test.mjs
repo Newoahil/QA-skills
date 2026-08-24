@@ -288,6 +288,51 @@ test('live tab renders buffered event lines when enabled and guidance when disab
   }
 });
 
+test('live tab surfaces persisted session context when connected event buffer is empty', async () => {
+  const repo = tempRepo();
+  const guardianDir = guardianDirFor(repo);
+  try {
+    mkdirSync(path.join(guardianDir, 'progress', '205'), { recursive: true });
+    writeFileSync(path.join(guardianDir, 'progress', '205', 'guardian-code.log'), '[guardian-code] tool: grep category empty state\n[guardian-code] step finished: unresolved oracle\n', 'utf8');
+    const record = {
+      ...newState(205, '2026-08-20T10:00:00.000Z'),
+      state: STATES.GATE_1_WAIT,
+      risk: RISK.HIGH,
+      opencode: {
+        schema_version: 1,
+        fixer: null,
+        qa: null,
+        specialists: {
+          'guardian-code': { session_id: 'ses_code', agent: 'guardian-code', last_status: 'completed', last_seen_at: '2026-08-20T10:01:00.000Z' },
+          'guardian-business': { session_id: 'ses_business', agent: 'guardian-business', last_status: 'completed', last_seen_at: '2026-08-20T10:02:00.000Z' },
+        },
+        inflight: null,
+      },
+    };
+    writeFileSync(path.join(guardianDir, '205.json'), `${JSON.stringify(record)}\n`, 'utf8');
+
+    const snapshot = await loadDashboardTuiSnapshot({
+      requestedRepo: repo,
+      bindingFile: path.join('tests', 'guardian', 'does-not-exist.json'),
+      selectedIssue: 205,
+      tab: TUI_TABS.live,
+      baseUrl: 'http://127.0.0.1:4096',
+      liveLines: [],
+      now: Date.parse('2026-08-20T10:03:00.000Z'),
+    });
+    const text = snapshot.contextLines.join('\n');
+    assert.match(text, /已连接共享 OpenCode 事件流/);
+    assert.match(text, /近期会话/);
+    assert.match(text, /guardian-code: ses_code/);
+    assert.match(text, /guardian-business: ses_business/);
+    assert.match(text, /最近进度日志/);
+    assert.match(text, /tool: grep category empty state/);
+    assert.doesNotMatch(text, /当前没有活跃专员事件。\n说明/);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
 test('createInitialUiState defaults to the current filter and t cycles it', () => {
   const ui = createInitialUiState();
   assert.equal(ui.stateFilter, 'current');

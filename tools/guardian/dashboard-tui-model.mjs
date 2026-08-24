@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { existsSync, readFileSync } from 'node:fs';
 
-import { dashboardStats, filterByState, formatIssueDetail, guardianDirFor, hasGuardianDir, loadAllIssueStates } from './dashboard-model.mjs';
+import { dashboardStats, extractSessionIds, filterByState, formatIssueDetail, guardianDirFor, hasGuardianDir, loadAllIssueStates } from './dashboard-model.mjs';
 import { buildArtifactErrorLines } from './dashboard-tui-artifacts.mjs';
 import { buildProgressLogLines } from './dashboard-tui-progress.mjs';
 import { buildSummaryTabLines, buildTranscriptLines, resolvePreferredSession } from './dashboard-tui-context.mjs';
@@ -182,6 +182,25 @@ function activeWorkLines(record) {
   return [`- 当前操作: ${inflight.role ?? '-'} session=${inflight.session_id} 状态=${inflight.status ?? '-'}`];
 }
 
+function recentSessionLines(record) {
+  const sessions = extractSessionIds(record);
+  if (sessions.length === 0) return [];
+  return [
+    '近期会话',
+    ...sessions.map((session) => `- ${session.role}: ${session.session_id} | 状态=${session.last_status ?? '-'} | 最近=${session.last_seen_at ?? '-'}`),
+    '',
+  ];
+}
+
+function recentProgressLines(guardianDir, record) {
+  const progress = buildProgressLogLines(guardianDir, record);
+  const start = progress.findIndex((line) => line === '实际进度日志');
+  if (start < 0) return [];
+  const tail = progress.slice(start + 1).filter((line) => !/未发现进度目录|期望日志路径|进度目录存在，但没有|shared OpenCode server|下一步: 切到 Transcript/.test(line));
+  if (tail.length === 0) return [];
+  return ['最近进度日志', ...tail.slice(0, 12), ''];
+}
+
 function buildLiveEventLines(liveLines, baseUrl, { guardianDir = null, now = Date.now(), record = null } = {}) {
   if (!Array.isArray(liveLines)) {
     return [
@@ -192,6 +211,21 @@ function buildLiveEventLines(liveLines, baseUrl, { guardianDir = null, now = Dat
     ];
   }
   if (liveLines.length === 0) {
+    const sessions = recentSessionLines(record);
+    const progress = recentProgressLines(guardianDir, record);
+    if (sessions.length > 0 || progress.length > 0) {
+      return [
+        `已连接共享 OpenCode 事件流: ${baseUrl}`,
+        '',
+        '当前没有新的 SSE 事件；下面显示已记录会话和本地进度上下文。',
+        '',
+        ...sessions,
+        ...progress,
+        '运行状态',
+        ...activeWorkLines(record),
+        ...schedulerLockLines(guardianDir, now),
+      ];
+    }
     return [
       `已连接共享 OpenCode 事件流: ${baseUrl}`,
       '',
