@@ -421,4 +421,38 @@ yet stable — fall back to a fixed contract.
 ### Open
 
 - **Start signal:** this document is the review artifact; implementation begins only on an explicit
-  go for a **named phase** (e.g. "start P1"). No phase has started yet.
+  go for a **named phase** (e.g. "start P1").
+
+---
+
+## 9. PM-adapter preparatory work (Tier A + B) — IMPLEMENTED 2026-08-24
+
+A separate fitness assessment (Oracle-cross-checked) for connecting Guardian as an execution agent
+inside a future PM system (Intent → Plan → Result-DAG → Ready → Execute → Evidence → Human-Acceptance
+→ Unlock-downstream) concluded: **GO for a phased PM execution adapter starting with
+`executionType=coding`; the numeric-identity coupling and the fix-only lifecycle are the real
+blockers, but bounded.** See `.sybermem/decisions/…-pm-adapter-prep-work.md` (decision-e8c0d364) and
+`…-guardian-extensibility-plan.md` (decision-b531cef4).
+
+The preparatory decoupling has now been implemented so a future PM adapter is pure-increment work
+(write a PM TaskSource + a PM EffectSink + reuse the coding profile), with **GitHub behavior kept
+byte-identical** (full guardian suite green, 650/650). Each tier landed as its own commit on
+`feature/guardian-extensibility`:
+
+| Tier | What landed | Where | Commit |
+|---|---|---|---|
+| **A1** | `storageKey(ref)` + `isNumericStorageKey` — source-qualified, filesystem-safe storage identity, separate from `displayId`. GitHub keeps bare-numeric `<n>.json`; non-github gets `<source>__<taskId>`. Scheduler discovery/followup accept both and rebuild a faithful `TaskRef`; the P8 numeric hard-reject is gone. This delivers the **identity-groundwork portion of P8 for non-numeric ids in-memory + on-disk filenames**, without the full ledger/session string-ID migration (still deferred). | `task-ref.mjs`, `state.mjs`, `scheduler.mjs` | `429352c` |
+| **A2** | `createTaskObservation` carries an optional normalized execution spec (executionType, acceptanceCriteria, expectedEvidence, owner/ownerType, suggestedRole, repoContext, sourceMeta) as a **separate top-level field**; `facts` stays exactly `{title, body}`. null for github/http. | `task-source.mjs` | `14763a9` |
+| **A3** | `assertReadOnlyInvestigationTools` + write-capable deny-list; `availableInvestigationTools` routes through it. Closes the "read-only enforced only by prompt" caveat with a code-level fail-closed guard. | `capabilities.mjs` | `59885b5` |
+| **B1** | `IN_REVIEW` state (execution-complete-awaiting-human) + `isAwaitingHumanAcceptance` + `assertAgentMayTransitionTo` (fails closed on agent→DONE). Not wired into the GitHub fix flow. Red line: an acceptance proposal must never map to DONE. | `state.mjs` | `387293c` |
+| **B2** | `selectPipelineProfile(executionType)` + `SUPPORTED_EXECUTION_TYPES`. `coding`/null → builtin pipeline byte-identical; other types → explicit `unsupported-execution-type` (blocked, not forced through fixer). Selection-only; `runPipeline` untouched. | `stage-runner.mjs` | `e315476` |
+| **B3** | Pre-registered PM effects `evidence_add` / `acceptance_propose` / `result_status_update` (authorized to `bot_executor`) and `accept_result` (human-only, joins merge/close). A future PM EffectSink routes through the same `assertActorMayPerform` gate. GitHub sink still fails closed on these kinds. | `actor-routing.mjs` | `d350933` |
+
+### Explicitly NOT done yet (deferred to the adapter phase / P8)
+
+- The PM `TaskSource` / PM `EffectSink` bodies (the adapter itself).
+- Non-`coding` execution profiles (research/design/ops).
+- The full string-ID migration for `ledger.mjs` transition tokens, artifact paths, and OpenCode
+  session bindings (they remain keyed on `Number(issue)`; A1 covers state filenames + discovery).
+- Any DAG ownership in Guardian — PM owns dependency readiness; Guardian consumes only the ready set.
+- A UUID→numeric surrogate map (rejected as a permanent design).
