@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { buildInvestigationPrompt, coordinatorContext, resolveModelForRole, selectSpecialists, synthesizeDossier } from '../../tools/guardian/investigation-coordinator.mjs';
+import { loadAgentRegistry } from '../../tools/guardian/agent-registry.mjs';
 
 test('resolveModelForRole reads per-role model from config with default and global fallback', () => {
   const config = { models: { 'guardian-code': 'openai/gpt-x', plan: 'anthropic/claude-y', default: 'openai/fallback' } };
@@ -35,6 +36,25 @@ test('specialist selection respects disabled guardian agents', () => {
     config: { skills: { disabled: ['guardian-history'] }, agents: { guardian_plan_critic: false } },
   });
   assert.deepEqual(roles, ['guardian-code', 'guardian-business', 'guardian-runtime', 'guardian-docs']);
+});
+
+test('specialist selection uses runtime-loaded project agent registry', () => {
+  const agentRegistry = loadAgentRegistry(undefined, {
+    projectManifest: {
+      agents: [
+        { role: 'guardian-local', modes: ['simple', 'complex'], requires_capability: 'local_probe', enabled_default: true },
+      ],
+    },
+  });
+
+  const roles = selectSpecialists({
+    issueClass: 'bug',
+    complexity: 'simple',
+    capabilities: { local_probe: { available: true } },
+    agentRegistry,
+  });
+
+  assert.deepEqual(roles, ['guardian-code', 'guardian-runtime', 'guardian-local']);
 });
 
 test('prompt carries issue/repo/role and actual available tools', () => {

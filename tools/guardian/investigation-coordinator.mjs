@@ -20,8 +20,8 @@ export function resolveModelForRole(config, role) {
   return clean(models[role]) ?? clean(models.default);
 }
 
-export function selectSpecialists({ issueClass, complexity = 'complex', capabilities, config = {} }) {
-  return rolesForMode(BUILTIN_AGENT_REGISTRY, {
+export function selectSpecialists({ issueClass, complexity = 'complex', capabilities, config = {}, agentRegistry = BUILTIN_AGENT_REGISTRY }) {
+  return rolesForMode(agentRegistry, {
     complexity,
     capabilities,
     enabled: (role) => agentEnabled(config, role),

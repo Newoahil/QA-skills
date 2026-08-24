@@ -9,11 +9,11 @@ import { randomUUID } from 'node:crypto';
 
 const NOOP_LOGGER = { info: () => {}, warn: () => {}, error: () => {} };
 
-export async function prepareInvestigation({ issue, issueData, repoDir, qaRuntimeDir = repoDir, guardianDir, issueClass, complexity, capabilities, config = {}, memoryContext = null, runSpecialist, buildPlan, state = null, round = 1, signal = null, now = () => Date.now(), logger = NOOP_LOGGER }) {
+export async function prepareInvestigation({ issue, issueData, repoDir, qaRuntimeDir = repoDir, guardianDir, issueClass, complexity, capabilities, config = {}, agentRegistry, memoryContext = null, runSpecialist, buildPlan, state = null, round = 1, signal = null, now = () => Date.now(), logger = NOOP_LOGGER }) {
   const paths = artifactPaths(guardianDir, issue);
   const budgets = resolveBudgets(config, complexity);
   const investigationId = randomUUID();
-  const selectedRoles = selectSpecialists({ issueClass, complexity, capabilities, config }).slice(0, budgets.max_specialists);
+  const selectedRoles = selectSpecialists({ issueClass, complexity, capabilities, config, agentRegistry }).slice(0, budgets.max_specialists);
   if (typeof runSpecialist !== 'function') throw new Error('investigation specialist runner is not configured');
   if (typeof buildPlan !== 'function') throw new Error('investigation plan builder is not configured');
 
