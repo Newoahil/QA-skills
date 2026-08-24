@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { persistCommandlessTransitions } from '../../tools/guardian/scheduler.mjs';
+import { createLeaseFence, persistCommandlessTransitions } from '../../tools/guardian/scheduler.mjs';
 import { deliverNotifications } from '../../tools/guardian/notify-io.mjs';
 import { ACTORS } from '../../tools/guardian/actor-routing.mjs';
 import { newState, STATES } from '../../tools/guardian/state.mjs';
@@ -120,4 +120,27 @@ test('repeated DONE persistence is idempotent after the first transition', () =>
 
   assert.equal(store.writes.length, 1);
   assert.equal(store.store[211].state, STATES.DONE);
+});
+
+test('lease fence aborts active work when heartbeat renewal loses ownership', () => {
+  let heartbeat;
+  let cleared = false;
+  const fence = createLeaseFence({
+    lockFile: 'lock-file',
+    handle: { token: 'owner' },
+    leaseMs: 1000,
+    renew: () => false,
+    setIntervalFn: (callback) => {
+      heartbeat = callback;
+      return { unref() {} };
+    },
+    clearIntervalFn: () => { cleared = true; },
+  });
+
+  assert.equal(fence.isActiveRun(), true);
+  heartbeat();
+  assert.equal(fence.isActiveRun(), false);
+  assert.equal(fence.signal.aborted, true);
+  fence.stop();
+  assert.equal(cleared, true);
 });

@@ -91,6 +91,7 @@ export async function runPipeline({ stages = loadPipelineManifest(), context, ru
 }
 
 export async function runFixerStage(context) {
+  const isActiveRun = context.isActiveRun ?? (() => true);
   const currentState = context.readState(context.guardianDir, context.issue) ?? { issue: context.issue };
   const humanNote = context.command?.data
     ? {
@@ -120,7 +121,9 @@ export async function runFixerStage(context) {
     model: context.resolveModelForRole(context.config, 'fixer'),
     fallbackModels: context.fallbackModels,
     signal: context.signal,
+    isActiveRun,
   });
+  if (!isActiveRun()) return { stop: true, status: 'fenced' };
   context.writeState(context.guardianDir, fixerRun.state, { touch: false });
   const action = stageSessionStatusAction(fixerRun.status);
   if (action.retry) {
@@ -144,6 +147,7 @@ export async function runFixerStage(context) {
 }
 
 export async function runQaStage(context) {
+  const isActiveRun = context.isActiveRun ?? (() => true);
   const afterFix = context.readState(context.guardianDir, context.issue) ?? { issue: context.issue };
   context.logger.info('qa.begin', { issue: context.issue, round: afterFix.processing_round ?? 1 });
   const qaRun = await context.runQaSession({
@@ -164,7 +168,9 @@ export async function runQaStage(context) {
     model: context.resolveModelForRole(context.config, 'qa'),
     fallbackModels: context.fallbackModels,
     signal: context.signal,
+    isActiveRun,
   });
+  if (!isActiveRun()) return { stop: true, status: 'fenced' };
   context.writeState(context.guardianDir, qaRun.state, { touch: false });
   const action = stageSessionStatusAction(qaRun.status);
   if (action.retry) {
@@ -177,6 +183,7 @@ export async function runQaStage(context) {
   }
   context.writeState(context.guardianDir, qaRun.state, { touch: false });
   if (!qaRun.verdict) return { stop: false, status: qaRun.status };
+  if (!isActiveRun()) return { stop: true, status: 'fenced' };
   const qaVerdict = {
     issue: Number(context.issue),
     branch: afterFix.branch ?? null,
@@ -246,6 +253,8 @@ export async function runNotifyStage(context) {
 
 export function stageRunnerContext(values) {
   return Object.freeze({
+    ...values,
+    isActiveRun: values.isActiveRun ?? (() => true),
     readState: values.readState,
     writeState: values.writeState,
     readArtifactPair: values.readArtifactPair ?? readArtifactPair,
@@ -253,7 +262,6 @@ export function stageRunnerContext(values) {
     writeMarkdownArtifact: values.writeMarkdownArtifact ?? writeMarkdownArtifact,
     runFixerSession: values.runFixerSession ?? runFixerSession,
     runQaSession: values.runQaSession ?? runQaSession,
-    ...values,
   });
 }
 

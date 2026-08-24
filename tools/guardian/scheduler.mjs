@@ -80,6 +80,50 @@ export const DEFAULT_INTERVAL_MS = 10 * 1000;
 // Heartbeat cadence: renew the lock well within the lease so a live long run never looks stale.
 const HEARTBEAT_MS = 30 * 1000;
 
+export function createLeaseFence({
+  lockFile,
+  handle,
+  leaseMs,
+  renew = renewLock,
+  heartbeatMs = HEARTBEAT_MS,
+  signal = null,
+  setIntervalFn = setInterval,
+  clearIntervalFn = clearInterval,
+} = {}) {
+  const controller = new AbortController();
+  let active = true;
+  const isActiveRun = () => active && !controller.signal.aborted;
+  const fence = () => {
+    active = false;
+    if (!controller.signal.aborted) controller.abort();
+  };
+  const renewNow = () => {
+    try {
+      if (!renew(lockFile, handle, { leaseMs })) fence();
+    } catch {
+      fence();
+    }
+    return isActiveRun();
+  };
+  const onAbort = () => fence();
+  if (signal) {
+    if (signal.aborted) fence();
+    else signal.addEventListener('abort', onAbort, { once: true });
+  }
+  const heartbeat = setIntervalFn(renewNow, heartbeatMs);
+  if (typeof heartbeat.unref === 'function') heartbeat.unref();
+  return Object.freeze({
+    signal: controller.signal,
+    isActiveRun,
+    renewNow,
+    stop() {
+      clearIntervalFn(heartbeat);
+      if (signal) signal.removeEventListener('abort', onAbort);
+      fence();
+    },
+  });
+}
+
 function readConfig(repoDir) {
   const file = path.join(repoDir, '.qa', 'guardian', 'config.json');
   if (!existsSync(file)) return {};
@@ -476,12 +520,11 @@ async function tick(repoDir, config, logger, signal = null, runtime = createSche
   // N=1 critical-section heartbeat: renew the lease for the WHOLE critical section (investigation
   // + fixer + QA + PR), so a long investigation cannot go lease-stale and be judged STALLED by
   // another poll (E2E bug #2). Cleared in the finally below. Owner-guarded by handle.token.
-  const criticalBeat = setInterval(() => {
-    renewLock(lockFile, handle, { leaseMs });
-  }, HEARTBEAT_MS);
-  if (typeof criticalBeat.unref === 'function') criticalBeat.unref();
+  const runFence = createLeaseFence({ lockFile, handle, leaseMs, signal });
+  const { isActiveRun } = runFence;
 
   try {
+  if (!isActiveRun()) return;
   const currentBeforeRun = readState(guardianDirOf(repoDir), issue);
   if (plan.toRun.claim_source === 'discovered' && !currentBeforeRun) {
     const claimId = randomUUID();
@@ -547,7 +590,7 @@ async function tick(repoDir, config, logger, signal = null, runtime = createSche
           memoryContext,
           state: investigationState,
           round: investigationState.processing_round ?? 1,
-          signal,
+           signal: runFence.signal,
           logger,
           runSpecialist: (args) => processSpecialistRunner({
             ...args,
@@ -559,8 +602,9 @@ async function tick(repoDir, config, logger, signal = null, runtime = createSche
             progressSink: (fields) => logger.info('specialist.progress', fields),
           }),
            buildPlan: (args) => processPlanBuilder({ ...args, repoDir, qaRuntimeDir, guardianDir, issueData, opencodeClient, fallbackModels, model: resolveModelForRole(config, 'plan'), deadlineMs: resolveSessionDeadlineMs(config, 'specialist_deadline_ms') }),
-        });
-        const state = readState(guardianDir, issue) ?? { issue };
+         });
+         if (!isActiveRun()) return;
+         const state = readState(guardianDir, issue) ?? { issue };
         writeState(guardianDir, {
           ...state,
           dossier_path: prepared.artifact_paths.dossier_path,
@@ -587,6 +631,7 @@ async function tick(repoDir, config, logger, signal = null, runtime = createSche
           investigation_duration_ms: prepared.timing?.investigation_duration_ms ?? null,
         });
       } catch (error) {
+        if (!isActiveRun()) return;
         const failureState = readState(guardianDir, issue) ?? { issue };
         // Persist session metadata + measured durations even on failure so a retry can resume the
         // same specialist sessions and the read-only TUI can show which roles ran and how long.
@@ -620,6 +665,7 @@ async function tick(repoDir, config, logger, signal = null, runtime = createSche
   }
 
   if (investigationMode !== 'legacy') {
+    if (!isActiveRun()) return;
     const guardianDir = guardianDirOf(repoDir);
     const pair = readArtifactPair(guardianDir, issue);
     const dossier = pair.dossier;
@@ -667,6 +713,7 @@ async function tick(repoDir, config, logger, signal = null, runtime = createSche
   // Refresh the prompt after artifacts exist so the write-capable agent receives the exact
   // validated dossier/plan paths rather than an ungrounded generic invocation.
   if (investigationMode !== 'legacy') {
+    if (!isActiveRun()) return;
     invokeArgv = invocationArgvFor(repoDir, issue, plan.toRun, {
       dossierPath: path.join(guardianDirOf(repoDir), String(issue), 'dossier.json'),
       planPath: path.join(guardianDirOf(repoDir), String(issue), 'plan.json'),
@@ -675,14 +722,16 @@ async function tick(repoDir, config, logger, signal = null, runtime = createSche
   }
 
   if (plan.toRun.newRound && plan.toRun.command) {
+    if (!isActiveRun()) return;
     const current = readState(guardianDirOf(repoDir), issue);
     if (current) writeState(guardianDirOf(repoDir), startFollowupRound(current, plan.toRun.command), { touch: false });
     logger.info('followup.round_started', { issue, round: (current?.processing_round ?? 1) + 1 });
   }
 
-  logger.info('run.begin', { issue, action, to_state: toState });
+    logger.info('run.begin', { issue, action, to_state: toState });
   try {
     const guardianDir = guardianDirOf(repoDir);
+    const githubEffectSink = createGitHubEffectSink({ repoDir });
     let code = 0;
     let qaVerdict = null;
     let finalization = null;
@@ -701,33 +750,41 @@ async function tick(repoDir, config, logger, signal = null, runtime = createSche
           config,
           investigationMode,
           supervisor,
-          effectSink: createGitHubEffectSink({ repoDir }),
+           effectSink: {
+             emit: (descriptor) => (isActiveRun()
+               ? githubEffectSink.emit(descriptor)
+               : { ok: false, fenced: true }),
+           },
           notifyStage: {
             enabled: Boolean(config.notify_webhook),
             webhookUrl: config.notify_webhook ?? null,
           },
-          fallbackModels,
-          signal,
-          logger,
-          readState,
-          writeState,
-          readArtifactPair,
-          writeArtifact: (guardianDir, issue, name, value) => (name === 'qa-verdict'
-            ? writeQaVerdictArtifact(guardianDir, issue, value)
-            : writeArtifact(guardianDir, issue, name, value)),
-          writeMarkdownArtifact,
+           fallbackModels,
+           signal: runFence.signal,
+           isActiveRun,
+           logger,
+           readState,
+           readArtifactPair,
+           writeState: (...args) => (isActiveRun() ? writeState(...args) : null),
+           writeArtifact: (...args) => (isActiveRun() ? (args[2] === 'qa-verdict'
+             ? writeQaVerdictArtifact(args[0], args[1], args[3])
+             : writeArtifact(...args)) : null),
+           writeMarkdownArtifact: (...args) => (isActiveRun() ? writeMarkdownArtifact(...args) : null),
           resolveSessionDeadlineMs,
           resolveModelForRole,
         }),
       });
+      if (!isActiveRun()) return;
       if (pipeline.stopped) return;
       qaVerdict = pipeline.qaVerdict;
     } else {
       // Legacy path: fixer spawns and internally dispatches qa (writes qa-verdict.json itself).
-      code = await runInvocation(repoDir, invokeArgv, lockFile, handle, leaseMs, Number(config.child_timeout_ms ?? 0), signal);
+      code = await runInvocation(repoDir, invokeArgv, lockFile, handle, leaseMs, Number(config.child_timeout_ms ?? 0), runFence.signal);
+      if (!isActiveRun()) return;
       qaVerdict = readArtifact(guardianDir, issue, 'qa-verdict');
     }
 
+    if (!isActiveRun()) return;
     const qaAudit = auditQaVerdict(qaVerdict, {
       issue,
       branch: readState(guardianDir, issue)?.branch ?? undefined,
@@ -746,7 +803,9 @@ async function tick(repoDir, config, logger, signal = null, runtime = createSche
     else logger.info('qa.verdict_passed', { issue, exit_code: code });
 
     if (opencodeClient && investigationMode === 'enforced' && qaAudit.approved) {
+      if (!isActiveRun()) return;
       finalization = await supervisor.finalizeFix({ issue, plan: readArtifactPair(guardianDir, issue).plan, mode: investigationMode });
+      if (!isActiveRun()) return;
       const finalizedState = readState(guardianDir, issue) ?? afterRun;
       writeState(guardianDir, { ...finalizedState, branch: finalization.branch }, { touch: false });
     }
@@ -755,6 +814,7 @@ async function tick(repoDir, config, logger, signal = null, runtime = createSche
     // exists and it did not approve (FAIL/BLOCKED/NHR). A missing verdict means the run stopped
     // mid-pipeline (e.g. at a gate) and is NOT a QA failure — do not post then. Enforced mode only.
     if (investigationMode === 'enforced' && qaVerdict && !qaAudit.approved) {
+      if (!isActiveRun()) return;
       writeVerdictComment(guardianDir, issue, {
         approved: false,
         status: qaVerdict?.status ?? null,
@@ -766,6 +826,7 @@ async function tick(repoDir, config, logger, signal = null, runtime = createSche
     }
 
     if (investigationMode === 'enforced' && qaAudit.approved) {
+      if (!isActiveRun()) return;
       const currentBranch = finalization?.branch ?? (readState(guardianDir, issue)?.branch ?? afterRun.branch);
       const qaGate = canCreatePr({
         verdict: qaVerdict,
@@ -791,6 +852,7 @@ async function tick(repoDir, config, logger, signal = null, runtime = createSche
           verdict: qaVerdict,
           actor: ACTORS.SUPERVISOR,
         });
+        if (!isActiveRun()) return;
         const gate2State = readState(guardianDir, issue) ?? afterRun;
         writeState(guardianDir, {
           ...gate2State,
@@ -826,7 +888,7 @@ async function tick(repoDir, config, logger, signal = null, runtime = createSche
     throw error;
   }
   } finally {
-    clearInterval(criticalBeat);
+    runFence.stop();
     releaseLock(lockFile, handle);
   }
   } finally {

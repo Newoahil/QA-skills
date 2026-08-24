@@ -120,6 +120,29 @@ test('renewLock does not overwrite a replacement owner observed after the first 
   assert.equal(wrote, false, 'stale owner must not clobber a replacement lock');
 });
 
+test('canonical token replacement makes the previous owner fence false for both renew and release', () => {
+  const { dir, file } = tmpLock();
+  try {
+    const original = acquireLock(file, { pid: 1, leaseMs: LEASE, now: 1000, dir });
+    assert.ok(original);
+    writeFileSync(file, `${JSON.stringify({ pid: 2, token: 'replacement-token', acquired_at: 2000, renewed_at: 2000 })}\n`, 'utf8');
+
+    assert.equal(
+      renewLock(file, original, { now: 3000 }),
+      false,
+      'scheduler heartbeat must observe lost ownership once the canonical token changes',
+    );
+    assert.equal(
+      releaseLock(file, original),
+      false,
+      'stale owner must not delete the replacement lock; scheduler still needs an integration test to stop any already-running callback path',
+    );
+    assert.equal(JSON.parse(readFileSync(file, 'utf8')).token, 'replacement-token');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('renewLock and releaseLock fail closed on corrupt lock payloads', () => {
   const fs = {
     existsSync: () => true,
