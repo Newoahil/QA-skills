@@ -76,7 +76,7 @@ function writeQaVerdictArtifact(guardianDir, issue, qaVerdict) {
   return writeArtifact(guardianDir, issue, 'qa-verdict', qaVerdict);
 }
 
-const DEFAULT_INTERVAL_MS = 30 * 1000;
+export const DEFAULT_INTERVAL_MS = 10 * 1000;
 // Heartbeat cadence: renew the lock well within the lease so a live long run never looks stale.
 const HEARTBEAT_MS = 30 * 1000;
 

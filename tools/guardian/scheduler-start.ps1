@@ -261,6 +261,30 @@ function Normalize-CommandAuthors($Value) {
   return $authors
 }
 
+function Get-GitHubLogin {
+  $previousErrorActionPreference = $ErrorActionPreference
+  $ErrorActionPreference = "Continue"
+  try {
+    $login = & gh api user --jq .login 2>$null
+    $code = $LASTEXITCODE
+  } finally { $ErrorActionPreference = $previousErrorActionPreference }
+  if ($code -ne 0 -or -not $login) { return "" }
+  return ([string]$login).Trim()
+}
+
+function Assert-CommandAuthorMatchesGitHubLogin($Authors) {
+  $normalized = @(Normalize-CommandAuthors $Authors)
+  $login = Get-GitHubLogin
+  if (-not $login) {
+    Write-Host "    [warn] 无法读取当前 gh 登录名；请确认 command_authors 使用 GitHub login，而不是显示名或邮箱。" -ForegroundColor Yellow
+    return $normalized
+  }
+  if ($normalized -notcontains $login) {
+    throw "command_authors 未包含当前 gh 登录用户 '$login'。请将其加入 .qa/guardian/config.json 的数组，例如 command_authors: ['$login']；否则所有 /guardian approve/revise/rework 命令都会被安全忽略。"
+  }
+  return ,$normalized
+}
+
 function Assert-RelativeRuntimeInput([string]$Value) {
   $v = $Value.Trim().Replace('\', '/')
   if (-not $v -or $v.StartsWith('/') -or $v -match '^[A-Za-z]:/' -or $v -match '(^|/)\.\.?(/|$)' -or $v -match '(^|/)(\.git|\.qa|node_modules)(/|$)') {
@@ -474,7 +498,7 @@ if (-not (Test-Path -LiteralPath $configPath)) {
     watch_mode       = $WatchMode
     command_authors  = $list
     base_branch      = $BaseBranch
-    poll_interval_ms = 60000
+     poll_interval_ms = 10000
     lease_ms         = 1800000
   }
   # Write UTF-8 WITHOUT BOM — PowerShell 5.1 Set-Content -Encoding utf8 adds a BOM that breaks node JSON.parse.
@@ -505,7 +529,12 @@ if ($changedCfg) {
 if (-not $cfg.command_authors -or @($cfg.command_authors).Count -eq 0) {
   throw "command_authors 为空：所有 /guardian 命令都会被拒绝。请配置可信 GitHub 用户后再启动。"
 } else {
-  Write-Host "    Command authors: $($cfg.command_authors -join ', ')" -ForegroundColor Green
+  $normalizedCfgAuthors = @(Assert-CommandAuthorMatchesGitHubLogin $cfg.command_authors)
+  if (($cfg.command_authors | ConvertTo-Json -Compress) -ne ($normalizedCfgAuthors | ConvertTo-Json -Compress)) {
+    $cfg | Add-Member -NotePropertyName command_authors -NotePropertyValue $normalizedCfgAuthors -Force
+    [System.IO.File]::WriteAllText($configPath, (($cfg | ConvertTo-Json -Depth 8) + "`n"), (New-Object System.Text.UTF8Encoding($false)))
+  }
+  Write-Host "    Command authors: $($normalizedCfgAuthors -join ', ')" -ForegroundColor Green
 }
 
 $base = if ($cfg.base_branch) { [string]$cfg.base_branch } else { $BaseBranch }

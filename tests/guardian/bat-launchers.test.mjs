@@ -179,6 +179,21 @@ test('scheduler launcher keeps binding author authorization fail-closed under -Y
   assert.match(text, /Normalize-CommandAuthors \$authorInput/);
 });
 
+test('scheduler launcher makes command-author mistakes explicit before watching', () => {
+  const text = readFileSync('tools/guardian/scheduler-start.ps1', 'utf8');
+  assert.match(text, /function Get-GitHubLogin/);
+  assert.match(text, /gh api user --jq \.login/);
+  assert.match(text, /function Assert-CommandAuthorMatchesGitHubLogin/);
+  assert.match(text, /command_authors 未包含当前 gh 登录用户/);
+  assert.match(text, /否则所有 \/guardian approve\/revise\/rework 命令都会被安全忽略/);
+  assert.match(text, /Assert-CommandAuthorMatchesGitHubLogin \$cfg\.command_authors/);
+});
+
+test('scheduler launcher writes the 10 second default interval for new projects', () => {
+  const text = readFileSync('tools/guardian/scheduler-start.ps1', 'utf8');
+  assert.match(text, /poll_interval_ms = 10000/);
+});
+
 test('scheduler launcher startup banner uses ASCII labels for Windows console safety', () => {
   const text = readFileSync('tools/guardian/scheduler-start.ps1', 'utf8');
   const startupBlock = text.slice(text.indexOf('==> QA Guardian scheduler'), text.indexOf('$packageRoot'));

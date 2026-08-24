@@ -130,8 +130,8 @@ The write-capable agent itself is [`qa-skill/agents/qa-guardian.md`](../../qa-sk
     |---|---|---|
     | `github_repo` | GitHub repository in `owner/name` form; the launcher infers it from `origin` or asks interactively | inferred/required |
      | `watch_mode` | deprecated compatibility field; all OPEN issues are now candidates | ignored |
-    | `command_authors` | **trusted `/guardian` command authors (security, required).** Entered once in the per-project launcher binding and propagated to control config; **unset = every command is ignored (fail-closed)** | none |
-    | `poll_interval_ms` | resident scheduler poll interval; config may override the code default | 60000 |
+     | `command_authors` | **trusted `/guardian` command authors (security, required).** Must be a non-empty JSON array of exact GitHub login names, e.g. `["goudaren0528"]`; the launcher asks for it on first setup, normalizes a scalar entry, and checks it against the current `gh api user` login. A wrong login means every command is ignored (fail-closed) and startup stops with a direct fix message. | none |
+     | `poll_interval_ms` | resident scheduler poll interval; config may override the code default. 10s is responsive for one local project; use 30000+ when watching multiple projects or reducing GitHub API traffic. | 10000 |
    | `lease_ms` | N=1 lock lease (heartbeat-renewed while a run is live) | 1800000 |
     | `specialist_timeout_ms` / `investigation_budget_ms` / `child_timeout_ms` | investigation-phase timeouts; **0 = unlimited** (durations are recorded as telemetry instead of force-killing) | 0 (unlimited) |
     | `fixer_deadline_ms` | Fixer SDK session deadline (polling bound; must be > 0) | 3600000 (60 min) |
@@ -149,7 +149,10 @@ The write-capable agent itself is [`qa-skill/agents/qa-guardian.md`](../../qa-sk
 
     > Set `command_authors` in the per-project launcher binding or **nothing will be approvable** —
      > this is the deliberate fail-closed guard against an arbitrary or forged comment approving a
-     > HIGH-risk plan. Every OPEN issue is eligible; no `qa-guardian` discovery label is required.
+     > HIGH-risk plan. The value must match the exact login returned by `gh api user --jq .login`,
+     > not a display name or email. If the scheduler logs `gate1-waiting` after an approve comment,
+     > first check that the comment author is present in this array and restart the scheduler after
+     > correcting it. Every OPEN issue is eligible; no `qa-guardian` discovery label is required.
      > Active issues receive visible `qa-guardian:doing`; state JSON and the N=1 lock remain authoritative.
      > `.qa/guardian/<n>.json` remains authoritative.
     The stronger investigation phases write `.qa/guardian/<n>/dossier.json` and `plan.json`;
