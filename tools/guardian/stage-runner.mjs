@@ -127,7 +127,14 @@ export async function runFixerStage(context) {
     return { stop: true, status: fixerRun.status };
   }
   if (!action.continue) {
-    context.logger.warn('fixer.session_stopped', { issue: context.issue, status: fixerRun.status });
+    const reason = fixerRun.completionError ?? (fixerRun.error instanceof Error ? fixerRun.error.message : fixerRun.status);
+    context.writeState(context.guardianDir, {
+      ...fixerRun.state,
+      state: STATES.HANDED_BACK,
+      handed_back_reason: 'blocked',
+      last_error_class: `fixer-completion-${fixerRun.status}`,
+    }, { touch: false });
+    context.logger.warn('fixer.session_stopped', { issue: context.issue, status: fixerRun.status, reason });
     return { stop: true, status: fixerRun.status };
   }
   const fixedBranch = `fix/issue-${Number(context.issue)}`;

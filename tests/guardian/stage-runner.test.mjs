@@ -243,6 +243,43 @@ test('runPipeline preserves fixer to QA state and artifact write order', async (
   ]);
 });
 
+test('runFixerStage hands back an unverified completion instead of leaving a fresh FIXING lease', async () => {
+  let state = { issue: 263, state: STATES.FIXING, handed_back_reason: null, opencode: {} };
+  const warnings = [];
+  const { runFixerStage } = await import('../../tools/guardian/stage-runner.mjs');
+  const result = await runFixerStage({
+    client: {},
+    issue: 263,
+    repoDir: 'D:/repo',
+    guardianDir: 'D:/repo/.qa/guardian',
+    command: null,
+    config: {},
+    investigationMode: 'enforced',
+    fallbackModels: [],
+    signal: null,
+    supervisor: { prepareFixBranch: () => ({ status: 0, stdout: '', stderr: '' }) },
+    logger: { info: () => {}, warn: (event, fields) => warnings.push({ event, fields }) },
+    readState: () => state,
+    writeState: (_dir, next) => { state = next; },
+    readArtifactPair: () => ({ plan: { affected_files: ['src/a.mjs'] } }),
+    writeMarkdownArtifact: () => {},
+    resolveSessionDeadlineMs: () => 100,
+    resolveModelForRole: () => undefined,
+    runFixerSession: async (request) => ({
+      status: 'unverified',
+      state: request.state,
+      completion: null,
+      completionError: 'changed-file-not-in-plan',
+    }),
+  });
+
+  assert.equal(result.stop, true);
+  assert.equal(state.state, STATES.HANDED_BACK);
+  assert.equal(state.handed_back_reason, 'blocked');
+  assert.equal(state.last_error_class, 'fixer-completion-unverified');
+  assert.equal(warnings.at(-1).fields.reason, 'changed-file-not-in-plan');
+});
+
 // --- B2 (decision-e8c0d364): executionType -> trusted profile selection ---
 
 import { selectPipelineProfile, SUPPORTED_EXECUTION_TYPES } from '../../tools/guardian/stage-runner.mjs';

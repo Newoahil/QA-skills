@@ -176,6 +176,8 @@ test('does not finalize when changed_files are outside the plan scope', async ()
     plan: { affected_files: ['tools/guardian/fix.mjs'] },
   });
   assert.equal(run.status, 'unverified');
+  assert.equal(run.completionError, 'changed-file-not-in-plan');
+  assert.equal(run.state.opencode.fixer.last_error, 'changed-file-not-in-plan');
   assert.deepEqual(calls, []);
 });
 

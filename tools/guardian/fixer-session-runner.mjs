@@ -151,6 +151,7 @@ export async function runFixerSession({
         last_used_round: round,
         last_status: finalStatus,
         last_seen_at: new Date().toISOString(),
+        ...(completion && !completion.ok ? { last_error: completion.reason } : {}),
       },
     },
   };
@@ -162,6 +163,7 @@ export async function runFixerSession({
     error: outcome.error,
     abortError: outcome.abortError,
     completion: completion?.ok ? completion : null,
+    completionError: completion && !completion.ok ? completion.reason : null,
     finalization: null,
     recreateOnNextRun: finalStatus === 'unusable-session',
   };
