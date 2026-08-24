@@ -39,7 +39,7 @@ test('gate1 comment renders structured plan and dossier fields without object pl
   });
 
   assert.doesNotMatch(body, /\[object Object\]/);
-  assert.match(body, /风险: HIGH/);
+  assert.match(body, /HIGH/);
   assert.match(body, /oracle missing/);
   assert.match(body, /分类列表空状态文案缺少明确预期/);
   assert.match(body, /src\/pages\/category\/index\.tsx/);
@@ -94,11 +94,54 @@ test('gate1 comment renders issue 263 shaped structured plan in readable Chinese
   });
 
   assert.doesNotMatch(body, /\[object Object\]/);
-  assert.match(body, /风险: HIGH/);
+  assert.match(body, /HIGH/);
   assert.match(body, /自动修复未满足 autonomous-ready 条件/);
   assert.match(body, /surface=小程序分类列表文案/);
   assert.match(body, /分类列表文案预期不明确，无法安全修改/);
   assert.match(body, /client\/pages\/category\/index\.tsx/);
   assert.match(body, /期望替换成哪一句中文文案/);
   assert.match(body, /下一步（仅可信人类评论有效）/);
+});
+
+test('gate1 comment puts the actionable spec before noisy investigation details', () => {
+  const body = buildGate1Comment({
+    issue: 263,
+    plan: {
+      risk: 'HIGH',
+      spec_goal: '修复支付宝小程序分类列表空状态和引导文案。',
+      implementation_summary: '有商品时不显示「点击继续浏览」；无商品时显示「该分类暂无商品」。',
+      primary_files: ['frontend/apps/alipay-miniapp/src/pages/classifyAgain/index.js'],
+      acceptance_summary: [
+        '有商品分类不出现「点击继续浏览」。',
+        '无商品分类显示「该分类暂无商品」。',
+        '分类切换、分页、商品卡片点击、搜索/筛选行为不变。',
+      ],
+      blocking_questions: ['是否只覆盖底部 Tab 分类页 pages/classifyAgain/index？'],
+      root_cause: '当前分类列表文案状态与 issue 预期不一致。',
+      affected_files: [
+        { path: 'frontend/apps/alipay-miniapp/src/pages/classifyAgain/index.js', reason: '分类页文案入口' },
+        { path: 'frontend/apps/alipay-miniapp/src/pages/classify/index.js', reason: '旧分类页候选入口，需确认是否本次处理' },
+      ],
+      non_goals: ['不改变分类切换、分页、商品卡片点击、搜索/筛选等既有行为。'],
+      test_plan: ['覆盖有商品和无商品两种分类状态。'],
+    },
+    dossier: {
+      unresolved_facts: [
+        '无法读取完整 issue body。',
+        '未启动小程序模拟器复现。',
+        '无法读取 git log。',
+      ],
+    },
+    planHash: 'sha256:263-spec',
+    planRevision: 'rev-263-spec',
+  });
+
+  assert.doesNotMatch(body, /\[object Object\]/);
+  assert.ok(body.indexOf('## 建议 Spec') < body.indexOf('<details>'));
+  assert.ok(body.indexOf('有商品时不显示「点击继续浏览」') < body.indexOf('无法读取完整 issue body'));
+  assert.match(body, /无商品时显示「该分类暂无商品」/);
+  assert.match(body, /frontend\/apps\/alipay-miniapp\/src\/pages\/classifyAgain\/index\.js/);
+  assert.match(body, /是否只覆盖底部 Tab 分类页/);
+  assert.match(body, /<summary>调查详情、证据、完整风险和未确定事实<\/summary>/);
+  assert.match(body, /审计标识: plan_hash: sha256:263-spec/);
 });

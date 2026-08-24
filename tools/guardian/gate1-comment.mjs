@@ -27,30 +27,90 @@ export function compact(value, fallback = '未提供') {
   return String(value);
 }
 
+function arrayItems(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+function firstText(values, fallback = '未提供') {
+  const candidates = Array.isArray(values) ? values : [values];
+  for (const value of candidates) {
+    const text = compact(value, '');
+    if (text) return text;
+  }
+  return fallback;
+}
+
+function bulletItems(items, fallback, limit = 5) {
+  const rendered = arrayItems(items).map((item) => compact(item, '')).filter(Boolean).slice(0, limit);
+  return rendered.length > 0 ? rendered.map((item) => `- ${item}`) : [`- ${fallback}`];
+}
+
+function primaryFiles(plan) {
+  const preferred = arrayItems(plan.primary_files);
+  const fallback = arrayItems(plan.affected_files);
+  return preferred.length > 0 ? preferred : fallback;
+}
+
+function blockingQuestions(plan, dossier) {
+  const preferred = arrayItems(plan.blocking_questions);
+  return preferred.length > 0 ? preferred : arrayItems(dossier.unresolved_facts);
+}
+
 export function buildGate1Comment({ issue, plan = {}, dossier = {}, planHash = null, planRevision = null }) {
-  const unresolved = Array.isArray(dossier.unresolved_facts) ? dossier.unresolved_facts : [];
-  const files = Array.isArray(plan.affected_files) ? plan.affected_files : [];
+  const unresolved = blockingQuestions(plan, dossier);
+  const files = primaryFiles(plan);
   const risk = compact(plan.risk, 'HIGH');
-  const rootCause = compact(plan.root_cause, '未提供');
+  const goal = firstText([plan.spec_goal, plan.root_cause], '未提供');
+  const summary = firstText([plan.implementation_summary, plan.root_cause], '未提供');
+  const acceptance = arrayItems(plan.acceptance_summary).length > 0 ? plan.acceptance_summary : plan.acceptance_criteria;
   const lines = [
     '[GATE_1_WAIT]',
     `QA Guardian: issue #${Number(issue)} 方案需要人工确认。`,
     '',
-    `风险: ${risk}（自动修复未满足 autonomous-ready 条件）`,
-    `审计标识: plan_hash: ${planHash ?? 'missing'}`,
-    `审计标识: plan_revision: ${planRevision ?? 'missing'}`,
-    `根因/方案摘要: ${rootCause}`,
+    '## 建议 Spec',
     '',
-    '影响文件:',
-    ...(files.length > 0 ? files.map((file) => `- ${compact(file, '未确定')}`) : ['- 未确定']),
+    `目标: ${goal}`,
     '',
-    '未确定事实 / 需人确认:',
-    ...(unresolved.length > 0 ? unresolved.map((fact) => `- ${compact(fact, '未确定事实')}`) : ['- 未确定事实: 无']),
+    '拟实施:',
+    ...bulletItems([summary], '未提供'),
+    '',
+    '主要改动文件:',
+    ...bulletItems(files, '未确定', 3),
+    '',
+    '验收标准:',
+    ...bulletItems(acceptance, '未提供', 5),
+    '',
+    '需要你确认:',
+    ...bulletItems(unresolved, '无', 3),
+    '',
+    '风险摘要:',
+    `- ${risk}（自动修复未满足 autonomous-ready 条件）`,
     '',
     '下一步（仅可信人类评论有效）:',
     '- `/guardian approve`：按当前方案进入修复。',
     '- `/guardian revise <plan>`：补充/调整方案后进入修复；文本仅作为 DATA。',
     '- `/guardian reject`：停止自动处理。',
+    '',
+    '<details>',
+    '<summary>调查详情、证据、完整风险和未确定事实</summary>',
+    '',
+    `审计标识: plan_hash: ${planHash ?? 'missing'}`,
+    `审计标识: plan_revision: ${planRevision ?? 'missing'}`,
+    `根因/方案摘要: ${compact(plan.root_cause, '未提供')}`,
+    '',
+    '完整影响文件:',
+    ...bulletItems(plan.affected_files, '未确定'),
+    '',
+    '非目标:',
+    ...bulletItems(plan.non_goals, '未提供'),
+    '',
+    '测试计划:',
+    ...bulletItems(plan.test_plan, '未提供'),
+    '',
+    '未确定事实 / 需人确认:',
+    ...bulletItems(dossier.unresolved_facts, '无'),
+    '',
+    '</details>',
   ];
   return `${lines.join('\n')}\n`;
 }
