@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import { BUILTIN_PIPELINE_MANIFEST } from '../../tools/guardian/pipeline.manifest.mjs';
 import { loadPipelineManifest, loadRuntimePipelineManifest, runPipeline, stageRunnerContext } from '../../tools/guardian/stage-runner.mjs';
+import { MAX_FIX_ROUNDS } from '../../tools/guardian/state-router.mjs';
 import { STATES } from '../../tools/guardian/state.mjs';
 
 test('loadPipelineManifest preserves built-in fixer then qa order', () => {
@@ -278,6 +279,102 @@ test('runFixerStage hands back an unverified completion instead of leaving a fre
   assert.equal(state.handed_back_reason, 'blocked');
   assert.equal(state.last_error_class, 'fixer-completion-unverified');
   assert.equal(warnings.at(-1).fields.reason, 'changed-file-not-in-plan');
+});
+
+test('runQaStage on FAIL at the round cap hands back explicitly instead of leaving an active state', async () => {
+  let state = {
+    issue: 264,
+    state: STATES.VERIFYING,
+    branch: 'fix/issue-264',
+    fix_rounds: MAX_FIX_ROUNDS,
+    processing_round: 2,
+    handed_back_reason: null,
+  };
+  const artifacts = [];
+  const { runQaStage } = await import('../../tools/guardian/stage-runner.mjs');
+
+  const result = await runQaStage({
+    client: {},
+    issue: 264,
+    repoDir: 'D:/repo',
+    guardianDir: 'D:/repo/.qa/guardian',
+    config: {},
+    fallbackModels: [],
+    signal: null,
+    issueTitle: 'Fix the thing',
+    pipeline: { completion: { changedFiles: ['src/a.mjs'], summary: 'fixed' } },
+    logger: { info: () => {}, warn: () => {} },
+    readState: () => state,
+    writeState: (_dir, next) => { state = next; },
+    writeArtifact: (_dir, _issue, name, value) => { artifacts.push({ name, value }); },
+    writeMarkdownArtifact: () => {},
+    resolveSessionDeadlineMs: () => 200,
+    resolveModelForRole: () => undefined,
+    runQaSession: async (request) => {
+      // Given: a bounded second-round QA retry is already in flight.
+      assert.equal(request.round, 2);
+      assert.equal(request.branch, 'fix/issue-264');
+      assert.deepEqual(request.diffSummary.changed_files, ['src/a.mjs']);
+
+      // When: QA returns a real FAIL verdict.
+      return {
+        status: 'ok',
+        state: request.state,
+        verdict: 'FAIL',
+        report: 'Overall Status: FAIL\nRegression still reproduces',
+      };
+    },
+  });
+
+  // Then: the stage must end in an explicit bounded outcome, not keep an active VERIFYING state alive.
+  assert.equal(result.stop, true);
+  assert.equal(state.state, STATES.HANDED_BACK);
+  assert.equal(state.handed_back_reason, 'fix-rounds-exceeded');
+  assert.equal(artifacts.at(0)?.name, 'qa-verdict');
+  assert.equal(result.qaVerdict, undefined);
+});
+
+test('runQaStage on FAIL below the round cap persists a bounded fixer retry', async () => {
+  let state = {
+    issue: 265,
+    state: STATES.VERIFYING,
+    branch: 'fix/issue-265',
+    fix_rounds: MAX_FIX_ROUNDS - 1,
+    processing_round: 1,
+    handed_back_reason: null,
+  };
+  const { runQaStage } = await import('../../tools/guardian/stage-runner.mjs');
+
+  const result = await runQaStage({
+    client: {},
+    issue: 265,
+    repoDir: 'D:/repo',
+    guardianDir: 'D:/repo/.qa/guardian',
+    config: {},
+    fallbackModels: [],
+    signal: null,
+    issueTitle: 'Retry the fix',
+    pipeline: { completion: { changedFiles: ['src/b.mjs'], summary: 'fixed' } },
+    logger: { info: () => {}, warn: () => {} },
+    readState: () => state,
+    writeState: (_dir, next) => { state = next; },
+    writeArtifact: () => {},
+    writeMarkdownArtifact: () => {},
+    resolveSessionDeadlineMs: () => 200,
+    resolveModelForRole: () => undefined,
+    runQaSession: async (request) => ({
+      status: 'ok',
+      state: request.state,
+      verdict: 'FAIL',
+      report: 'Overall Status: FAIL\nRegression still reproduces',
+    }),
+  });
+
+  assert.equal(result.stop, false);
+  assert.equal(result.qaVerdict.status, 'FAIL');
+  assert.equal(state.state, STATES.FIXING);
+  assert.equal(state.fix_rounds, MAX_FIX_ROUNDS);
+  assert.equal(state.last_error_class, 'qa-failed-retry');
 });
 
 // --- B2 (decision-e8c0d364): executionType -> trusted profile selection ---

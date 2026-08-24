@@ -11,6 +11,7 @@ import { runFixerSession } from './fixer-session-runner.mjs';
 import { runQaSession } from './qa-session-runner.mjs';
 import { ACTORS, EFFECTS } from './actor-routing.mjs';
 import { githubIssueToTaskRef } from './task-ref.mjs';
+import { MAX_FIX_ROUNDS } from './state-router.mjs';
 
 const STAGE_KEYS = Object.freeze(['id', 'agent', 'runner', 'inputArtifacts', 'outputArtifacts', 'stateTransition', 'retryPolicy', 'producesEffects', 'extensionPoint']);
 const PIPELINE_MANIFEST_KEYS = Object.freeze(['stages']);
@@ -187,6 +188,33 @@ export async function runQaStage(context) {
     plan_revision: afterFix.plan_revision ?? null,
   };
   context.writeArtifact(context.guardianDir, context.issue, 'qa-verdict', qaVerdict);
+
+  if (qaRun.verdict === 'FAIL') {
+    const fixRounds = afterFix.fix_rounds ?? 0;
+    if (fixRounds >= MAX_FIX_ROUNDS) {
+      context.writeState(context.guardianDir, {
+        ...qaRun.state,
+        state: STATES.HANDED_BACK,
+        handed_back_reason: 'fix-rounds-exceeded',
+        last_phase: 'qa-failed',
+        last_error_class: 'qa-failed',
+      }, { touch: false });
+      return { stop: true, status: qaRun.status };
+    }
+
+    context.writeState(context.guardianDir, {
+      ...qaRun.state,
+      state: STATES.FIXING,
+      fix_rounds: fixRounds + 1,
+      handed_back_reason: null,
+      last_phase: 'qa-failed-retry',
+      last_error_class: 'qa-failed-retry',
+      qa_verdict_status: qaVerdict.status,
+      qa_verdict_hash: qaVerdict.report_hash,
+    }, { touch: false });
+    return { stop: false, status: qaRun.status, qaVerdict };
+  }
+
   return { stop: false, status: qaRun.status, qaVerdict };
 }
 
