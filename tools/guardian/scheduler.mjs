@@ -503,13 +503,14 @@ async function tick(repoDir, config, logger, signal = null, runtime = createSche
           logger,
           runSpecialist: (args) => processSpecialistRunner({
             ...args,
+            issueData,
             opencodeClient,
             fallbackModels,
             model: resolveModelForRole(config, args.role),
             deadlineMs: resolveSessionDeadlineMs(config, 'specialist_deadline_ms'),
             progressSink: (fields) => logger.info('specialist.progress', fields),
           }),
-           buildPlan: (args) => processPlanBuilder({ ...args, repoDir, qaRuntimeDir, guardianDir, opencodeClient, fallbackModels, model: resolveModelForRole(config, 'plan'), deadlineMs: resolveSessionDeadlineMs(config, 'specialist_deadline_ms') }),
+           buildPlan: (args) => processPlanBuilder({ ...args, repoDir, qaRuntimeDir, guardianDir, issueData, opencodeClient, fallbackModels, model: resolveModelForRole(config, 'plan'), deadlineMs: resolveSessionDeadlineMs(config, 'specialist_deadline_ms') }),
         });
         const state = readState(guardianDir, issue) ?? { issue };
         writeState(guardianDir, {

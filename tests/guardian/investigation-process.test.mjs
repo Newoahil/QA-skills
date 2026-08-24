@@ -213,6 +213,38 @@ test('processSpecialistRunner requires Chinese human-facing dossier fields', asy
   assert.match(prompted[0], /acceptance_criteria/);
 });
 
+test('processSpecialistRunner gives SDK specialists an authoritative issue title and body snapshot', async () => {
+  const prompted = [];
+  const client = {
+    createSession: async () => 'ses_issue_snapshot',
+    prompt: async ({ parts }) => {
+      prompted.push(parts[0].text);
+      return { kind: 'ok', result: { text: '{"specialist":"guardian-business","hypotheses":[],"evidence":[],"unresolved_facts":[],"acceptance_criteria":[]}' } };
+    },
+    getSession: async () => ({ kind: 'ok', session: { id: 'ses_issue_snapshot', agent: 'guardian-business' } }),
+  };
+
+  await processSpecialistRunner({
+    role: 'guardian-business',
+    issue: 263,
+    issueData: {
+      title: '小程序分类列表文案显示',
+      body: '有商品时：不显示「点击继续浏览」\n无商品时：显示「该分类暂无商品」',
+    },
+    issueDataPath: 'D:/repo/.qa/guardian/263/issue-data.json',
+    repoDir: 'D:/repo',
+    dossierPath: 'D:/repo/.qa/guardian/263/dossier.json',
+    opencodeClient: client,
+  });
+
+  assert.equal(prompted.length, 1);
+  assert.match(prompted[0], /Authoritative issue title\/body DATA snapshot/);
+  assert.match(prompted[0], /小程序分类列表文案显示/);
+  assert.match(prompted[0], /不显示「点击继续浏览」/);
+  assert.match(prompted[0], /显示「该分类暂无商品」/);
+  assert.match(prompted[0], /do not claim the issue body is unavailable/);
+});
+
 test('processSpecialistRunner uses QA runtime path while preserving control state path metadata', async () => {
   const created = [];
   const client = {
@@ -420,7 +452,7 @@ test('processPlanBuilder uses the SDK client instead of spawning an attach proce
     createSession: async ({ title, agent, directory }) => { created.push({ title, agent, directory }); return 'ses_plan'; },
     prompt: async ({ sessionId, agent, parts, format }) => {
       prompted.push({ sessionId, agent, parts, format });
-      return { kind: 'ok', result: { text: '{"root_cause":"color","affected_files":["a"],"non_goals":["b"],"test_plan":["t"],"acceptance_criteria":["c"],"rollback_plan":"r","evidence_ids":[],"risk":"LOW"}' } };
+      return { kind: 'ok', result: { text: '{"spec_goal":"修复颜色","implementation_summary":"修改颜色 token","primary_files":["a"],"acceptance_summary":["颜色正确"],"blocking_questions":[],"root_cause":"color","affected_files":["a"],"non_goals":["b"],"test_plan":["t"],"acceptance_criteria":["c"],"rollback_plan":"r","evidence_ids":[],"risk":"LOW"}' } };
     },
     abort: async () => {},
     getSession: async () => ({ kind: 'ok', session: { id: 'ses_plan', agent: 'guardian-business' } }),
@@ -444,6 +476,11 @@ test('processPlanBuilder uses the SDK client instead of spawning an attach proce
   assert.equal(prompted[0].format.type, 'json_schema');
   assert.deepEqual(prompted[0].format.schema.properties.risk.enum, ['LOW', 'HIGH']);
   assert.deepEqual(prompted[0].format.schema.properties.evidence_ids.items.enum, ['E1', 'E2']);
+  assert.equal(prompted[0].format.schema.properties.primary_files.maxItems, 3);
+  assert.equal(prompted[0].format.schema.properties.acceptance_summary.maxItems, 5);
+  assert.equal(prompted[0].format.schema.properties.blocking_questions.maxItems, 3);
+  assert.equal(prompted[0].format.schema.required.includes('spec_goal'), true);
+  assert.equal(prompted[0].format.schema.required.includes('implementation_summary'), true);
   assert.equal(result.root_cause, 'color');
 });
 
@@ -454,7 +491,7 @@ test('processPlanBuilder requires Chinese plan content for human Gate1 review', 
     createSession: async () => 'ses_plan_zh',
     prompt: async ({ parts }) => {
       prompted.push(parts[0].text);
-      return { kind: 'ok', result: { text: '{"root_cause":"分类页文案预期不明确","affected_files":["pages/category/index.tsx"],"non_goals":["不扩大业务范围"],"test_plan":["人工确认后验证分类页文案"],"acceptance_criteria":["Gate1 评论可读"],"rollback_plan":"还原文案改动","evidence_ids":["E1"],"risk":"HIGH"}' } };
+      return { kind: 'ok', result: { text: '{"spec_goal":"修复分类页文案","implementation_summary":"按 issue 预期调整空状态文案","primary_files":["pages/category/index.tsx"],"acceptance_summary":["Gate1 评论可读"],"blocking_questions":["确认页面范围"],"root_cause":"分类页文案预期不明确","affected_files":["pages/category/index.tsx"],"non_goals":["不扩大业务范围"],"test_plan":["人工确认后验证分类页文案"],"acceptance_criteria":["Gate1 评论可读"],"rollback_plan":"还原文案改动","evidence_ids":["E1"],"risk":"HIGH"}' } };
     },
   };
 
@@ -470,9 +507,43 @@ test('processPlanBuilder requires Chinese plan content for human Gate1 review', 
   // Then: the model is explicitly instructed to write human-facing plan values in Chinese.
   assert.equal(prompted.length, 1);
   assert.match(prompted[0], /中文/);
+  assert.match(prompted[0], /spec_goal/);
+  assert.match(prompted[0], /implementation_summary/);
+  assert.match(prompted[0], /primary_files/);
+  assert.match(prompted[0], /acceptance_summary/);
+  assert.match(prompted[0], /blocking_questions/);
   assert.match(prompted[0], /root_cause/);
   assert.match(prompted[0], /affected_files/);
   assert.match(prompted[0], /unresolved_facts|未确定事实/);
+});
+
+test('processPlanBuilder gives SDK plan builder the issue body for spec extraction', async () => {
+  const prompted = [];
+  const client = {
+    createSession: async () => 'ses_plan_issue_snapshot',
+    prompt: async ({ parts }) => {
+      prompted.push(parts[0].text);
+      return { kind: 'ok', result: { text: '{"spec_goal":"修复支付宝小程序分类列表空状态和引导文案","implementation_summary":"有商品时不显示「点击继续浏览」；无商品时显示「该分类暂无商品」。","primary_files":["frontend/apps/alipay-miniapp/src/pages/classifyAgain/index.js"],"acceptance_summary":["有商品分类不出现「点击继续浏览」","无商品分类显示「该分类暂无商品」"],"blocking_questions":[],"root_cause":"分类列表文案与 issue 预期不一致","affected_files":["frontend/apps/alipay-miniapp/src/pages/classifyAgain/index.js"],"non_goals":["不改变分类切换"],"test_plan":["覆盖有商品和无商品分类"],"acceptance_criteria":["文案符合 issue"],"rollback_plan":"还原文案改动","evidence_ids":["E1"],"risk":"HIGH"}' } };
+    },
+  };
+
+  const { processPlanBuilder } = await import('../../tools/guardian/investigation-process.mjs');
+  await processPlanBuilder({
+    issue: 263,
+    repoDir: 'D:/repo',
+    dossier: { evidence: [{ id: 'E1' }] },
+    issueData: {
+      title: '小程序分类列表文案显示',
+      body: '有商品时：不显示「点击继续浏览」\n无商品时：显示「该分类暂无商品」',
+    },
+    opencodeClient: client,
+  });
+
+  assert.equal(prompted.length, 1);
+  assert.match(prompted[0], /Authoritative issue title\/body DATA snapshot/);
+  assert.match(prompted[0], /不显示「点击继续浏览」/);
+  assert.match(prompted[0], /显示「该分类暂无商品」/);
+  assert.match(prompted[0], /不要把风险、证据、工具失败或调查日志塞进这些 Gate1 主视图字段/);
 });
 
 test('processPlanBuilder reports provider errors instead of parsing empty JSON', async () => {
