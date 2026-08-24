@@ -334,15 +334,37 @@ function Ensure-ControlWorktree([string]$SourceRepo, [string]$Destination, [stri
   $inside = Invoke-Git $Destination @('rev-parse', '--is-inside-work-tree')
   if ($inside.code -ne 0 -or $inside.output -ne 'true') { throw "已存在的 control worktree 路径不是有效 git worktree：$Destination" }
   $status = Invoke-Git $Destination @('status', '--porcelain')
-  $unownedDirty = @(($status.output -split "`r?`n") | Where-Object {
+  $dirtyPaths = @(($status.output -split "`r?`n") | ForEach-Object {
     $line = $_.Trim()
-    if ($line.Length -lt 3) { return $false }
+    if ($line.Length -lt 3) { return }
     # Invoke-Git trims the complete output, so porcelain's leading status space is already gone.
     # The remaining two status columns still occupy the first two characters.
-    $p = $line.Substring(2).Trim().Replace('\', '/')
-    $p -and -not ($p -match '^(\.qa/guardian/|\.sybermem/|\.scheduler\.lock$|watch-state\.json$)')
+    $line.Substring(2).Trim().Replace('\', '/')
   })
-  if ($unownedDirty.Count -gt 0) { throw "control worktree 存在 Guardian 状态之外的工作区修改，已停止以避免覆盖现有修改：$Destination" }
+  $unownedDirty = @($dirtyPaths | Where-Object { $_ -and -not ($_ -match '^(\.qa/guardian/|\.sybermem/|\.scheduler\.lock$|watch-state\.json$)') })
+  if ($unownedDirty.Count -eq 0) { return }
+
+  $branch = (Invoke-Git $Destination @('branch', '--show-current')).output
+  if ($branch -notmatch '^fix/issue-(\d+)$') {
+    throw "control worktree 存在 Guardian 状态之外的工作区修改，已停止以避免覆盖现有修改：$Destination"
+  }
+  $issue = [int]$Matches[1]
+  $statePath = Join-Path $Destination ".qa\guardian\$issue.json"
+  $planPath = Join-Path $Destination ".qa\guardian\$issue\plan.json"
+  if (-not (Test-Path -LiteralPath $statePath) -or -not (Test-Path -LiteralPath $planPath)) {
+    throw "control worktree 存在计划外工作区修改：活动 issue #$issue 缺少权威 state/plan，已停止：$Destination"
+  }
+  $state = Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json
+  if (@('GATE_1_WAIT', 'FIXING', 'VERIFYING', 'GATE_2_WAIT') -notcontains [string]$state.state) {
+    throw "control worktree 存在计划外工作区修改：issue #$issue 当前状态 $($state.state) 不允许恢复 dirty fixer，已停止：$Destination"
+  }
+  $plan = Get-Content -LiteralPath $planPath -Raw | ConvertFrom-Json
+  $activePlanPaths = @($plan.affected_files | ForEach-Object { if ($_ -is [string]) { $_.Trim().Replace('\', '/') } } | Where-Object { $_ })
+  $unplannedDirty = @($unownedDirty | Where-Object { $activePlanPaths -notcontains $_ })
+  if ($unplannedDirty.Count -gt 0) {
+    throw "control worktree 存在计划外工作区修改：$($unplannedDirty -join ', ')。已停止以避免覆盖现有修改：$Destination"
+  }
+  Write-Host "    [resume] 恢复活动 issue #$issue 的计划内 fixer 修改：$($unownedDirty -join ', ')" -ForegroundColor Yellow
 }
 
 function Ensure-QaSnapshot([string]$SourceRepo, [string]$Destination, [string]$Base) {

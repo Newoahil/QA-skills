@@ -126,6 +126,17 @@ test('scheduler launcher ignores Guardian-owned state when checking control work
   assert.match(controlFunction, /unownedDirty/);
 });
 
+test('scheduler launcher resumes a dirty fix branch only when every product path is in the active plan', () => {
+  const text = readFileSync('tools/guardian/scheduler-start.ps1', 'utf8');
+  const controlFunction = text.slice(text.indexOf('function Ensure-ControlWorktree'), text.indexOf('function Ensure-QaSnapshot'));
+  assert.match(controlFunction, /fix\/issue-/);
+  assert.match(controlFunction, /affected_files/);
+  assert.match(controlFunction, /activePlanPaths/);
+  assert.match(controlFunction, /unplannedDirty/);
+  assert.match(controlFunction, /恢复活动 issue/);
+  assert.match(controlFunction, /control worktree 存在计划外工作区修改/);
+});
+
 test('scheduler DryRun fails before first-run binding prompt or write', () => {
   const text = readFileSync('tools/guardian/scheduler-start.ps1', 'utf8');
   assert.match(text, /if \(-not \$Dashboard -and \$DryRun -and -not \$binding\)/);
