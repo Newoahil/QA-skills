@@ -2,6 +2,7 @@
 
 import path from 'node:path';
 import { createHash } from 'node:crypto';
+import { existsSync, readFileSync } from 'node:fs';
 
 import { BUILTIN_PIPELINE_MANIFEST } from './pipeline.manifest.mjs';
 import { STATES } from './state.mjs';
@@ -9,21 +10,50 @@ import { readArtifactPair, writeArtifact, writeMarkdownArtifact } from './artifa
 import { runFixerSession } from './fixer-session-runner.mjs';
 import { runQaSession } from './qa-session-runner.mjs';
 import { ACTORS, EFFECTS } from './actor-routing.mjs';
+import { githubIssueToTaskRef } from './task-ref.mjs';
 
 const STAGE_KEYS = Object.freeze(['id', 'agent', 'runner', 'inputArtifacts', 'outputArtifacts', 'stateTransition', 'retryPolicy', 'producesEffects', 'extensionPoint']);
+const PIPELINE_MANIFEST_KEYS = Object.freeze(['stages']);
 const EXTENSION_POINTS = Object.freeze(['before-fixer', 'after-qa']);
-const RUNNERS = Object.freeze({ runFixerStage, runQaStage, runNotifyStage });
+export const RUNNERS = Object.freeze({ runFixerStage, runQaStage, runNotifyStage });
 
 export function loadPipelineManifest(manifest = BUILTIN_PIPELINE_MANIFEST, runners = RUNNERS) {
   if (!Array.isArray(manifest)) throw new Error('pipeline manifest must be an array');
   const ids = new Set();
-  return Object.freeze(manifest.map((stage) => normalizeStage(stage, ids, runners)));
+  return orderStages(manifest.map((stage, index) => normalizeStage(stage, ids, runners, index)));
 }
 
-export async function runPipeline({ stages = loadPipelineManifest(), context }) {
+export function loadRuntimePipelineManifest({ repoDir, projectManifest, runners = RUNNERS, readFile = readFileSync, exists = existsSync } = {}) {
+  const manifest = projectManifest ?? readProjectPipelineManifest(repoDir, readFile, exists);
+  if (manifest) validateProjectPipelineManifest(manifest);
+  return loadPipelineManifest(manifest ? [...BUILTIN_PIPELINE_MANIFEST, ...manifest.stages] : BUILTIN_PIPELINE_MANIFEST, runners);
+}
+
+export function loadRuntimeStageRunners({ registeredRunners = Object.freeze({}) } = {}) {
+  return Object.freeze({ ...RUNNERS, ...registeredRunners });
+}
+
+function readProjectPipelineManifest(repoDir, readFile, exists) {
+  if (!repoDir) return null;
+  const manifestPath = path.join(repoDir, '.qa', 'guardian', 'pipeline.manifest.json');
+  if (!exists(manifestPath)) return null;
+  return JSON.parse(readFile(manifestPath, 'utf8'));
+}
+
+function validateProjectPipelineManifest(manifest) {
+  if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) throw new Error('pipeline manifest file must be an object');
+  for (const key of Object.keys(manifest)) {
+    if (!PIPELINE_MANIFEST_KEYS.includes(key)) throw new Error(`unknown pipeline manifest key: ${key}`);
+  }
+  if (!Array.isArray(manifest.stages)) throw new Error('pipeline manifest file stages must be an array');
+}
+
+export async function runPipeline({ stages = loadPipelineManifest(), context, runners = RUNNERS }) {
   const state = { completion: null, qaVerdict: null };
   for (const stage of stages) {
-    const result = await RUNNERS[stage.runner]({ ...context, pipeline: state, stage });
+    const runner = runners[stage.runner];
+    if (!runner) throw new Error(`unknown stage runner: ${stage.runner}`);
+    const result = await runner({ ...context, pipeline: state, stage });
     if (result?.completion) state.completion = result.completion;
     if (result?.qaVerdict) state.qaVerdict = result.qaVerdict;
     if (result?.stop) return Object.freeze({ ...state, stopped: true, stage: stage.id, status: result.status });
@@ -131,9 +161,12 @@ export async function runNotifyStage(context) {
     return { stop: false, status: 'skipped' };
   }
   const qaVerdict = context.pipeline.qaVerdict ?? null;
+  const effectKey = `notify:${context.issue}:after-qa:${qaVerdict?.report_hash ?? 'no-verdict'}`;
   const result = context.effectSink.emit({
     actor: ACTORS.SUPERVISOR,
     kind: EFFECTS.FACT_WEBHOOK,
+    ref: context.taskRef ?? githubIssueToTaskRef(context.issue),
+    idempotencyKey: effectKey,
     payload: {
       url: settings.webhookUrl,
       body: {
@@ -161,7 +194,7 @@ export function stageRunnerContext(values) {
   });
 }
 
-function normalizeStage(stage, ids, runners) {
+function normalizeStage(stage, ids, runners, index) {
   assertKnownKeys(stage, STAGE_KEYS, 'stage');
   const id = cleanString(stage.id, 'stage id');
   if (ids.has(id)) throw new Error(`duplicate stage id: ${id}`);
@@ -171,7 +204,18 @@ function normalizeStage(stage, ids, runners) {
   if (!EXTENSION_POINTS.includes(stage.extensionPoint)) throw new Error(`unknown extension point: ${String(stage.extensionPoint)}`);
   validateTransition(stage.stateTransition);
   validateRetryPolicy(stage.retryPolicy);
-  return Object.freeze({ ...stage, id, runner });
+  return Object.freeze({ ...stage, id, runner, manifestOrder: index });
+}
+
+function orderStages(stages) {
+  const byId = new Map(stages.map((stage) => [stage.id, stage]));
+  if (!byId.has('fixer') || !byId.has('qa')) return Object.freeze(stages);
+  const builtInIds = new Set(BUILTIN_PIPELINE_MANIFEST.map((stage) => stage.id));
+  const extensionStages = stages.filter((stage) => !builtInIds.has(stage.id));
+  const beforeFixer = extensionStages.filter((stage) => stage.extensionPoint === 'before-fixer');
+  const afterQa = extensionStages.filter((stage) => stage.extensionPoint === 'after-qa');
+  const trailingBuiltIns = stages.filter((stage) => builtInIds.has(stage.id) && stage.id !== 'fixer' && stage.id !== 'qa');
+  return Object.freeze([...beforeFixer, byId.get('fixer'), byId.get('qa'), ...afterQa, ...trailingBuiltIns]);
 }
 
 function validateTransition(transition) {

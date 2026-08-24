@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { BUILTIN_PIPELINE_MANIFEST } from '../../tools/guardian/pipeline.manifest.mjs';
-import { loadPipelineManifest, runPipeline, stageRunnerContext } from '../../tools/guardian/stage-runner.mjs';
+import { loadPipelineManifest, loadRuntimePipelineManifest, runPipeline, stageRunnerContext } from '../../tools/guardian/stage-runner.mjs';
 import { STATES } from '../../tools/guardian/state.mjs';
 
 test('loadPipelineManifest preserves built-in fixer then qa order', () => {
@@ -10,6 +10,76 @@ test('loadPipelineManifest preserves built-in fixer then qa order', () => {
 
   assert.deepEqual(stages.map((stage) => stage.id), ['fixer', 'qa', 'notify']);
   assert.equal(Object.isFrozen(stages), true);
+});
+
+test('loadPipelineManifest splices extension-point stages around built-ins deterministically', () => {
+  const customRunners = {
+    runFixerStage: async () => ({}),
+    runQaStage: async () => ({}),
+    runNotifyStage: async () => ({}),
+    runAuditStage: async () => ({}),
+    runPrefetchStage: async () => ({}),
+  };
+  const stages = loadPipelineManifest([
+    BUILTIN_PIPELINE_MANIFEST[0],
+    { ...BUILTIN_PIPELINE_MANIFEST[1] },
+    { ...BUILTIN_PIPELINE_MANIFEST[2] },
+    { ...BUILTIN_PIPELINE_MANIFEST[1], id: 'audit', runner: 'runAuditStage', extensionPoint: 'after-qa' },
+    { ...BUILTIN_PIPELINE_MANIFEST[0], id: 'prefetch', runner: 'runPrefetchStage', extensionPoint: 'before-fixer' },
+  ], customRunners);
+
+  assert.deepEqual(stages.map((stage) => stage.id), ['prefetch', 'fixer', 'qa', 'audit', 'notify']);
+});
+
+test('loadRuntimePipelineManifest merges project stages into built-in runtime pipeline', () => {
+  const customRunners = {
+    runFixerStage: async () => ({}),
+    runQaStage: async () => ({}),
+    runNotifyStage: async () => ({}),
+    runAuditStage: async () => ({}),
+  };
+  const projectManifest = {
+    stages: [
+      { ...BUILTIN_PIPELINE_MANIFEST[1], id: 'project-audit', runner: 'runAuditStage', extensionPoint: 'after-qa' },
+    ],
+  };
+
+  const stages = loadRuntimePipelineManifest({ repoDir: 'D:/repo', projectManifest, runners: customRunners });
+
+  assert.deepEqual(stages.map((stage) => stage.id), ['fixer', 'qa', 'project-audit', 'notify']);
+});
+
+test('loadRuntimeStageRunners exposes explicit project runner registration seam', async () => {
+  const { loadRuntimeStageRunners } = await import('../../tools/guardian/stage-runner.mjs');
+  const runners = loadRuntimeStageRunners({ registeredRunners: { runAuditStage: async () => ({ status: 'ok' }) } });
+  const stages = loadRuntimePipelineManifest({
+    projectManifest: { stages: [{ ...BUILTIN_PIPELINE_MANIFEST[1], id: 'project-audit', runner: 'runAuditStage', extensionPoint: 'after-qa' }] },
+    runners,
+  });
+
+  assert.equal(typeof runners.runAuditStage, 'function');
+  assert.deepEqual(stages.map((stage) => stage.id), ['fixer', 'qa', 'project-audit', 'notify']);
+});
+
+test('loadRuntimePipelineManifest rejects malformed project manifest shape fail-closed', () => {
+  assert.throws(() => loadRuntimePipelineManifest({ projectManifest: { stages: [], extra: true } }), /unknown pipeline manifest key/);
+  assert.throws(() => loadRuntimePipelineManifest({ projectManifest: {} }), /stages must be an array/);
+});
+
+test('runPipeline dispatches custom runners from caller registry', async () => {
+  const calls = [];
+  const runners = {
+    runCustomStage: async ({ stage }) => {
+      calls.push(stage.id);
+      return { stop: false, status: 'ok' };
+    },
+  };
+  const stages = loadPipelineManifest([{ ...BUILTIN_PIPELINE_MANIFEST[0], id: 'custom', runner: 'runCustomStage' }], runners);
+
+  const result = await runPipeline({ stages, context: {}, runners });
+
+  assert.equal(result.stopped, false);
+  assert.deepEqual(calls, ['custom']);
 });
 
 test('loadPipelineManifest rejects malformed stages', () => {
@@ -57,6 +127,8 @@ test('runPipeline notify stage emits a single fact_webhook effect when enabled',
   assert.equal(result.stopped, false);
   assert.equal(effects.length, 1);
   assert.equal(effects[0].kind, 'fact_webhook');
+  assert.deepEqual(effects[0].ref, { source: 'github', taskId: '42', displayId: '#42' });
+  assert.match(effects[0].idempotencyKey, /^notify:42:after-qa:sha256:/);
   assert.deepEqual(effects[0].payload.body, {
     source: 'qa-guardian',
     stage: 'after-qa',
@@ -64,6 +136,41 @@ test('runPipeline notify stage emits a single fact_webhook effect when enabled',
     status: 'PASS',
     report_hash: result.qaVerdict.report_hash,
   });
+});
+
+test('runPipeline notify stage leaves durable state schema unchanged', async () => {
+  const effects = [];
+  let state = { issue: 42, state: STATES.FIXING, branch: 'fix/issue-42' };
+  const baseContext = () => stageRunnerContext({
+    client: {},
+    issue: 42,
+    repoDir: 'D:/repo',
+    guardianDir: 'D:/repo/.qa/guardian',
+    command: null,
+    config: {},
+    investigationMode: 'enforced',
+    fallbackModels: [],
+    signal: null,
+    issueTitle: 'Fix the thing',
+    notifyStage: { enabled: true, webhookUrl: 'https://hook.test/guardian' },
+    effectSink: { emit: (descriptor) => { effects.push(descriptor.idempotencyKey); return { ok: true, value: undefined }; } },
+    supervisor: { prepareFixBranch: () => ({ status: 0, stdout: '', stderr: '' }) },
+    logger: { info: () => {}, warn: () => {} },
+    readState: () => state,
+    writeState: (_guardianDir, next) => { state = next; },
+    readArtifactPair: () => ({ plan: {} }),
+    writeMarkdownArtifact: () => {},
+    writeArtifact: () => {},
+    resolveSessionDeadlineMs: () => 100,
+    resolveModelForRole: () => undefined,
+    runFixerSession: async (request) => ({ status: 'ok', state: request.state, completion: { changedFiles: [], summary: null } }),
+    runQaSession: async (request) => ({ status: 'ok', state: request.state, verdict: 'PASS', report: 'Overall Status: PASS' }),
+  });
+
+  assert.equal((await runPipeline({ stages: loadPipelineManifest(), context: baseContext() })).stopped, false);
+
+  assert.equal(effects.length, 1);
+  assert.deepEqual(Object.keys(state).sort(), ['branch', 'issue', 'state']);
 });
 
 test('runPipeline preserves fixer to QA state and artifact write order', async () => {
