@@ -170,6 +170,22 @@ function Invoke-Git([string]$Repo, [string[]]$GitArgs, [switch]$AllowFailure) {
   return [ordered]@{ code = $code; output = ($out -join "`n").Trim() }
 }
 
+function Invoke-GhPreflight([string[]]$GhArgs, [int]$MaxAttempts = 3) {
+  $last = [ordered]@{ code = -1; output = '' }
+  for ($attempt = 1; $attempt -le $MaxAttempts; $attempt += 1) {
+    $previousErrorActionPreference = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+      $out = & gh @GhArgs 2>&1
+      $code = $LASTEXITCODE
+    } finally { $ErrorActionPreference = $previousErrorActionPreference }
+    $last = [ordered]@{ code = $code; output = ($out -join "`n").Trim(); attempt = $attempt }
+    if ($code -eq 0) { return $last }
+    if ($attempt -lt $MaxAttempts) { Start-Sleep -Seconds $attempt }
+  }
+  return $last
+}
+
 function Normalize-GitHubRepo([string]$Value) {
   if (-not $Value) { return "" }
   $v = $Value.Trim().Trim('"')
@@ -462,20 +478,14 @@ if (-not $targetGithub) {
 if (-not $Dashboard) {
   $gh = Get-Command gh -ErrorAction SilentlyContinue
   if (-not $gh) { throw "未找到 gh，请先安装 GitHub CLI 并执行 gh auth login。" }
-  $previousErrorActionPreference = $ErrorActionPreference
-  $ErrorActionPreference = "Continue"
-  try {
-    & gh auth status *> $null
-    $ghAuthExitCode = $LASTEXITCODE
-  } finally { $ErrorActionPreference = $previousErrorActionPreference }
-  if ($ghAuthExitCode -ne 0) { throw "gh 尚未登录，请先执行 gh auth login。" }
-  $previousErrorActionPreference = $ErrorActionPreference
-  $ErrorActionPreference = "Continue"
-  try {
-    & gh repo view $targetGithub *> $null
-    $ghRepoExitCode = $LASTEXITCODE
-  } finally { $ErrorActionPreference = $previousErrorActionPreference }
-  if ($ghRepoExitCode -ne 0) { throw "无法访问 GitHub 仓库 $targetGithub，请检查 repo 名称和 gh 权限。" }
+  $ghAuth = Invoke-GhPreflight @('api', 'user', '--jq', '.login')
+  if ($ghAuth.code -ne 0) {
+    throw "GitHub 认证预检失败（尝试 $($ghAuth.attempt)/3）：$($ghAuth.output)。请先运行 gh auth status 查看真实原因；仅在确认未登录时执行 gh auth login。"
+  }
+  $ghRepo = Invoke-GhPreflight @('repo', 'view', $targetGithub)
+  if ($ghRepo.code -ne 0) {
+    throw "GitHub 仓库访问预检失败（尝试 $($ghRepo.attempt)/3，repo=$targetGithub）：$($ghRepo.output)。请检查网络、仓库名和 token 权限。"
+  }
 }
 
 if (-not $Dashboard -and -not $DryRun -and -not $binding) {
