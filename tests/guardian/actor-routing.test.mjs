@@ -43,7 +43,8 @@ test('merge and close are human-only for EVERY actor (never automated)', () => {
       assert.equal(actorMayPerform(a, e), false, `${a} must never ${e}`);
     }
   }
-  assert.deepEqual(HUMAN_ONLY_EFFECTS, [EFFECTS.MERGE, EFFECTS.CLOSE]);
+  // B3 (decision-e8c0d364): ACCEPT_RESULT joins the human-only set alongside MERGE/CLOSE.
+  assert.deepEqual(HUMAN_ONLY_EFFECTS, [EFFECTS.MERGE, EFFECTS.CLOSE, EFFECTS.ACCEPT_RESULT]);
 });
 
 test('assertActorMayPerform throws on out-of-role effect and on unknown actor', () => {
@@ -71,4 +72,30 @@ test('isKnownActor / allowedEffects basics', () => {
   assert.equal(isKnownActor('nope'), false);
   assert.equal(allowedEffects('nope').length, 0);
   assert.ok(allowedEffects(ACTORS.HUMAN_AUTHORIZER).includes(EFFECTS.AUTHORIZE));
+});
+
+// --- B3 (decision-e8c0d364): pre-registered PM control-plane effects ---
+
+test('B3: bot_executor may add evidence, propose acceptance, and update result status', () => {
+  assert.equal(actorMayPerform(ACTORS.BOT_EXECUTOR, EFFECTS.EVIDENCE_ADD), true);
+  assert.equal(actorMayPerform(ACTORS.BOT_EXECUTOR, EFFECTS.ACCEPTANCE_PROPOSE), true);
+  assert.equal(actorMayPerform(ACTORS.BOT_EXECUTOR, EFFECTS.RESULT_STATUS_UPDATE), true);
+  assert.doesNotThrow(() => assertActorMayPerform(ACTORS.BOT_EXECUTOR, EFFECTS.EVIDENCE_ADD));
+});
+
+test('B3: accept_result is human-only �� NO actor may perform it (like merge/close)', () => {
+  assert.equal(HUMAN_ONLY_EFFECTS.includes(EFFECTS.ACCEPT_RESULT), true);
+  for (const actor of Object.values(ACTORS)) {
+    assert.equal(actorMayPerform(actor, EFFECTS.ACCEPT_RESULT), false, `${actor} must not accept a Result`);
+    assert.throws(() => assertActorMayPerform(actor, EFFECTS.ACCEPT_RESULT), /may not perform effect/);
+  }
+});
+
+test('B3: acceptance_propose is an agent proposal, never authorization', () => {
+  // A proposal must not be confused with the human authorize effect.
+  assert.notEqual(EFFECTS.ACCEPTANCE_PROPOSE, EFFECTS.AUTHORIZE);
+  assert.equal(actorMayPerform(ACTORS.HUMAN_AUTHORIZER, EFFECTS.ACCEPTANCE_PROPOSE), false);
+  // supervisor/fact-writer do not silently gain PM write effects.
+  assert.equal(actorMayPerform(ACTORS.SUPERVISOR, EFFECTS.EVIDENCE_ADD), false);
+  assert.equal(actorMayPerform(ACTORS.BOT_FACT_WRITER, EFFECTS.RESULT_STATUS_UPDATE), false);
 });

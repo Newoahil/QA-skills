@@ -34,6 +34,13 @@ export const EFFECTS = Object.freeze({
   AUTHORIZE: 'authorize',          // consume a /guardian command → state transition
   MERGE: 'merge',                  // gh pr merge  — HUMAN ONLY, never automated
   CLOSE: 'close',                  // gh issue close — HUMAN ONLY, never automated
+  // B3 (PM-adapter prep, decision-e8c0d364): PM control-plane effects, pre-registered so a future
+  // PM EffectSink routes through the SAME fail-closed authorization instead of bypassing it as
+  // "just an MCP call". No GitHub sink handles these yet; the matrix and its guarantees exist now.
+  EVIDENCE_ADD: 'evidence_add',            // pm_add_evidence — attach evidence to a Result
+  ACCEPTANCE_PROPOSE: 'acceptance_propose',// pm_submit_acceptance — per-criterion PROPOSAL, never acceptance
+  RESULT_STATUS_UPDATE: 'result_status_update', // pm_update_status(in_progress|in_review|blocked)
+  ACCEPT_RESULT: 'accept_result',          // human accepts a Result — HUMAN ONLY, never automated
 });
 
 // Capability matrix: which effects each actor MAY perform. Anything not listed is forbidden.
@@ -41,7 +48,12 @@ export const EFFECTS = Object.freeze({
 const CAPABILITIES = Object.freeze({
   [ACTORS.HUMAN_AUTHORIZER]: Object.freeze([EFFECTS.AUTHORIZE]),
   [ACTORS.BOT_FACT_WRITER]: Object.freeze([EFFECTS.READ, EFFECTS.FACT_COMMENT]),
-  [ACTORS.BOT_EXECUTOR]: Object.freeze([EFFECTS.READ, EFFECTS.CODE_WRITE]),
+  // B3: the executor (Fixer role) may, on the PM control plane, add evidence, propose per-criterion
+  // outcomes, and update the Result's workflow status — but NEVER accept a Result (human-only below).
+  [ACTORS.BOT_EXECUTOR]: Object.freeze([
+    EFFECTS.READ, EFFECTS.CODE_WRITE,
+    EFFECTS.EVIDENCE_ADD, EFFECTS.ACCEPTANCE_PROPOSE, EFFECTS.RESULT_STATUS_UPDATE,
+  ]),
   [ACTORS.SUPERVISOR]: Object.freeze([
     EFFECTS.READ, EFFECTS.LABEL, EFFECTS.FACT_COMMENT, EFFECTS.FACT_WEBHOOK, EFFECTS.PR_CREATE,
   ]),
@@ -49,7 +61,8 @@ const CAPABILITIES = Object.freeze({
 
 // Effects no actor may ever perform automatically (human-only, defense in depth alongside the
 // mechanism-level `gh pr merge` / `gh issue close` deny in the agent permission frontmatter).
-export const HUMAN_ONLY_EFFECTS = Object.freeze([EFFECTS.MERGE, EFFECTS.CLOSE]);
+// B3: ACCEPT_RESULT joins MERGE/CLOSE — final PM acceptance is human-only, mirroring "human merge".
+export const HUMAN_ONLY_EFFECTS = Object.freeze([EFFECTS.MERGE, EFFECTS.CLOSE, EFFECTS.ACCEPT_RESULT]);
 
 export function isKnownActor(actor) {
   return Object.values(ACTORS).includes(actor);
