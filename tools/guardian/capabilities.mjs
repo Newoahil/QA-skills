@@ -2,8 +2,10 @@
 // This does not claim MCP availability from prompt prose. It records explicit configured/available
 // flags and safe local capabilities; integrations can inject actual MCP probes later.
 
+import { BUILTIN_AGENT_REGISTRY } from './agent-registry.mjs';
+
 export const CAPABILITY_NAMES = Object.freeze(['codegraph', 'context7', 'local_runtime', 'git_history', 'plan_critic', 'sybermem']);
-export const GUARDIAN_AGENT_ROLES = Object.freeze(['guardian-code', 'guardian-business', 'guardian-runtime', 'guardian-docs', 'guardian-history', 'guardian-plan-critic']);
+export const GUARDIAN_AGENT_ROLES = BUILTIN_AGENT_REGISTRY.roles;
 
 function configValue(config, name) {
   return config?.capabilities?.[name] ?? config?.agents?.[name] ?? undefined;

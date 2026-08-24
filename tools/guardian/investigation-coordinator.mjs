@@ -4,8 +4,9 @@
 
 import { isDecisionReady, rankHypotheses, validateDossier } from './evidence.mjs';
 import { agentEnabled, availableInvestigationTools } from './capabilities.mjs';
+import { BUILTIN_AGENT_REGISTRY, rolesForMode } from './agent-registry.mjs';
 
-export const SPECIALIST_ROLES = Object.freeze(['guardian-code', 'guardian-business', 'guardian-runtime', 'guardian-docs', 'guardian-history', 'guardian-plan-critic']);
+export const SPECIALIST_ROLES = BUILTIN_AGENT_REGISTRY.roles;
 
 // Resolve the model for a given Guardian role from config, portably. The repository never hardcodes
 // a provider/model: `.qa/guardian/config.json` may set `models.<role>` (e.g. models["guardian-code"]),
@@ -20,13 +21,11 @@ export function resolveModelForRole(config, role) {
 }
 
 export function selectSpecialists({ issueClass, complexity = 'complex', capabilities, config = {} }) {
-  const roles = complexity === 'simple'
-    ? ['guardian-code', 'guardian-runtime']
-    : ['guardian-code', 'guardian-business', 'guardian-runtime'];
-  if (complexity !== 'simple' && capabilities?.context7?.available) roles.push('guardian-docs');
-  if (complexity !== 'simple' && capabilities?.git_history?.available) roles.push('guardian-history');
-  if (complexity !== 'simple' && capabilities?.plan_critic?.available) roles.push('guardian-plan-critic');
-  return roles.filter((role) => SPECIALIST_ROLES.includes(role) && agentEnabled(config, role));
+  return rolesForMode(BUILTIN_AGENT_REGISTRY, {
+    complexity,
+    capabilities,
+    enabled: (role) => agentEnabled(config, role),
+  });
 }
 
 function formatMemoryContext(memoryContext) {
