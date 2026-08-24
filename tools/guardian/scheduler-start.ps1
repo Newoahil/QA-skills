@@ -229,6 +229,10 @@ function Write-JsonUtf8([string]$Path, $Value) {
   [System.IO.File]::WriteAllText($Path, (($Value | ConvertTo-Json -Depth 12) + "`n"), (New-Object System.Text.UTF8Encoding($false)))
 }
 
+function Read-JsonUtf8([string]$Path) {
+  return [System.IO.File]::ReadAllText($Path, (New-Object System.Text.UTF8Encoding($false))) | ConvertFrom-Json
+}
+
 function Assert-PersistedBinding($Binding, [string]$CanonicalTarget, [string]$GuardianRepoPath) {
   if (-not $Binding) { throw "未找到启动绑定，请先交互式运行 scheduler-start.ps1 完成一次模式选择。" }
   if ([int]$Binding.version -ne 1) { throw "启动绑定版本无效，请删除本地 scheduler.config.json 后重新交互式启动。" }
@@ -354,11 +358,11 @@ function Ensure-ControlWorktree([string]$SourceRepo, [string]$Destination, [stri
   if (-not (Test-Path -LiteralPath $statePath) -or -not (Test-Path -LiteralPath $planPath)) {
     throw "control worktree 存在计划外工作区修改：活动 issue #$issue 缺少权威 state/plan，已停止：$Destination"
   }
-  $state = Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json
+  $state = Read-JsonUtf8 $statePath
   if (@('GATE_1_WAIT', 'FIXING', 'VERIFYING', 'GATE_2_WAIT') -notcontains [string]$state.state) {
     throw "control worktree 存在计划外工作区修改：issue #$issue 当前状态 $($state.state) 不允许恢复 dirty fixer，已停止：$Destination"
   }
-  $plan = Get-Content -LiteralPath $planPath -Raw | ConvertFrom-Json
+  $plan = Read-JsonUtf8 $planPath
   $activePlanPaths = @($plan.affected_files | ForEach-Object { if ($_ -is [string]) { $_.Trim().Replace('\', '/') } } | Where-Object { $_ })
   $unplannedDirty = @($unownedDirty | Where-Object { $activePlanPaths -notcontains $_ })
   if ($unplannedDirty.Count -gt 0) {

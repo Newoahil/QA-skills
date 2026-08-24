@@ -133,6 +133,7 @@ test('scheduler launcher resumes a dirty fix branch only when every product path
   assert.match(controlFunction, /affected_files/);
   assert.match(controlFunction, /activePlanPaths/);
   assert.match(controlFunction, /unplannedDirty/);
+  assert.match(controlFunction, /Read-JsonUtf8/);
   assert.match(controlFunction, /恢复活动 issue/);
   assert.match(controlFunction, /control worktree 存在计划外工作区修改/);
 });
