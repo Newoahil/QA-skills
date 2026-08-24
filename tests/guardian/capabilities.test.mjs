@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { agentEnabled, availableInvestigationTools, disableUnavailableGuardianAgents, discoverCapabilities, disabledSkills, unavailableGuardianAgents } from '../../tools/guardian/capabilities.mjs';
+import { loadAgentRegistry } from '../../tools/guardian/agent-registry.mjs';
 
 test('capabilities fail closed when MCP flags are not enabled', () => {
   const caps = discoverCapabilities({ env: {}, probes: { codegraph: { available: true }, context7: { available: true } } });
@@ -56,4 +57,23 @@ test('available OpenCode agents disable missing optional Guardian specialists', 
   assert.equal(agentEnabled(filtered, 'guardian-history'), false);
   assert.equal(agentEnabled(filtered, 'guardian-plan-critic'), false);
   assert.equal(agentEnabled(filtered, 'guardian-code'), true);
+});
+
+test('available OpenCode agent filtering uses runtime project registry roles', () => {
+  const registry = loadAgentRegistry(undefined, { projectManifest: { agents: [
+    { role: 'guardian-custom', modes: ['complex'], requires_capability: null, enabled_default: true },
+  ] } });
+  const available = ['guardian-code', 'guardian-business', 'guardian-runtime'];
+
+  assert.equal(unavailableGuardianAgents({}, available, registry).includes('guardian-custom'), true);
+  assert.equal(agentEnabled(disableUnavailableGuardianAgents({}, available, registry), 'guardian-custom'), false);
+});
+
+test('empty successful OpenCode agent probe disables runtime registry roles fail-closed', () => {
+  const registry = loadAgentRegistry(undefined, { projectManifest: { agents: [
+    { role: 'guardian-custom', modes: ['complex'], requires_capability: null, enabled_default: true },
+  ] } });
+
+  assert.equal(unavailableGuardianAgents({}, [], registry).includes('guardian-custom'), true);
+  assert.equal(agentEnabled(disableUnavailableGuardianAgents({}, [], registry), 'guardian-custom'), false);
 });

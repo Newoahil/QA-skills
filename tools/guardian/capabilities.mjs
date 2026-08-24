@@ -68,14 +68,13 @@ export function availableInvestigationTools(capabilities, config = {}) {
   return tools.filter((tool) => !tool.startsWith('guardian-') || agentEnabled(config, tool));
 }
 
-export function unavailableGuardianAgents(config = {}, availableAgents = []) {
+export function unavailableGuardianAgents(config = {}, availableAgents = [], registry = BUILTIN_AGENT_REGISTRY) {
   const available = new Set(Array.isArray(availableAgents) ? availableAgents : []);
-  if (available.size === 0) return [];
-  return GUARDIAN_AGENT_ROLES.filter((role) => agentEnabled(config, role) && !available.has(role));
+  return registry.roles.filter((role) => agentEnabled(config, role) && !available.has(role));
 }
 
-export function disableUnavailableGuardianAgents(config = {}, availableAgents = []) {
-  const unavailable = unavailableGuardianAgents(config, availableAgents);
+export function disableUnavailableGuardianAgents(config = {}, availableAgents = [], registry = BUILTIN_AGENT_REGISTRY) {
+  const unavailable = unavailableGuardianAgents(config, availableAgents, registry);
   if (unavailable.length === 0) return config;
   const agents = { ...(config.agents ?? {}) };
   for (const role of unavailable) {
