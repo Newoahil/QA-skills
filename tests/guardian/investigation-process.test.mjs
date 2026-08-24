@@ -184,6 +184,35 @@ test('processSpecialistRunner uses the SDK client to create and prompt a session
   assert.equal(result.specialist, 'guardian-code');
 });
 
+test('processSpecialistRunner requires Chinese human-facing dossier fields', async () => {
+  // Given: an injected specialist client that records the prompt text.
+  const prompted = [];
+  const client = {
+    createSession: async () => 'ses_spec_zh',
+    prompt: async ({ parts }) => {
+      prompted.push(parts[0].text);
+      return { kind: 'ok', result: { text: '{"specialist":"guardian-code","hypotheses":[],"evidence":[],"unresolved_facts":["需要确认期望文案"],"acceptance_criteria":["评论内容可读"]}' } };
+    },
+    getSession: async () => ({ kind: 'ok', session: { id: 'ses_spec_zh', agent: 'guardian-code' } }),
+  };
+
+  // When: a specialist runs through the SDK path.
+  await processSpecialistRunner({
+    role: 'guardian-code',
+    issue: 263,
+    issueDataPath: 'D:/repo/.qa/guardian/263/issue-data.json',
+    repoDir: 'D:/repo',
+    dossierPath: 'D:/repo/.qa/guardian/263/dossier.json',
+    opencodeClient: client,
+  });
+
+  // Then: human-facing dossier strings are requested in Chinese before Gate1 rendering.
+  assert.equal(prompted.length, 1);
+  assert.match(prompted[0], /中文/);
+  assert.match(prompted[0], /unresolved_facts/);
+  assert.match(prompted[0], /acceptance_criteria/);
+});
+
 test('processSpecialistRunner uses QA runtime path while preserving control state path metadata', async () => {
   const created = [];
   const client = {
