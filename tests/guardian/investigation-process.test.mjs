@@ -6,7 +6,7 @@ import path from 'node:path';
 import { PassThrough } from 'node:stream';
 import test from 'node:test';
 
-import { createProgressSink, guardianDirFromDossierPath, issueProgressDir, processSpecialistRunner, runAgentJson } from '../../tools/guardian/investigation-process.mjs';
+import { createProgressSink, guardianDirFromDossierPath, issueProgressDir, processPlanBuilder, processSpecialistRunner, runAgentJson } from '../../tools/guardian/investigation-process.mjs';
 
 function fakeChild() {
   const child = new EventEmitter();
@@ -452,7 +452,7 @@ test('processPlanBuilder uses the SDK client instead of spawning an attach proce
     createSession: async ({ title, agent, directory }) => { created.push({ title, agent, directory }); return 'ses_plan'; },
     prompt: async ({ sessionId, agent, parts, format }) => {
       prompted.push({ sessionId, agent, parts, format });
-      return { kind: 'ok', result: { text: '{"spec_goal":"修复颜色","implementation_summary":"修改颜色 token","primary_files":["a"],"acceptance_summary":["颜色正确"],"blocking_questions":[],"root_cause":"color","affected_files":["a"],"non_goals":["b"],"test_plan":["t"],"acceptance_criteria":["c"],"rollback_plan":"r","evidence_ids":[],"risk":"LOW"}' } };
+      return { kind: 'ok', result: { text: '{"spec_goal":"修复颜色","implementation_summary":"修改颜色 token","primary_files":["a"],"acceptance_summary":["颜色正确"],"blocking_questions":[],"root_cause":"color","affected_files":["a"],"non_goals":["b"],"test_plan":["t"],"acceptance_criteria":["c"],"rollback_plan":"r","evidence_ids":[],"risk":"LOW","risk_assessment":{"certain":true,"lowDangerSurfaceOnly":true,"touchedSurfaces":[],"localImpact":true,"diffLines":8,"reproducibleOracle":true,"scopeExpansionRequested":false}}' } };
     },
     abort: async () => {},
     getSession: async () => ({ kind: 'ok', session: { id: 'ses_plan', agent: 'guardian-business' } }),
@@ -475,6 +475,10 @@ test('processPlanBuilder uses the SDK client instead of spawning an attach proce
   assert.equal(prompted[0].agent, 'guardian-business');
   assert.equal(prompted[0].format.type, 'json_schema');
   assert.deepEqual(prompted[0].format.schema.properties.risk.enum, ['LOW', 'HIGH']);
+  assert.equal(prompted[0].format.schema.required.includes('risk_assessment'), true);
+  assert.deepEqual(prompted[0].format.schema.properties.risk_assessment.required, [
+    'certain', 'lowDangerSurfaceOnly', 'touchedSurfaces', 'localImpact', 'diffLines', 'reproducibleOracle', 'scopeExpansionRequested',
+  ]);
   assert.deepEqual(prompted[0].format.schema.properties.evidence_ids.items.enum, ['E1', 'E2']);
   assert.equal(prompted[0].format.schema.properties.primary_files.maxItems, 3);
   assert.equal(prompted[0].format.schema.properties.acceptance_summary.maxItems, 5);
@@ -482,6 +486,7 @@ test('processPlanBuilder uses the SDK client instead of spawning an attach proce
   assert.equal(prompted[0].format.schema.required.includes('spec_goal'), true);
   assert.equal(prompted[0].format.schema.required.includes('implementation_summary'), true);
   assert.equal(result.root_cause, 'color');
+  assert.equal(result.risk, 'LOW');
 });
 
 test('processPlanBuilder requires Chinese plan content for human Gate1 review', async () => {
@@ -491,7 +496,7 @@ test('processPlanBuilder requires Chinese plan content for human Gate1 review', 
     createSession: async () => 'ses_plan_zh',
     prompt: async ({ parts }) => {
       prompted.push(parts[0].text);
-      return { kind: 'ok', result: { text: '{"spec_goal":"修复分类页文案","implementation_summary":"按 issue 预期调整空状态文案","primary_files":["pages/category/index.tsx"],"acceptance_summary":["Gate1 评论可读"],"blocking_questions":["确认页面范围"],"root_cause":"分类页文案预期不明确","affected_files":["pages/category/index.tsx"],"non_goals":["不扩大业务范围"],"test_plan":["人工确认后验证分类页文案"],"acceptance_criteria":["Gate1 评论可读"],"rollback_plan":"还原文案改动","evidence_ids":["E1"],"risk":"HIGH"}' } };
+      return { kind: 'ok', result: { text: '{"spec_goal":"修复分类页文案","implementation_summary":"按 issue 预期调整空状态文案","primary_files":["pages/category/index.tsx"],"acceptance_summary":["Gate1 评论可读"],"blocking_questions":["确认页面范围"],"root_cause":"分类页文案预期不明确","affected_files":["pages/category/index.tsx"],"non_goals":["不扩大业务范围"],"test_plan":["人工确认后验证分类页文案"],"acceptance_criteria":["Gate1 评论可读"],"rollback_plan":"还原文案改动","evidence_ids":["E1"],"risk":"HIGH","risk_assessment":{"certain":false,"lowDangerSurfaceOnly":false,"touchedSurfaces":["core-business-flow"],"localImpact":false,"diffLines":120,"reproducibleOracle":false,"scopeExpansionRequested":false}}' } };
     },
   };
 
@@ -515,6 +520,8 @@ test('processPlanBuilder requires Chinese plan content for human Gate1 review', 
   assert.match(prompted[0], /root_cause/);
   assert.match(prompted[0], /affected_files/);
   assert.match(prompted[0], /unresolved_facts|未确定事实/);
+  assert.match(prompted[0], /LOW\|HIGH/);
+  assert.match(prompted[0], /risk_assessment/);
 });
 
 test('processPlanBuilder gives SDK plan builder the issue body for spec extraction', async () => {
@@ -523,7 +530,7 @@ test('processPlanBuilder gives SDK plan builder the issue body for spec extracti
     createSession: async () => 'ses_plan_issue_snapshot',
     prompt: async ({ parts }) => {
       prompted.push(parts[0].text);
-      return { kind: 'ok', result: { text: '{"spec_goal":"修复支付宝小程序分类列表空状态和引导文案","implementation_summary":"有商品时不显示「点击继续浏览」；无商品时显示「该分类暂无商品」。","primary_files":["frontend/apps/alipay-miniapp/src/pages/classifyAgain/index.js"],"acceptance_summary":["有商品分类不出现「点击继续浏览」","无商品分类显示「该分类暂无商品」"],"blocking_questions":[],"root_cause":"分类列表文案与 issue 预期不一致","affected_files":["frontend/apps/alipay-miniapp/src/pages/classifyAgain/index.js"],"non_goals":["不改变分类切换"],"test_plan":["覆盖有商品和无商品分类"],"acceptance_criteria":["文案符合 issue"],"rollback_plan":"还原文案改动","evidence_ids":["E1"],"risk":"HIGH"}' } };
+      return { kind: 'ok', result: { text: '{"spec_goal":"修复支付宝小程序分类列表空状态和引导文案","implementation_summary":"有商品时不显示「点击继续浏览」；无商品时显示「该分类暂无商品」。","primary_files":["frontend/apps/alipay-miniapp/src/pages/classifyAgain/index.js"],"acceptance_summary":["有商品分类不出现「点击继续浏览」","无商品分类显示「该分类暂无商品」"],"blocking_questions":[],"root_cause":"分类列表文案与 issue 预期不一致","affected_files":["frontend/apps/alipay-miniapp/src/pages/classifyAgain/index.js"],"non_goals":["不改变分类切换"],"test_plan":["覆盖有商品和无商品分类"],"acceptance_criteria":["文案符合 issue"],"rollback_plan":"还原文案改动","evidence_ids":["E1"],"risk":"HIGH","risk_assessment":{"certain":false,"lowDangerSurfaceOnly":false,"touchedSurfaces":["core-business-flow"],"localImpact":false,"diffLines":120,"reproducibleOracle":true,"scopeExpansionRequested":false}}' } };
     },
   };
 
@@ -565,6 +572,111 @@ test('processPlanBuilder reports provider errors instead of parsing empty JSON',
   assert.match(failure.message, /plan prompt failed/);
   assert.match(failure.message, /model_cooldown/);
   assert.doesNotMatch(failure.message, /Unexpected end of JSON input/);
+});
+
+test('processPlanBuilder normalizes case-insensitive SDK structured LOW risk and preserves assessment', async () => {
+  const client = {
+    createSession: async () => 'ses_plan_structured_low',
+    prompt: async () => ({
+      kind: 'ok',
+      result: {
+        structured: {
+          spec_goal: '修复颜色',
+          implementation_summary: '修改颜色 token',
+          primary_files: ['a'],
+          acceptance_summary: ['颜色正确'],
+          blocking_questions: [],
+          root_cause: 'color',
+          affected_files: ['a'],
+          non_goals: ['b'],
+          test_plan: ['t'],
+          acceptance_criteria: ['c'],
+          rollback_plan: 'r',
+          evidence_ids: ['E1'],
+          risk: 'low',
+          risk_assessment: {
+            certain: true,
+            lowDangerSurfaceOnly: true,
+            touchedSurfaces: [],
+            localImpact: true,
+            diffLines: 8,
+            reproducibleOracle: true,
+            scopeExpansionRequested: false,
+          },
+        },
+      },
+    }),
+  };
+
+  const result = await processPlanBuilder({
+    issue: 211,
+    repoDir: 'D:/repo',
+    dossier: { evidence: [{ id: 'E1' }] },
+    opencodeClient: client,
+  });
+
+  assert.equal(result.risk, 'LOW');
+  assert.equal(result.risk_prose, undefined);
+  assert.deepEqual(result.risk_assessment, {
+    certain: true,
+    lowDangerSurfaceOnly: true,
+    touchedSurfaces: [],
+    localImpact: true,
+    diffLines: 8,
+    reproducibleOracle: true,
+    scopeExpansionRequested: false,
+  });
+});
+
+test('processPlanBuilder normalizes SDK text risk object to HIGH and preserves original detail in risk_prose', async () => {
+  const client = {
+    createSession: async () => 'ses_plan_text_high',
+    prompt: async () => ({
+      kind: 'ok',
+      result: {
+        text: '{"spec_goal":"修复颜色","implementation_summary":"修改颜色 token","primary_files":["a"],"acceptance_summary":["颜色正确"],"blocking_questions":[],"root_cause":"color","affected_files":["a"],"non_goals":["b"],"test_plan":["t"],"acceptance_criteria":["c"],"rollback_plan":"r","evidence_ids":["E1"],"risk":{"level":"中","items":["需要人工确认"]},"risk_assessment":{"certain":false,"lowDangerSurfaceOnly":false,"touchedSurfaces":["core-business-flow"],"localImpact":false,"diffLines":60,"reproducibleOracle":false,"scopeExpansionRequested":false}}',
+      },
+    }),
+  };
+
+  const result = await processPlanBuilder({
+    issue: 211,
+    repoDir: 'D:/repo',
+    dossier: { evidence: [{ id: 'E1' }] },
+    opencodeClient: client,
+  });
+
+  assert.equal(result.risk, 'HIGH');
+  assert.equal(typeof result.risk_prose, 'string');
+  assert.match(result.risk_prose, /"level":"中"/);
+  assert.match(result.risk_prose, /"items":\["需要人工确认"\]/);
+});
+
+test('processPlanBuilder normalizes child-process fallback risk and defaults ambiguous values to HIGH', async () => {
+  const child = fakeChild();
+  const spawnImpl = () => {
+    queueMicrotask(() => {
+      child.stdout.write(`${JSON.stringify({
+        type: 'text',
+        part: {
+          text: '{"spec_goal":"修复颜色","implementation_summary":"修改颜色 token","primary_files":["a"],"acceptance_summary":["颜色正确"],"blocking_questions":[],"root_cause":"color","affected_files":["a"],"non_goals":["b"],"test_plan":["t"],"acceptance_criteria":["c"],"rollback_plan":"r","evidence_ids":["E1"],"risk":"中","risk_assessment":{"certain":false,"lowDangerSurfaceOnly":false,"touchedSurfaces":[],"localImpact":true,"diffLines":8,"reproducibleOracle":true,"scopeExpansionRequested":false}}',
+        },
+      })}\n`);
+      child.emit('close', 0);
+    });
+    return child;
+  };
+
+  const result = await processPlanBuilder({
+    issue: 211,
+    repoDir: 'D:/repo',
+    dossier: { evidence: [{ id: 'E1' }] },
+    timeoutMs: 1000,
+    spawnImpl,
+  });
+
+  assert.equal(result.risk, 'HIGH');
+  assert.equal(result.risk_prose, '中');
 });
 
 test('runAgentJson reports malformed event lines without treating them as final output', async () => {

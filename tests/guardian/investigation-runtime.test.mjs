@@ -194,3 +194,28 @@ test('prepareInvestigation fails closed without specialist runner', async () => 
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('prepareInvestigation does not persist a structurally invalid plan', async () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'guardian-investigation-'));
+  try {
+    await assert.rejects(() => prepareInvestigation({
+      issue: 263,
+      repoDir: 'D:/repo',
+      guardianDir: root,
+      issueClass: 'bug',
+      complexity: 'simple',
+      capabilities: {},
+      runSpecialist: async ({ role }) => ({
+        specialist: role,
+        hypotheses: [{ id: 'H1', statement: 'root' }],
+        evidence: [{ id: `E-${role}`, kind: 'source_invariant', source: 'src/a.mjs:1', observation: 'root', supports: ['H1'], contradicts: [] }],
+        unresolved_facts: [],
+        acceptance_criteria: [],
+      }),
+      buildPlan: async () => ({ risk: { level: '中' } }),
+    }), /generated plan is structurally invalid/);
+    assert.equal(investigationArtifactsReady(root, 263), false);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});

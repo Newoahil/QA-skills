@@ -70,6 +70,9 @@ export async function prepareInvestigation({ issue, issueData, repoDir, qaRuntim
   }
   const results = settled.map((item) => item.value);
   const synthesis = synthesizeDossier({ issue, issueClass, specialistResults: results, capabilities, memoryContext });
+  if (!synthesis.validation.valid) {
+    throw new Error(`generated dossier is structurally invalid: ${synthesis.validation.errors.join(',')}`);
+  }
   const dossier = { ...synthesis.dossier, investigation_id: investigationId };
   writeArtifact(guardianDir, issue, 'dossier', dossier);
 
@@ -78,6 +81,9 @@ export async function prepareInvestigation({ issue, issueData, repoDir, qaRuntim
   const plan = { ...(await buildPlan({ issue, dossier, hypotheses: synthesis.ranked_hypotheses, repoDir, qaRuntimeDir, memoryContext, signal })), investigation_id: investigationId };
   const planDurationMs = now() - planStartedAt;
   const planResult = validatePlan(plan, dossier);
+  if (!planResult.valid) {
+    throw new Error(`generated plan is structurally invalid: ${planResult.errors.join(',')}`);
+  }
   logger.info('plan.ok', { issue, duration_ms: planDurationMs, valid: planResult.valid });
   writeArtifact(guardianDir, issue, 'plan', plan);
   const investigationCompletedAt = now();
