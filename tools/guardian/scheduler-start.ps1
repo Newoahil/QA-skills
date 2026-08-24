@@ -280,9 +280,17 @@ function Assert-CommandAuthorMatchesGitHubLogin($Authors) {
     return $normalized
   }
   if ($normalized -notcontains $login) {
-    throw "command_authors 未包含当前 gh 登录用户 '$login'。请将其加入 .qa/guardian/config.json 的数组，例如 command_authors: ['$login']；否则所有 /guardian approve/revise/rework 命令都会被安全忽略。"
+    if ($Yes) {
+      throw "command_authors 未包含当前 gh 登录用户 '$login'。请将其加入 .qa/guardian/config.json 的数组，例如 command_authors: ['$login']；否则所有 /guardian approve/revise/rework 命令都会被安全忽略。"
+    }
+    Write-Host "    [warn] 当前 gh 登录用户 '$login' 不在 command_authors [$($normalized -join ', ')] 中。" -ForegroundColor Yellow
+    $answer = Read-Host "    是否将 '$login' 加入可信命令作者并更新当前项目配置？(y/N)"
+    if ($answer -notmatch '^(y|yes|是|确认)$') {
+      throw "已取消：command_authors 未包含当前 gh 登录用户 '$login'。"
+    }
+    $normalized += $login
   }
-  return ,$normalized
+  return $normalized
 }
 
 function Assert-RelativeRuntimeInput([string]$Value) {
@@ -463,7 +471,9 @@ if (-not $Dashboard -and -not $DryRun -and -not $binding) {
 $bindingAuthors = @()
 if (-not $Dashboard -and -not $DryRun) {
   if ($binding.PSObject.Properties.Name -contains 'command_authors') {
-    $bindingAuthors = Normalize-CommandAuthors $binding.command_authors
+    $bindingAuthors = @(Assert-CommandAuthorMatchesGitHubLogin $binding.command_authors)
+    $binding | Add-Member -NotePropertyName command_authors -NotePropertyValue $bindingAuthors -Force
+    Save-LauncherBinding $bindingPath $canonicalTarget $binding
   } else {
     if ($Yes -and -not $CommandAuthors) { throw "启动绑定缺少 command_authors。请先不带 -Yes 运行一次，输入可信 GitHub 登录名。" }
     $authorInput = if ($CommandAuthors) { $CommandAuthors } else { Read-Host "    请输入可信 GitHub 登录名（多个用逗号或空格分隔；只需首次输入）" }
