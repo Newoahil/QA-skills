@@ -12,7 +12,7 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync } from 'node:fs';
 import path from 'node:path';
-import { createHash, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { readJsonFile } from './runtime-io.mjs';
 
 import { pollIssue, defaultGhReader, DEFAULT_LEASE_MS, invocationArgvFor } from './poll.mjs';
@@ -36,8 +36,7 @@ import { readRequiredQaAcceptance } from './content-artifacts.mjs';
 import { buildVerdictComment, markerForApproval, hashVerdictComment } from './verdict-comment.mjs';
 import { resolveOpencodeBin } from './opencode-bin.mjs';
 import { createOpencodeClient } from './opencode-client.mjs';
-import { runFixerSession } from './fixer-session-runner.mjs';
-import { runQaSession } from './qa-session-runner.mjs';
+import { loadPipelineManifest, runPipeline, stageRunnerContext } from './stage-runner.mjs';
 import { buildGate1Comment } from './gate1-comment.mjs';
 import { createSupervisorExecutor } from './supervisor-exec.mjs';
 import { ACTORS, assertActorMayPerform, EFFECTS } from './actor-routing.mjs';
@@ -65,6 +64,10 @@ function jsonFailureFields(error) {
     prompt_has_structured: typeof response.has_structured === 'boolean' ? response.has_structured : null,
     prompt_has_structured_output: typeof response.has_structured_output === 'boolean' ? response.has_structured_output : null,
   };
+}
+
+function writeQaVerdictArtifact(guardianDir, issue, qaVerdict) {
+  return writeArtifact(guardianDir, issue, 'qa-verdict', qaVerdict);
 }
 
 const DEFAULT_INTERVAL_MS = 60 * 1000;
@@ -498,98 +501,34 @@ async function tick(repoDir, config, logger, signal = null) {
     let finalization = null;
 
     if (opencodeClient) {
-      // 方案 A: fixer runs via a persistent SDK session (reused across gates/rework/followup).
-      const currentState = readState(guardianDir, issue) ?? { issue };
-       const humanNote = plan.toRun.command?.data
-        ? {
-            command_kind: plan.toRun.command.verb,
-            command_comment_id: plan.toRun.command.commentId,
-            trusted_author_id: null,
-            round: currentState.processing_round ?? 1,
-            human_note: plan.toRun.command.data,
-          }
-         : null;
-       const branchPreparation = supervisor.prepareFixBranch(issue);
-       if (branchPreparation.status !== 0) {
-         throw new Error(`prepare fix branch failed: ${branchPreparation.stderr || 'unknown'}`);
-       }
-       logger.info('fixer.begin', { issue, round: currentState.processing_round ?? 1 });
-       const fixerRun = await runFixerSession({
-         client: opencodeClient,
-         state: currentState,
-        issue,
-        repoDir,
-        dossierPath: path.join(guardianDir, String(issue), 'dossier.json'),
-        planPath: path.join(guardianDir, String(issue), 'plan.json'),
-        humanNote,
-         round: currentState.processing_round ?? 1,
-          plan: readArtifactPair(guardianDir, issue).plan,
-          mode: investigationMode,
-           deadlineMs: resolveSessionDeadlineMs(config, 'fixer_deadline_ms'),
-           writePrSummary: (content) => writeMarkdownArtifact(guardianDir, issue, 'pr-summary', content),
-           model: resolveModelForRole(config, 'fixer'),
-           fallbackModels,
-           signal,
-        });
-       writeState(guardianDir, fixerRun.state, { touch: false });
-       const fixerAction = sessionStatusAction(fixerRun.status);
-       if (fixerAction.retry) {
-         logger.warn('fixer.session_retry', { issue });
-         return;
-       }
-       if (!fixerAction.continue) {
-         logger.warn('fixer.session_stopped', { issue, status: fixerRun.status });
-         return;
-       }
-       const fixedBranch = `fix/issue-${Number(issue)}`;
-       writeState(guardianDir, { ...fixerRun.state, branch: fixedBranch }, { touch: false });
-
-      // 方案 A: QA runs via an independent SDK session (scheduler-invoked, not fixer-internal).
-      const afterFix = readState(guardianDir, issue) ?? { issue };
-      logger.info('qa.begin', { issue, round: afterFix.processing_round ?? 1 });
-      const qaRun = await runQaSession({
-        client: opencodeClient,
-        state: afterFix,
-        issue,
-        repoDir,
-        branch: afterFix.branch ?? null,
-        diffSummary: {
-          branch: afterFix.branch ?? 'unknown',
-          changed_files: fixerRun.completion?.changedFiles ?? [],
-          fixer_summary: fixerRun.completion?.summary ?? null,
-        },
-        intendedBehavior: plan.toRun.issueTitle ?? `issue #${issue}`,
-        round: afterFix.processing_round ?? 1,
-        deadlineMs: resolveSessionDeadlineMs(config, 'qa_deadline_ms'),
-        writeQaAcceptance: (content) => writeMarkdownArtifact(guardianDir, issue, 'qa-acceptance', content),
-        model: resolveModelForRole(config, 'qa'),
-        fallbackModels,
-        signal,
+      const pipeline = await runPipeline({
+        stages: loadPipelineManifest(),
+        context: stageRunnerContext({
+          client: opencodeClient,
+          issue,
+          repoDir,
+          guardianDir,
+          command: plan.toRun.command,
+          issueTitle: plan.toRun.issueTitle,
+          config,
+          investigationMode,
+          supervisor,
+          fallbackModels,
+          signal,
+          logger,
+          readState,
+          writeState,
+          readArtifactPair,
+          writeArtifact: (guardianDir, issue, name, value) => (name === 'qa-verdict'
+            ? writeQaVerdictArtifact(guardianDir, issue, value)
+            : writeArtifact(guardianDir, issue, name, value)),
+          writeMarkdownArtifact,
+          resolveSessionDeadlineMs,
+          resolveModelForRole,
+        }),
       });
-       writeState(guardianDir, qaRun.state, { touch: false });
-       const qaAction = sessionStatusAction(qaRun.status);
-       if (qaAction.retry) {
-         logger.warn('qa.session_retry', { issue });
-         return;
-       }
-       if (!qaAction.continue) {
-         logger.warn('qa.session_stopped', { issue, status: qaRun.status });
-         return;
-       }
-      writeState(guardianDir, qaRun.state, { touch: false });
-      if (qaRun.verdict) {
-         qaVerdict = {
-          issue: Number(issue),
-          branch: afterFix.branch ?? null,
-          status: qaRun.verdict,
-          verified_at: new Date().toISOString(),
-           report_hash: `sha256:${createHash('sha256').update(qaRun.report ?? '', 'utf8').digest('hex')}`,
-           evidence_summary: qaRun.report ?? null,
-           plan_hash: afterFix.plan_hash ?? null,
-           plan_revision: afterFix.plan_revision ?? null,
-        };
-        writeArtifact(guardianDir, issue, 'qa-verdict', qaVerdict);
-      }
+      if (pipeline.stopped) return;
+      qaVerdict = pipeline.qaVerdict;
     } else {
       // Legacy path: fixer spawns and internally dispatches qa (writes qa-verdict.json itself).
       code = await runInvocation(repoDir, invokeArgv, lockFile, handle, leaseMs, Number(config.child_timeout_ms ?? 0), signal);
