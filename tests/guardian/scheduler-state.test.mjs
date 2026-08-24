@@ -74,6 +74,28 @@ test('STALLED and HANDED_BACK commandless decisions persist before their notific
   assert.deepEqual(order, ['notify:42', 'notify:7']);
 });
 
+test('persisted STALLED recovery is written to INVESTIGATING before the runnable action', () => {
+  const store = fakeStore({
+    42: { ...newState(42), state: STATES.STALLED, stall_retries: 1 },
+  });
+  const decision = {
+    issue: 42,
+    action: 'RESUME',
+    reason: 'stalled-retry',
+    toState: STATES.INVESTIGATING,
+  };
+
+  persistCommandlessTransitions({
+    decisions: [decision],
+    guardianDir: '/injected',
+    deps: { readState: store.readState, writeState: store.writeState, now: '2026-08-19T12:00:00.000Z' },
+  });
+
+  assert.equal(store.store[42].state, STATES.INVESTIGATING);
+  assert.equal(store.store[42].last_phase, 'stalled-retry');
+  assert.deepEqual(store.writes.map((write) => write.state), [STATES.INVESTIGATING]);
+});
+
 test('gate waiting SKIP does not rewrite authoritative state', () => {
   const original = { ...newState(9), state: STATES.GATE_2_WAIT, last_phase: 'pr-opened' };
   const store = fakeStore({ 9: original });

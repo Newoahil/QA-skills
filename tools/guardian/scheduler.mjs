@@ -739,8 +739,8 @@ async function tick(repoDir, config, logger, signal = null, runtime = createSche
       qa_verdict_status: qaVerdict?.status ?? null,
       qa_verdict_hash: qaVerdict?.report_hash ?? null,
       last_child_exit_code: code,
-      last_error_class: qaAudit.approved ? afterRun.last_error_class : qaAudit.reason,
-      last_phase: qaAudit.approved ? 'qa-passed' : 'qa-unapproved',
+      last_error_class: qaAudit.approved || qaVerdict?.status === 'FAIL' ? afterRun.last_error_class : qaAudit.reason,
+      last_phase: qaAudit.approved || qaVerdict?.status === 'FAIL' ? afterRun.last_phase : 'qa-unapproved',
     }, { touch: false });
     if (!qaAudit.approved) logger.warn('qa.verdict_unapproved', { issue, reason: qaAudit.reason, exit_code: code });
     else logger.info('qa.verdict_passed', { issue, exit_code: code });
