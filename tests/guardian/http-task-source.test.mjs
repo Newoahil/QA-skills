@@ -5,6 +5,8 @@ import { createHttpTaskSource, buildHttpTaskObservation } from '../../tools/guar
 
 test('buildHttpTaskObservation maps HTTP dispatch data to TaskObservation', () => {
   const observation = buildHttpTaskObservation({
+    trustedAuthors: ['ops'],
+    authenticateEvent: (event) => event.authenticatedAuthor,
     dispatch: {
       id: 'job-42',
       displayId: 'HTTP-42',
@@ -12,7 +14,7 @@ test('buildHttpTaskObservation maps HTTP dispatch data to TaskObservation', () =
       body: 'Acceptance data',
       status: 'completed',
       cursor: 'evt-9',
-      events: [{ id: 'evt-9', kind: 'command', verb: 'retry', data: 'again', author: 'ops', occurredAt: '2026-08-24T00:00:00.000Z' }],
+      events: [{ id: 'evt-9', kind: 'command', verb: 'retry', data: 'again', author: 'payload-user', authenticatedAuthor: 'ops', occurredAt: '2026-08-24T00:00:00.000Z' }],
     },
   });
 
@@ -23,10 +25,44 @@ test('buildHttpTaskObservation maps HTTP dispatch data to TaskObservation', () =
   assert.deepEqual(observation.controlEvents, [{ id: 'evt-9', kind: 'command', verb: 'retry', data: 'again', author: 'ops', occurredAt: '2026-08-24T00:00:00.000Z', sequence: 0 }]);
 });
 
+test('buildHttpTaskObservation ignores untrusted or malformed HTTP commands fail-closed', () => {
+  const observation = buildHttpTaskObservation({
+    trustedAuthors: ['ops'],
+    authenticateEvent: (event) => event.authenticatedAuthor,
+    dispatch: {
+      id: 'job-42',
+      events: [
+        { id: 'missing-kind', verb: 'approve', authenticatedAuthor: 'ops' },
+        { id: 'untrusted', kind: 'command', verb: 'approve', authenticatedAuthor: 'attacker' },
+        { id: 'missing-author', kind: 'command', verb: 'approve' },
+        { id: 'spoofed-payload-author', kind: 'command', verb: 'approve', author: 'ops' },
+        { id: 'unknown-verb', kind: 'command', verb: 'shipit', authenticatedAuthor: 'ops' },
+        { id: 'trusted', kind: 'command', verb: 'approve', authenticatedAuthor: 'ops' },
+      ],
+    },
+  });
+
+  assert.deepEqual(observation.controlEvents.map((event) => event.id), ['trusted']);
+});
+
+test('buildHttpTaskObservation ignores spoofed trusted payload author without authenticated provenance', () => {
+  const observation = buildHttpTaskObservation({
+    trustedAuthors: ['ops'],
+    dispatch: {
+      id: 'job-42',
+      events: [{ id: 'spoofed', kind: 'command', verb: 'approve', author: 'ops' }],
+    },
+  });
+
+  assert.deepEqual(observation.controlEvents, []);
+});
+
 test('createHttpTaskSource lists and reads injected API dispatches', async () => {
   const source = createHttpTaskSource({
     listDispatches: async () => [{ id: 'job-1', title: 'One' }, { id: 'job-2', title: 'Two' }],
     readDispatch: async (id) => ({ id, title: `Task ${id}`, body: 'body' }),
+    trustedAuthors: ['ops'],
+    authenticateEvent: (event) => event.authenticatedAuthor,
   });
 
   const refs = await source.listTasks();

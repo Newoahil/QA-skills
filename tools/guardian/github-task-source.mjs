@@ -87,7 +87,7 @@ export function createGitHubTaskSource({ repoDir, listIssues, readIssue = defaul
   return Object.freeze({
     async listTasks() {
       const issues = await listIssues(repoDir);
-      return Object.freeze(issues.map((issue) => githubIssueToTaskRef(issue.issue ?? issue.number)));
+      return Object.freeze(issues.map((issue) => githubIssueToTaskRefWithMetadata(issue)));
     },
     async readTask(ref) {
       if (ref?.source !== 'github') throw new Error(`GitHub TaskSource cannot read source ${String(ref?.source)}`);
@@ -100,4 +100,10 @@ export function createGitHubTaskSource({ repoDir, listIssues, readIssue = defaul
       return githubIssueToTaskRef(rawTask.issue ?? rawTask.number);
     },
   });
+}
+
+function githubIssueToTaskRefWithMetadata(issue) {
+  const ref = githubIssueToTaskRef(issue.issue ?? issue.number);
+  const updatedAt = issue.updatedAt ?? issue.updated_at ?? null;
+  return updatedAt == null ? ref : Object.freeze({ ...ref, updatedAt });
 }

@@ -10,13 +10,14 @@
 // notify_channel? }.
 
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readdirSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { readJsonFile } from './runtime-io.mjs';
 
-import { pollIssue, defaultGhReader, DEFAULT_LEASE_MS, invocationArgvFor } from './poll.mjs';
+import { defaultGhReader, DEFAULT_LEASE_MS, invocationArgvFor } from './poll.mjs';
 import { readState, startFollowupRound, writeState } from './state.mjs';
+import { routeIssue } from './state-router.mjs';
 import { commandlessStateTransition, planTick } from './scheduler-core.mjs';
 import { acquireLock, renewLock, releaseLock } from './lock.mjs';
 import { deliverNotifications, defaultGhComment, defaultCurlPost } from './notify-io.mjs';
@@ -36,7 +37,11 @@ import { readRequiredQaAcceptance } from './content-artifacts.mjs';
 import { buildVerdictComment, markerForApproval, hashVerdictComment } from './verdict-comment.mjs';
 import { resolveOpencodeBin } from './opencode-bin.mjs';
 import { createOpencodeClient } from './opencode-client.mjs';
-import { loadPipelineManifest, runPipeline, stageRunnerContext } from './stage-runner.mjs';
+import { loadRuntimePipelineManifest, loadRuntimeStageRunners, runPipeline, stageRunnerContext } from './stage-runner.mjs';
+import { createGitHubEffectSink } from './github-effect-sink.mjs';
+import { createGitHubTaskSource } from './github-task-source.mjs';
+import { createHttpTaskSource } from './http-task-source.mjs';
+import { loadAgentRegistry } from './agent-registry.mjs';
 import { buildGate1Comment } from './gate1-comment.mjs';
 import { createSupervisorExecutor } from './supervisor-exec.mjs';
 import { ACTORS, assertActorMayPerform, EFFECTS } from './actor-routing.mjs';
@@ -151,6 +156,139 @@ export function listCandidates(repoDir, _config = {}, _now = new Date(), deps = 
   return ordered;
 }
 
+export async function listCandidatesFromTaskSource(repoDir, taskSource, deps = {}) {
+  const refs = await taskSource.listTasks();
+  const stateReader = deps.readState ?? readState;
+  const guardianDir = guardianDirOf(repoDir);
+  const source = deps.source ?? refs[0]?.source ?? 'github';
+  const candidates = refs.map((ref) => {
+    const issue = numericSchedulerIssue(ref);
+    const record = stateReader(guardianDir, issue);
+    return { issue, taskRef: ref, updatedAt: ref.updatedAt ?? ref.updated_at, claim_source: record ? 'existing' : 'discovered' };
+  });
+  const followups = readdirSync(guardianDir, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && /^\d+\.json$/.test(entry.name))
+    .map((entry) => readJsonFile(path.join(guardianDir, entry.name)))
+    .filter((record) => record.state === 'DONE' || record.state === 'GATE_2_WAIT')
+    .map((record) => ({ issue: Number(record.issue), taskRef: { source, taskId: String(record.issue), displayId: displayIdForSource(source, record.issue) }, updatedAt: record.updated_at, claim_source: 'followup' }));
+  const merged = new Map(candidates.concat(followups).map((x) => [candidateKey(x), x]));
+  return [...merged.values()].sort((a, b) => {
+    const updated = String(a.updatedAt ?? '').localeCompare(String(b.updatedAt ?? ''));
+    return updated || Number(a.issue) - Number(b.issue);
+  });
+}
+
+export async function pollTaskObservation({ repoDir, guardianDir, taskSource, taskRef, leaseMs, now, trustedAuthors }) {
+  const issue = numericSchedulerIssue(taskRef);
+  const record = readState(guardianDir, issue);
+  const observation = await taskSource.readTask(taskRef);
+  const decision = routeIssue(record, observation, { leaseMs, now, trustedAuthors });
+  return {
+    issue,
+    issueTitle: observation.facts?.title ?? null,
+    issueBody: observation.facts?.body ?? '',
+    ...decision,
+    invoke: null,
+    invokeArgv: invocationArgvFor(repoDir, issue, decision),
+  };
+}
+
+function numericSchedulerIssue(ref) {
+  const issue = Number(ref?.taskId);
+  if (!Number.isInteger(issue) || issue <= 0) throw new Error(`scheduler taskRef requires a positive numeric taskId until P8: ${String(ref?.source)}:${String(ref?.taskId)}`);
+  return issue;
+}
+
+function candidateKey(candidate) {
+  return `${candidate.taskRef?.source ?? 'github'}:${candidate.taskRef?.taskId ?? String(candidate.issue)}`;
+}
+
+function displayIdForSource(source, issue) {
+  return source === 'github' ? `#${issue}` : String(issue);
+}
+
+export function createSchedulerTaskSource({ repoDir, config = {}, deps = {} }) {
+  const source = typeof config.task_source === 'string' ? config.task_source : (config.task_source?.type ?? 'github');
+  const trustedAuthors = config.command_authors ?? [];
+  const guardianDir = guardianDirOf(repoDir);
+  if (source === 'github') {
+    return createGitHubTaskSource({
+      repoDir,
+      listIssues: deps.listIssues ?? ((targetRepoDir) => ghIssueList(targetRepoDir, ['--state', 'open', '--limit', '1000', '--json', 'number,createdAt,updatedAt,labels'])),
+      readIssue: deps.readIssue ?? defaultGhReader(repoDir),
+      readState: deps.readStateForSource ?? ((issue) => readState(guardianDir, issue)),
+      trustedAuthors,
+    });
+  }
+  if (source === 'http') {
+    const listDispatches = deps.listDispatches ?? createConfiguredHttpListDispatches(config);
+    const readDispatch = deps.readDispatch ?? createConfiguredHttpReadDispatch(config);
+    if (typeof listDispatches !== 'function' || typeof readDispatch !== 'function') throw new Error('HTTP TaskSource requires listDispatches and readDispatch runtime bindings');
+    return createHttpTaskSource({ listDispatches, readDispatch, trustedAuthors, authenticateEvent: deps.authenticateEvent });
+  }
+  throw new Error(`unknown task source: ${String(source)}`);
+}
+
+function createConfiguredHttpListDispatches(config) {
+  const file = config.task_source?.dispatch_file ?? config.http_task_source?.dispatch_file;
+  const baseUrl = httpTaskSourceBaseUrl(config);
+  if (!file && !baseUrl) return undefined;
+  if (baseUrl) return async () => fetchHttpDispatches(baseUrl, config.task_source?.list_path ?? config.http_task_source?.list_path ?? '/dispatches');
+  return async () => {
+    const parsed = JSON.parse(readFileSync(file, 'utf8'));
+    return Array.isArray(parsed) ? parsed : (parsed.dispatches ?? []);
+  };
+}
+
+function createConfiguredHttpReadDispatch(config) {
+  const file = config.task_source?.dispatch_file ?? config.http_task_source?.dispatch_file;
+  const baseUrl = httpTaskSourceBaseUrl(config);
+  if (!file && !baseUrl) return undefined;
+  if (baseUrl) return async (id) => fetchHttpDispatch(baseUrl, config.task_source?.read_path ?? config.http_task_source?.read_path ?? '/dispatches/{id}', id);
+  return async (id) => {
+    const parsed = JSON.parse(readFileSync(file, 'utf8'));
+    const dispatches = Array.isArray(parsed) ? parsed : (parsed.dispatches ?? []);
+    const dispatch = dispatches.find((item) => String(item?.id) === String(id));
+    if (!dispatch) throw new Error(`HTTP dispatch not found: ${String(id)}`);
+    return dispatch;
+  };
+}
+
+function httpTaskSourceBaseUrl(config) {
+  const value = config.task_source?.base_url ?? config.task_source?.url ?? config.http_task_source?.base_url ?? config.http_task_source?.url;
+  if (typeof value !== 'string' || value.trim() === '') return null;
+  return value.trim().replace(/\/$/, '');
+}
+
+async function fetchHttpDispatches(baseUrl, listPath) {
+  const json = await fetchJson(`${baseUrl}${pathWithLeadingSlash(listPath)}`);
+  return Array.isArray(json) ? json : (json.dispatches ?? []);
+}
+
+async function fetchHttpDispatch(baseUrl, readPath, id) {
+  return fetchJson(`${baseUrl}${pathWithLeadingSlash(readPath).replace('{id}', encodeURIComponent(String(id)))}`);
+}
+
+function pathWithLeadingSlash(value) {
+  const text = String(value ?? '').trim();
+  if (!text) return '/';
+  return text.startsWith('/') ? text : `/${text}`;
+}
+
+async function fetchJson(url) {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`HTTP TaskSource request failed: ${response.status}`);
+  return response.json();
+}
+
+export function createSchedulerRuntime({ repoDir, config = {} }) {
+  const taskSource = createSchedulerTaskSource({ repoDir, config });
+  const agentRegistry = loadAgentRegistry(undefined, { repoDir });
+  const pipelineRunners = loadRuntimeStageRunners({ registeredRunners: config.registered_stage_runners });
+  const pipelineStages = loadRuntimePipelineManifest({ repoDir, runners: pipelineRunners });
+  return Object.freeze({ taskSource, agentRegistry, pipelineRunners, pipelineStages });
+}
+
 function lockPath(repoDir) {
   return path.join(repoDir, '.qa', 'guardian', '.scheduler.lock');
 }
@@ -195,11 +333,14 @@ function runInvocation(repoDir, invokeArgv, lockFile, handle, leaseMs, timeoutMs
   });
 }
 
-async function tick(repoDir, config, logger, signal = null) {
+async function tick(repoDir, config, logger, signal = null, runtime = createSchedulerRuntime({ repoDir, config })) {
   const qaRuntimeDir = config.qa_runtime_dir ?? repoDir;
   const leaseMs = Number(config.lease_ms ?? DEFAULT_LEASE_MS);
   const now = Date.now();
-  const issues = listCandidates(repoDir, config, new Date(now), { logger });
+  const guardianDir = guardianDirOf(repoDir);
+  const trustedAuthors = config.command_authors ?? [];
+  const { taskSource, agentRegistry, pipelineRunners, pipelineStages } = runtime;
+  const issues = await listCandidatesFromTaskSource(repoDir, taskSource, { logger, source: config.task_source?.type ?? config.task_source ?? 'github' });
 
   // Shared OpenCode server client (Oracle design): one serve, SDK sessions per role. Created once
   // per tick from the configured server URL; null when no shared server is configured (fallback to
@@ -212,15 +353,11 @@ async function tick(repoDir, config, logger, signal = null) {
     ? config.fallback_models.filter((m) => typeof m === 'string' && m)
     : [];
   const supervisor = opencodeClient ? createSupervisorExecutor({ repoDir }) : null;
-
   try {
-  const trustedAuthors = config.command_authors ?? [];
-  const decisions = issues.map(({ issue, claim_source }) => ({
-    ...pollIssue(path.join(repoDir, '.qa', 'guardian'), issue, defaultGhReader(repoDir), {
-      leaseMs, repoDir, trustedAuthors,
-    }),
+  const decisions = await Promise.all(issues.map(async ({ taskRef, claim_source }) => ({
+    ...(await pollTaskObservation({ repoDir, guardianDir, taskSource, taskRef, leaseMs, now, trustedAuthors })),
     claim_source,
-  }));
+  })));
 
   for (const decision of decisions) {
     logger.info('route.decision', { issue: decision.issue, action: decision.action, to_state: decision.toState ?? null, reason: decision.reason ?? null });
@@ -342,10 +479,10 @@ async function tick(repoDir, config, logger, signal = null) {
         if (opencodeClient?.getAgents) {
           const agents = await opencodeClient.getAgents(qaRuntimeDir);
           if (agents.kind === 'ok') {
-            const unavailable = unavailableGuardianAgents(config, agents.agents);
+            const unavailable = unavailableGuardianAgents(config, agents.agents, agentRegistry);
             if (unavailable.length > 0) {
               logger.warn('investigation.agents_unavailable', { issue, agents: unavailable.join(',') });
-              investigationConfig = disableUnavailableGuardianAgents(config, agents.agents);
+              investigationConfig = disableUnavailableGuardianAgents(config, agents.agents, agentRegistry);
             }
           } else {
             logger.warn('investigation.agent_probe_failed', { issue, error_message: agents.error instanceof Error ? agents.error.message : 'unknown' });
@@ -358,6 +495,7 @@ async function tick(repoDir, config, logger, signal = null) {
           complexity: config.investigation_complexity ?? 'complex',
           capabilities: discoverCapabilities({ env: process.env, config: investigationConfig }),
           config: investigationConfig,
+          agentRegistry,
           memoryContext,
           state: investigationState,
           round: investigationState.processing_round ?? 1,
@@ -502,7 +640,8 @@ async function tick(repoDir, config, logger, signal = null) {
 
     if (opencodeClient) {
       const pipeline = await runPipeline({
-        stages: loadPipelineManifest(),
+        stages: pipelineStages,
+        runners: pipelineRunners,
         context: stageRunnerContext({
           client: opencodeClient,
           issue,
@@ -513,6 +652,11 @@ async function tick(repoDir, config, logger, signal = null) {
           config,
           investigationMode,
           supervisor,
+          effectSink: createGitHubEffectSink({ repoDir }),
+          notifyStage: {
+            enabled: Boolean(config.notify_webhook),
+            webhookUrl: config.notify_webhook ?? null,
+          },
           fallbackModels,
           signal,
           logger,
@@ -714,12 +858,13 @@ export async function runScheduler({ repoDir, config = readConfig(repoDir), sign
   }
   const interval = Number(config.poll_interval_ms ?? DEFAULT_INTERVAL_MS);
   const logger = createLogger({ component: 'scheduler' });
+  const runtime = createSchedulerRuntime({ repoDir, config });
 
   logger.info('watch.begin', { repo_dir: repoDir, interval_ms: interval, concurrency: 1 });
   while (!signal?.aborted) {
     try {
       logger.info('tick.begin');
-      await tick(repoDir, config, logger, signal);
+      await tick(repoDir, config, logger, signal, runtime);
     } catch (e) {
       // no-excuse-ok: catch — resident loop must survive a transient gh/network error and retry
       const msg = e instanceof Error ? e.message : 'unknown';
