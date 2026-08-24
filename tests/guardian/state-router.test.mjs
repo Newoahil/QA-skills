@@ -96,6 +96,14 @@ test('GATE_1_WAIT + /guardian approve → RESUME to FIXING (acceptance 19)', () 
   assert.equal(d.command.commentId, 1);
 });
 
+test('legacy GitHub facts shape no longer parses commands in the neutral router', () => {
+  const r = rec({ state: STATES.GATE_1_WAIT });
+  const d = routeIssue(r, { closed: false, comments: [comment(1, '/guardian approve')] }, OPTS);
+
+  assert.equal(d.action, 'SKIP');
+  assert.equal(d.reason, 'gate1-waiting');
+});
+
 test('GATE_1_WAIT + /guardian reject → HANDED_BACK(reason=reject), permanent (acceptance 20)', () => {
   const r = rec({ state: STATES.GATE_1_WAIT });
   const d = route(r, { comments: [comment(1, '/guardian reject')] }, OPTS);

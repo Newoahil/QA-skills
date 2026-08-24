@@ -31,7 +31,7 @@ export const MAX_FIX_ROUNDS = 2;
  */
 export function routeIssue(record, gh, opts) {
   const { leaseMs, now = Date.now(), trustedAuthors = [] } = opts;
-  const task = normalizeRouteInput(gh);
+  const task = normalizeRouteInput(gh, record, trustedAuthors);
   const controlEvents = task.controlEvents ?? [];
 
   // 1. No record / DISCOVERED → brand-new issue: start the pipeline.
@@ -129,7 +129,7 @@ export function routeIssue(record, gh, opts) {
   return { action: 'SKIP', reason: `unhandled-state:${state}` };
 }
 
-function normalizeRouteInput(input) {
+function normalizeRouteInput(input, record, trustedAuthors) {
   if (input && Array.isArray(input.controlEvents)) return input;
   return {
     terminal: input?.closed ? { status: 'completed', reason: 'merged-closed', sourceEvidence: { closed: true } } : null,
