@@ -1,0 +1,12 @@
+{
+  "lsp": {
+    "typescript": {
+      "priority": 100,
+      "initialization": {
+        "tsserver": {
+          "path": "C:/nvm4w/nodejs/node_modules/typescript/lib/tsserver.js"
+        }
+      }
+    }
+  }
+}
