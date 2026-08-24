@@ -23,4 +23,15 @@ export const BUILTIN_PIPELINE_MANIFEST = Object.freeze([
     producesEffects: false,
     extensionPoint: 'after-qa',
   }),
+  Object.freeze({
+    id: 'notify',
+    agent: null,
+    runner: 'runNotifyStage',
+    inputArtifacts: Object.freeze(['qa-verdict']),
+    outputArtifacts: Object.freeze([]),
+    stateTransition: Object.freeze({ from: STATES.VERIFYING, to: STATES.VERIFYING }),
+    retryPolicy: Object.freeze({ maxRounds: 0 }),
+    producesEffects: true,
+    extensionPoint: 'after-qa',
+  }),
 ]);

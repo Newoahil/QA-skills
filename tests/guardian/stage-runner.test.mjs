@@ -8,7 +8,7 @@ import { STATES } from '../../tools/guardian/state.mjs';
 test('loadPipelineManifest preserves built-in fixer then qa order', () => {
   const stages = loadPipelineManifest();
 
-  assert.deepEqual(stages.map((stage) => stage.id), ['fixer', 'qa']);
+  assert.deepEqual(stages.map((stage) => stage.id), ['fixer', 'qa', 'notify']);
   assert.equal(Object.isFrozen(stages), true);
 });
 
@@ -22,6 +22,48 @@ test('loadPipelineManifest rejects malformed stages', () => {
   assert.throws(() => loadPipelineManifest([{ ...valid, stateTransition: { from: STATES.FIXING, to: 'NOPE' } }]), /unknown stateTransition.to/);
   assert.throws(() => loadPipelineManifest([{ ...valid, retryPolicy: { maxRounds: -1 } }]), /retryPolicy.maxRounds/);
   assert.throws(() => loadPipelineManifest([{ ...valid, extensionPoint: 'somewhere-else' }]), /unknown extension point/);
+});
+
+test('runPipeline notify stage emits a single fact_webhook effect when enabled', async () => {
+  const effects = [];
+  const context = stageRunnerContext({
+    client: {},
+    issue: 42,
+    repoDir: 'D:/repo',
+    guardianDir: 'D:/repo/.qa/guardian',
+    command: null,
+    config: {},
+    investigationMode: 'enforced',
+    fallbackModels: [],
+    signal: null,
+    issueTitle: 'Fix the thing',
+    notifyStage: { enabled: true, webhookUrl: 'https://hook.test/guardian' },
+    effectSink: { emit: (descriptor) => { effects.push(descriptor); return { ok: true, value: undefined }; } },
+    supervisor: { prepareFixBranch: () => ({ status: 0, stdout: '', stderr: '' }) },
+    logger: { info: () => {}, warn: () => {} },
+    readState: () => ({ issue: 42, state: STATES.FIXING, branch: 'fix/issue-42' }),
+    writeState: () => {},
+    readArtifactPair: () => ({ plan: {} }),
+    writeMarkdownArtifact: () => {},
+    writeArtifact: () => {},
+    resolveSessionDeadlineMs: () => 100,
+    resolveModelForRole: () => undefined,
+    runFixerSession: async (request) => ({ status: 'ok', state: request.state, completion: { changedFiles: [], summary: null } }),
+    runQaSession: async (request) => ({ status: 'ok', state: request.state, verdict: 'PASS', report: 'Overall Status: PASS' }),
+  });
+
+  const result = await runPipeline({ stages: loadPipelineManifest(), context });
+
+  assert.equal(result.stopped, false);
+  assert.equal(effects.length, 1);
+  assert.equal(effects[0].kind, 'fact_webhook');
+  assert.deepEqual(effects[0].payload.body, {
+    source: 'qa-guardian',
+    stage: 'after-qa',
+    issue: 42,
+    status: 'PASS',
+    report_hash: result.qaVerdict.report_hash,
+  });
 });
 
 test('runPipeline preserves fixer to QA state and artifact write order', async () => {

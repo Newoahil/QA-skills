@@ -8,10 +8,11 @@ import { STATES } from './state.mjs';
 import { readArtifactPair, writeArtifact, writeMarkdownArtifact } from './artifacts.mjs';
 import { runFixerSession } from './fixer-session-runner.mjs';
 import { runQaSession } from './qa-session-runner.mjs';
+import { ACTORS, EFFECTS } from './actor-routing.mjs';
 
 const STAGE_KEYS = Object.freeze(['id', 'agent', 'runner', 'inputArtifacts', 'outputArtifacts', 'stateTransition', 'retryPolicy', 'producesEffects', 'extensionPoint']);
 const EXTENSION_POINTS = Object.freeze(['before-fixer', 'after-qa']);
-const RUNNERS = Object.freeze({ runFixerStage, runQaStage });
+const RUNNERS = Object.freeze({ runFixerStage, runQaStage, runNotifyStage });
 
 export function loadPipelineManifest(manifest = BUILTIN_PIPELINE_MANIFEST, runners = RUNNERS) {
   if (!Array.isArray(manifest)) throw new Error('pipeline manifest must be an array');
@@ -122,6 +123,29 @@ export async function runQaStage(context) {
   };
   context.writeArtifact(context.guardianDir, context.issue, 'qa-verdict', qaVerdict);
   return { stop: false, status: qaRun.status, qaVerdict };
+}
+
+export async function runNotifyStage(context) {
+  const settings = context.notifyStage ?? {};
+  if (settings.enabled !== true || !context.effectSink || !settings.webhookUrl) {
+    return { stop: false, status: 'skipped' };
+  }
+  const qaVerdict = context.pipeline.qaVerdict ?? null;
+  const result = context.effectSink.emit({
+    actor: ACTORS.SUPERVISOR,
+    kind: EFFECTS.FACT_WEBHOOK,
+    payload: {
+      url: settings.webhookUrl,
+      body: {
+        source: 'qa-guardian',
+        stage: 'after-qa',
+        issue: Number(context.issue),
+        status: qaVerdict?.status ?? null,
+        report_hash: qaVerdict?.report_hash ?? null,
+      },
+    },
+  });
+  return { stop: false, status: 'ok', effect: result };
 }
 
 export function stageRunnerContext(values) {
