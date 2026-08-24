@@ -16,7 +16,7 @@ import path from 'node:path';
 import { existsSync } from 'node:fs';
 import { readJsonFile } from './runtime-io.mjs';
 
-import { defaultGhReader } from './github-task-source.mjs';
+import { buildGitHubTaskObservation, defaultGhReader } from './github-task-source.mjs';
 import { readState, STATES } from './state.mjs';
 import { routeIssue } from './state-router.mjs';
 export { defaultGhReader };
@@ -120,7 +120,8 @@ export function pollIssue(guardianDir, issueNumber, ghReader, opts = {}) {
   const trustedAuthors = opts.trustedAuthors ?? [];
   const record = readState(guardianDir, issueNumber);
   const gh = ghReader(issueNumber);
-  const decision = routeIssue(record, gh, { leaseMs, now, trustedAuthors });
+  const task = buildGitHubTaskObservation({ issueNumber, record, githubIssue: gh, trustedAuthors });
+  const decision = routeIssue(record, task, { leaseMs, now, trustedAuthors });
   return {
     issue: Number(issueNumber),
     issueTitle: gh.title ?? null,

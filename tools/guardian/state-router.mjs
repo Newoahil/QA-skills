@@ -16,7 +16,7 @@ import {
   isLeaseExpired,
   IDEMPOTENT_STALL_STAGES,
 } from './state.mjs';
-import { selectCommand } from './commands.mjs';
+import { COMMANDS } from './commands.mjs';
 
 // STALLED auto-rerun cap (§11B.4): after this many auto-retries still stalled → HANDED_BACK.
 export const MAX_STALL_RETRIES = 1;
@@ -31,7 +31,8 @@ export const MAX_FIX_ROUNDS = 2;
  */
 export function routeIssue(record, gh, opts) {
   const { leaseMs, now = Date.now(), trustedAuthors = [] } = opts;
-  const comments = gh?.comments ?? [];
+  const task = normalizeRouteInput(gh);
+  const controlEvents = task.controlEvents ?? [];
 
   // 1. No record / DISCOVERED → brand-new issue: start the pipeline.
   if (record == null || record.state === STATES.DISCOVERED) {
@@ -42,7 +43,7 @@ export function routeIssue(record, gh, opts) {
 
   // 2. Terminal DONE → nothing to do.
   if (state === STATES.DONE) {
-    const cmd = selectCommand(comments, STATES.DONE, record.last_consumed_comment_id, trustedAuthors);
+    const cmd = selectControlCommand(controlEvents, STATES.DONE);
     if (cmd?.verb === 'followup') return { action: 'RESUME', reason: 'followup', toState: STATES.INVESTIGATING, command: cmd, newRound: true };
     return { action: 'SKIP', reason: 'done' };
   }
@@ -50,7 +51,7 @@ export function routeIssue(record, gh, opts) {
   // 3. HANDED_BACK is terminal (§11.3): default permanent skip, UNLESS a /guardian retry
   //    command appears — then clear fix_rounds and re-enter from INVESTIGATING.
   if (state === STATES.HANDED_BACK) {
-    const cmd = selectCommand(comments, STATES.HANDED_BACK, record.last_consumed_comment_id, trustedAuthors);
+    const cmd = selectControlCommand(controlEvents, STATES.HANDED_BACK);
     if (cmd && cmd.verb === 'retry') {
       return {
         action: 'RESUME',
@@ -65,7 +66,7 @@ export function routeIssue(record, gh, opts) {
 
   // 4. GATE_1_WAIT (HIGH only) → consume approve/revise/reject; otherwise keep waiting.
   if (state === STATES.GATE_1_WAIT) {
-    const cmd = selectCommand(comments, STATES.GATE_1_WAIT, record.last_consumed_comment_id, trustedAuthors);
+    const cmd = selectControlCommand(controlEvents, STATES.GATE_1_WAIT);
     if (!cmd) return { action: 'SKIP', reason: 'gate1-waiting' };
     if (cmd.verb === 'reject') {
       return {
@@ -82,14 +83,14 @@ export function routeIssue(record, gh, opts) {
   // 5. GATE_2_WAIT (all issues) → if the human merged, issue is closed → DONE; else consume
   //    a /guardian rework to send back to FIXING; else keep waiting.
   if (state === STATES.GATE_2_WAIT) {
-    const followup = selectCommand(comments, STATES.GATE_2_WAIT, record.last_consumed_comment_id, trustedAuthors);
+    const followup = selectControlCommand(controlEvents, STATES.GATE_2_WAIT);
     if (followup?.verb === 'followup') {
       return { action: 'RESUME', reason: 'followup', toState: STATES.INVESTIGATING, command: followup, newRound: true };
     }
-    if (gh?.closed) {
+    if (task.terminal?.status === 'completed') {
       return { action: 'DONE', reason: 'merged-closed' };
     }
-    const cmd = selectCommand(comments, STATES.GATE_2_WAIT, record.last_consumed_comment_id, trustedAuthors);
+    const cmd = selectControlCommand(controlEvents, STATES.GATE_2_WAIT);
     if (cmd && cmd.verb === 'rework') {
       // rework re-enters FIXING; fix_rounds keeps counting and may still exceed the cap later.
       return { action: 'RESUME', reason: 'rework', toState: STATES.FIXING, command: cmd };
@@ -126,6 +127,36 @@ export function routeIssue(record, gh, opts) {
 
   // Any unexpected state → do not act blindly; treat as needing human attention.
   return { action: 'SKIP', reason: `unhandled-state:${state}` };
+}
+
+function normalizeRouteInput(input) {
+  if (input && Array.isArray(input.controlEvents)) return input;
+  return {
+    terminal: input?.closed ? { status: 'completed', reason: 'merged-closed', sourceEvidence: { closed: true } } : null,
+    controlEvents: [],
+  };
+}
+
+function selectControlCommand(events, currentState) {
+  if (!Array.isArray(events)) return null;
+  let chosen = null;
+  for (const event of events) {
+    if (event?.kind !== 'command') continue;
+    const spec = COMMANDS[event.verb];
+    if (!spec?.validIn.includes(currentState)) continue;
+    chosen = {
+      verb: event.verb,
+      data: event.data ?? '',
+      commentId: commandIdFromEvent(event),
+      target: spec.target,
+    };
+  }
+  return chosen;
+}
+
+function commandIdFromEvent(event) {
+  const n = Number(event.id);
+  return Number.isInteger(n) && String(n) === String(event.id) ? n : event.id;
 }
 
 export { STATES, RISK };
