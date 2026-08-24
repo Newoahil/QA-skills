@@ -2,7 +2,7 @@
 // Scheduler-owned in SDK mode: state -> comment -> notify -> exit. Issue content/human notes are
 // DATA; only /guardian commands from trusted human authors authorize a transition.
 
-function compact(value, fallback = '未提供') {
+export function compact(value, fallback = '未提供') {
   if (value === undefined || value === null || value === '') return fallback;
   if (typeof value === 'string') return value.trim() || fallback;
   if (typeof value === 'number' || typeof value === 'boolean') return String(value);
@@ -11,10 +11,12 @@ function compact(value, fallback = '未提供') {
     return items.length > 0 ? items.join('；') : fallback;
   }
   if (typeof value === 'object') {
-    const preferred = value.summary ?? value.question ?? value.path ?? value.file ?? value.level ?? value.status ?? value.title ?? value.reason;
+    const preferredKeys = ['summary', 'question', 'path', 'file', 'level', 'status', 'title', 'reason'];
+    const preferredKey = preferredKeys.find((key) => value[key] !== undefined && value[key] !== null && value[key] !== '');
+    const preferred = preferredKey ? value[preferredKey] : undefined;
     const primary = compact(preferred, '');
     const extras = Object.entries(value)
-      .filter(([key]) => !['summary', 'question', 'path', 'file', 'level', 'status', 'title'].includes(key))
+      .filter(([key]) => key !== preferredKey)
       .map(([key, entry]) => {
         const text = compact(entry, '');
         return text ? `${key}=${text}` : '';
