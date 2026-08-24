@@ -38,9 +38,18 @@ export function commandlessStateTransition(_record, decision) {
         last_phase: 'handed-back',
         last_error_class: decision.reason ?? 'handed-back',
       };
+    case 'RESUME':
+      if (!decision.command && decision.toState) {
+        return {
+          state: decision.toState,
+          handed_back_reason: null,
+          last_phase: decision.reason ?? 'resume',
+          last_error_class: null,
+        };
+      }
+      return null;
     case 'START':
     case 'SKIP':
-    case 'RESUME':
       return null;
     default:
       return null;

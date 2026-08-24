@@ -70,6 +70,31 @@ test('active state with expired lease, non-idempotent stage → STALLED flagged 
   assert.equal(d.idempotentStage, false);
 });
 
+test('persisted STALLED after the first commandless transition → RESUME INVESTIGATING while retry budget remains', () => {
+  // Given: the scheduler already persisted STALLED after one expired-lease transition.
+  const stalled = rec({ state: STATES.STALLED, stall_retries: 1, last_phase: 'stalled', last_error_class: 'lease-expired' });
+
+  // When: the poll router sees that persisted STALLED record on the next tick.
+  const d = route(stalled, {}, { leaseMs: LEASE, now: NOW });
+
+  // Then: it must choose a recoverable action, not strand the issue in unhandled SKIP.
+  assert.equal(d.action, 'RESUME');
+  assert.equal(d.toState, STATES.INVESTIGATING);
+  assert.equal(d.reason, 'stalled-retry');
+});
+
+test('persisted STALLED beyond the retry budget → HANDED_BACK(reason=stalled) instead of unhandled SKIP', () => {
+  // Given: a previously stalled issue has already exhausted its bounded recovery attempts.
+  const stalled = rec({ state: STATES.STALLED, stall_retries: MAX_STALL_RETRIES + 1, last_phase: 'stalled', last_error_class: 'lease-expired' });
+
+  // When: the poll router sees that persisted STALLED record on the next tick.
+  const d = route(stalled, {}, { leaseMs: LEASE, now: NOW });
+
+  // Then: it must hand back explicitly for human action.
+  assert.equal(d.action, 'HANDED_BACK');
+  assert.equal(d.handedBackReason, 'stalled');
+});
+
 test('STALLED beyond retry cap → HANDED_BACK(reason=stalled) (acceptance 25)', () => {
   const stale = rec({
     state: STATES.INVESTIGATING,

@@ -64,6 +64,38 @@ export function routeIssue(record, gh, opts) {
     return { action: 'SKIP', reason: 'handed-back-terminal' };
   }
 
+  // A commandless STALLED persistence is an intermediate durable state. On the next poll,
+  // consume the bounded recovery attempt explicitly instead of treating the state as unknown.
+  if (state === STATES.STALLED) {
+    const stallRetries = record.stall_retries ?? 0;
+    if (stallRetries <= MAX_STALL_RETRIES) {
+      return {
+        action: 'RESUME',
+        reason: 'stalled-retry',
+        toState: STATES.INVESTIGATING,
+        stallRetries,
+        retryCount: stallRetries,
+      };
+    }
+    return {
+      action: 'HANDED_BACK',
+      reason: 'stalled-retry-exhausted',
+      handedBackReason: 'stalled',
+    };
+  }
+
+  // A failed QA pass below the cap is persisted as a bounded fixer retry. Keep it observable to
+  // the scheduler so the next run re-enters the fixer, rather than looking like a fresh VERIFYING
+  // lease that can be skipped or accidentally finalized.
+  if (state === STATES.FIXING && record.last_error_class === 'qa-failed-retry') {
+    return {
+      action: 'RESUME',
+      reason: 'qa-failed-retry',
+      toState: STATES.FIXING,
+      fixRounds: record.fix_rounds ?? 0,
+    };
+  }
+
   // 4. GATE_1_WAIT (HIGH only) → consume approve/revise/reject; otherwise keep waiting.
   if (state === STATES.GATE_1_WAIT) {
     const cmd = selectControlCommand(controlEvents, STATES.GATE_1_WAIT);

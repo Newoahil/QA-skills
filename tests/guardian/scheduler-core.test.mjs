@@ -93,6 +93,22 @@ test('commandless STALLED transition persists retry counter and audit phase', ()
   });
 });
 
+test('commandless stalled recovery persists its target state before launch', () => {
+  const current = { ...newState(42), state: STATES.STALLED, stall_retries: 1 };
+  const patch = commandlessStateTransition(current, {
+    action: 'RESUME',
+    reason: 'stalled-retry',
+    toState: STATES.INVESTIGATING,
+  });
+
+  assert.deepEqual(patch, {
+    state: STATES.INVESTIGATING,
+    handed_back_reason: null,
+    last_phase: 'stalled-retry',
+    last_error_class: null,
+  });
+});
+
 test('commandless HANDED_BACK transition persists reason and audit fields', () => {
   const current = { ...newState(7), state: STATES.GATE_1_WAIT };
   const patch = commandlessStateTransition(current, {
