@@ -242,3 +242,28 @@ test('runPipeline preserves fixer to QA state and artifact write order', async (
     'artifact',
   ]);
 });
+
+// --- B2 (decision-e8c0d364): executionType -> trusted profile selection ---
+
+import { selectPipelineProfile, SUPPORTED_EXECUTION_TYPES } from '../../tools/guardian/stage-runner.mjs';
+
+test('B2: coding (and null) resolves to the builtin pipeline byte-identically', () => {
+  const builtin = loadPipelineManifest().map((s) => s.id);
+  for (const t of ['coding', null, undefined, '']) {
+    const profile = selectPipelineProfile(t);
+    assert.equal(profile.supported, true);
+    assert.equal(profile.executionType, 'coding');
+    assert.deepEqual(profile.stages.map((s) => s.id), builtin);
+  }
+});
+
+test('B2: non-coding execution types are explicitly unsupported (blocked with reason)', () => {
+  for (const t of ['research', 'design', 'ops', 'data', 'content']) {
+    const profile = selectPipelineProfile(t);
+    assert.equal(profile.supported, false);
+    assert.equal(profile.executionType, t);
+    assert.equal(profile.reason, `unsupported-execution-type:${t}`);
+    assert.deepEqual(profile.supportedTypes, SUPPORTED_EXECUTION_TYPES);
+  }
+  assert.deepEqual(SUPPORTED_EXECUTION_TYPES, ['coding']);
+});

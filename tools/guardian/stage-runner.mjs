@@ -33,6 +33,34 @@ export function loadRuntimeStageRunners({ registeredRunners = Object.freeze({}) 
   return Object.freeze({ ...RUNNERS, ...registeredRunners });
 }
 
+// B2 (PM-adapter prep, decision-e8c0d364): map an executionType to a trusted execution profile.
+// Today only `coding` is implemented, and it resolves to the existing builtin fixer->qa->notify
+// pipeline (byte-identical: the GitHub fix flow is coding). Every other executionType resolves to
+// an explicit unsupported result so a future PM Result of type research/design/ops is BLOCKED with
+// a clear reason rather than being forced through the fixer pipeline. This is a SELECTION function
+// only — it does not change runPipeline, so current behavior is unchanged. Adding a new type later
+// = add a profile here (trusted core code), not open arbitrary user-defined pipelines (ADR YAGNI).
+export const SUPPORTED_EXECUTION_TYPES = Object.freeze(['coding']);
+
+// null/undefined executionType (e.g. a GitHub issue, which has no PM executionType) is treated as
+// `coding` so the existing flow is unaffected.
+export function selectPipelineProfile(executionType, options = {}) {
+  const type = executionType == null || executionType === '' ? 'coding' : String(executionType).toLowerCase();
+  if (type === 'coding') {
+    return Object.freeze({
+      supported: true,
+      executionType: 'coding',
+      stages: loadRuntimePipelineManifest(options),
+    });
+  }
+  return Object.freeze({
+    supported: false,
+    executionType: type,
+    reason: `unsupported-execution-type:${type}`,
+    supportedTypes: SUPPORTED_EXECUTION_TYPES,
+  });
+}
+
 function readProjectPipelineManifest(repoDir, readFile, exists) {
   if (!repoDir) return null;
   const manifestPath = path.join(repoDir, '.qa', 'guardian', 'pipeline.manifest.json');
