@@ -58,6 +58,31 @@ export function agentEnabled(config = {}, agent) {
   return value !== false;
 }
 
+// A3 (PM-adapter prep, decision-e8c0d364): mechanically enforce that read-only investigation
+// specialists can never be handed a write-capable tool. The registry does NOT encode "read-only"
+// (that is a prompt + opencode-permission property), so this is the code-level guard that keeps the
+// invariant true even if a future edit or a project manifest tries to widen the tool set. Any tool
+// on this deny-list (or any obviously mutating verb) fails closed at the coordinator boundary.
+export const WRITE_CAPABLE_TOOLS = Object.freeze([
+  'edit', 'write', 'patch', 'apply_patch', 'bash', 'shell', 'task', 'run', 'exec',
+  'pr_create', 'merge', 'close', 'commit', 'push', 'delete', 'rm',
+]);
+
+function isWriteCapableTool(tool) {
+  const name = String(tool).toLowerCase();
+  if (WRITE_CAPABLE_TOOLS.includes(name)) return true;
+  // catch mutating shapes like "code_write", "fs.write", "git-push", "file-delete"
+  return /(?:^|[._-])(write|edit|delete|remove|create|push|commit|merge|exec|spawn)(?:$|[._-])/.test(name);
+}
+
+export function assertReadOnlyInvestigationTools(tools) {
+  const offending = (Array.isArray(tools) ? tools : []).filter(isWriteCapableTool);
+  if (offending.length > 0) {
+    throw new Error(`read-only investigation specialists may not receive write-capable tools: ${offending.join(', ')}`);
+  }
+  return tools;
+}
+
 export function availableInvestigationTools(capabilities, config = {}) {
   const tools = ['explore', 'guardian-code', 'guardian-business', 'guardian-runtime'];
   if (capabilities?.codegraph?.available) tools.push('codegraph');
@@ -65,7 +90,9 @@ export function availableInvestigationTools(capabilities, config = {}) {
   if (capabilities?.git_history?.available) tools.push('guardian-history');
   if (capabilities?.plan_critic?.available) tools.push('guardian-plan-critic');
   if (capabilities?.sybermem?.available) tools.push('sybermem');
-  return tools.filter((tool) => !tool.startsWith('guardian-') || agentEnabled(config, tool));
+  const filtered = tools.filter((tool) => !tool.startsWith('guardian-') || agentEnabled(config, tool));
+  // Fail closed: never emit a write-capable tool into a specialist's tool whitelist.
+  return assertReadOnlyInvestigationTools(filtered);
 }
 
 export function unavailableGuardianAgents(config = {}, availableAgents = [], registry = BUILTIN_AGENT_REGISTRY) {
