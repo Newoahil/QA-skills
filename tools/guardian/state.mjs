@@ -34,10 +34,22 @@ export const STATES = Object.freeze({
   PR_OPENED: 'PR_OPENED',
   GATE_1_WAIT: 'GATE_1_WAIT',
   GATE_2_WAIT: 'GATE_2_WAIT',
+  // B1 (PM-adapter prep, decision-e8c0d364): "execution complete, awaiting human acceptance".
+  // Reserved for non-github execution profiles (PM Results): an agent finishes its work and lands
+  // here; it must NOT reach DONE on its own. Final acceptance is a human-only transition
+  // (IN_REVIEW -> DONE), mirroring the existing "human merge" gate for the GitHub fix pipeline.
+  // Not wired into the GitHub fix flow, so current behavior is unchanged; it is a waiting state
+  // (not active, not terminal) so it never occupies the N=1 concurrency budget.
+  IN_REVIEW: 'IN_REVIEW',
   STALLED: 'STALLED',
   HANDED_BACK: 'HANDED_BACK',
   DONE: 'DONE',
 });
+
+// B1: states an AGENT may never transition INTO on its own. Reaching DONE requires the human
+// acceptance/merge gate; this list is the machine-checkable statement of that invariant for any
+// future profile runner. (Kept as data so B2 profile runners and tests can assert against it.)
+export const HUMAN_ONLY_TERMINAL_STATES = Object.freeze([STATES.DONE]);
 
 // Active processing states (occupy concurrency, heartbeat-tracked, lease-checked).
 export const ACTIVE_STATES = Object.freeze([
@@ -72,6 +84,21 @@ export function isActiveState(state) {
 
 export function isTerminalState(state) {
   return state === STATES.DONE || state === STATES.HANDED_BACK;
+}
+
+// B1 (decision-e8c0d364): IN_REVIEW = execution complete, awaiting human acceptance. It is a
+// waiting state: not active (no heartbeat/lease), not terminal (a human still acts on it).
+export function isAwaitingHumanAcceptance(state) {
+  return state === STATES.IN_REVIEW;
+}
+
+// B1: guard for profile/stage runners — an agent-driven transition must never target a human-only
+// terminal state (DONE). Throws so an accidental "agent marks it done" fails closed.
+export function assertAgentMayTransitionTo(targetState) {
+  if (HUMAN_ONLY_TERMINAL_STATES.includes(targetState)) {
+    throw new Error(`agent-driven transition may not target a human-only terminal state: ${targetState}`);
+  }
+  return targetState;
 }
 
 // A fresh state record for a newly discovered issue.

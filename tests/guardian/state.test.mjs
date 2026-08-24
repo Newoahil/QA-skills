@@ -19,6 +19,9 @@ import {
   isActiveState,
   isTerminalState,
   isLeaseExpired,
+  isAwaitingHumanAcceptance,
+  assertAgentMayTransitionTo,
+  HUMAN_ONLY_TERMINAL_STATES,
 } from '../../tools/guardian/state.mjs';
 
 function tempGuardianDir() {
@@ -224,4 +227,34 @@ test('startFollowupRound clears Gate 1 approval identity for the new plan', () =
   assert.equal(next.gate_1_approved_comment_id, null);
   assert.equal(next.gate_1_approved_plan_hash, null);
   assert.equal(next.gate_1_approved_plan_revision, null);
+});
+
+// --- B1 (decision-e8c0d364): IN_REVIEW reserved state + agent cannot reach DONE ---
+
+test('B1: IN_REVIEW is a waiting state (not active, not terminal) awaiting human acceptance', () => {
+  assert.equal(STATES.IN_REVIEW, 'IN_REVIEW');
+  assert.equal(isActiveState(STATES.IN_REVIEW), false);
+  assert.equal(isTerminalState(STATES.IN_REVIEW), false);
+  assert.equal(isAwaitingHumanAcceptance(STATES.IN_REVIEW), true);
+  assert.equal(isAwaitingHumanAcceptance(STATES.VERIFYING), false);
+});
+
+test('B1: an IN_REVIEW record round-trips and does not disturb the fix flow', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'guardian-b1-'));
+  try {
+    const rec = { ...newState(777), state: STATES.IN_REVIEW };
+    writeState(dir, rec, { touch: false });
+    const back = readState(dir, 777);
+    assert.equal(back.state, STATES.IN_REVIEW);
+    assert.equal(existsSync(path.join(dir, '777.json')), true);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('B1: assertAgentMayTransitionTo blocks DONE but allows IN_REVIEW / VERIFYING', () => {
+  assert.deepEqual(HUMAN_ONLY_TERMINAL_STATES, ['DONE']);
+  assert.throws(() => assertAgentMayTransitionTo(STATES.DONE), /human-only terminal state/);
+  assert.doesNotThrow(() => assertAgentMayTransitionTo(STATES.IN_REVIEW));
+  assert.doesNotThrow(() => assertAgentMayTransitionTo(STATES.VERIFYING));
 });
