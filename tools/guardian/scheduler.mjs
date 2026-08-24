@@ -17,6 +17,7 @@ import { readJsonFile } from './runtime-io.mjs';
 
 import { defaultGhReader, DEFAULT_LEASE_MS, invocationArgvFor } from './poll.mjs';
 import { readState, startFollowupRound, writeState } from './state.mjs';
+import { storageKey as taskRefStorageKey, isNumericStorageKey, makeTaskRef } from './task-ref.mjs';
 import { routeIssue } from './state-router.mjs';
 import { commandlessStateTransition, planTick } from './scheduler-core.mjs';
 import { acquireLock, renewLock, releaseLock } from './lock.mjs';
@@ -162,24 +163,34 @@ export async function listCandidatesFromTaskSource(repoDir, taskSource, deps = {
   const guardianDir = guardianDirOf(repoDir);
   const source = deps.source ?? refs[0]?.source ?? 'github';
   const candidates = refs.map((ref) => {
-    const issue = numericSchedulerIssue(ref);
+    const issue = schedulerStateKey(ref);
     const record = stateReader(guardianDir, issue);
     return { issue, taskRef: ref, updatedAt: ref.updatedAt ?? ref.updated_at, claim_source: record ? 'existing' : 'discovered' };
   });
+  // A1 (decision-e8c0d364): the followup scan accepts BOTH legacy numeric `<n>.json` (github) and
+  // source-qualified `<source>__<taskId>.json` files, rebuilding a faithful TaskRef from either.
   const followups = readdirSync(guardianDir, { withFileTypes: true })
-    .filter((entry) => entry.isFile() && /^\d+\.json$/.test(entry.name))
-    .map((entry) => readJsonFile(path.join(guardianDir, entry.name)))
-    .filter((record) => record.state === 'DONE' || record.state === 'GATE_2_WAIT')
-    .map((record) => ({ issue: Number(record.issue), taskRef: { source, taskId: String(record.issue), displayId: displayIdForSource(source, record.issue) }, updatedAt: record.updated_at, claim_source: 'followup' }));
+    .filter((entry) => entry.isFile() && /\.json$/.test(entry.name) && !entry.name.startsWith('.'))
+    .map((entry) => ({ name: entry.name, record: safeReadRecord(path.join(guardianDir, entry.name)) }))
+    .filter(({ record }) => record && (record.state === 'DONE' || record.state === 'GATE_2_WAIT'))
+    .map(({ name, record }) => {
+      const taskRef = followupTaskRef(record, name, source);
+      // The state key is the record's ACTUAL on-disk key (the filename stem), so a legacy
+      // `<n>.json` keeps its numeric key even when rediscovered under a non-github source; a
+      // durable source-qualified record keeps its `<source>__<taskId>` key.
+      const stateKey = String(name).replace(/\.json$/, '');
+      const issue = isNumericStorageKey(stateKey) ? Number(stateKey) : stateKey;
+      return { issue, taskRef, updatedAt: record.updated_at, claim_source: 'followup' };
+    });
   const merged = new Map(candidates.concat(followups).map((x) => [candidateKey(x), x]));
   return [...merged.values()].sort((a, b) => {
     const updated = String(a.updatedAt ?? '').localeCompare(String(b.updatedAt ?? ''));
-    return updated || Number(a.issue) - Number(b.issue);
+    return updated || String(a.issue).localeCompare(String(b.issue), undefined, { numeric: true });
   });
 }
 
 export async function pollTaskObservation({ repoDir, guardianDir, taskSource, taskRef, leaseMs, now, trustedAuthors }) {
-  const issue = numericSchedulerIssue(taskRef);
+  const issue = schedulerStateKey(taskRef);
   const record = readState(guardianDir, issue);
   const observation = await taskSource.readTask(taskRef);
   const decision = routeIssue(record, observation, { leaseMs, now, trustedAuthors });
@@ -193,18 +204,55 @@ export async function pollTaskObservation({ repoDir, guardianDir, taskSource, ta
   };
 }
 
-function numericSchedulerIssue(ref) {
-  const issue = Number(ref?.taskId);
-  if (!Number.isInteger(issue) || issue <= 0) throw new Error(`scheduler taskRef requires a positive numeric taskId until P8: ${String(ref?.source)}:${String(ref?.taskId)}`);
-  return issue;
+// A1 (decision-e8c0d364): the scheduler's per-task key used for state read/write, artifact paths,
+// and lock/candidate identity. For a github ref this is the positive integer issue id (so all
+// existing `<n>.json` / branch / artifact paths stay byte-identical); for any other source it is
+// the source-qualified storageKey string (e.g. "pm__<uuid>"). Replaces the old
+// numericSchedulerIssue(), which hard-rejected non-numeric ids.
+function schedulerStateKey(ref) {
+  if (ref?.source === 'github') {
+    const issue = Number(ref?.taskId);
+    if (!Number.isInteger(issue) || issue <= 0) {
+      throw new Error(`github taskRef requires a positive numeric taskId: ${String(ref?.taskId)}`);
+    }
+    return issue;
+  }
+  return taskRefStorageKey(ref);
+}
+
+function safeReadRecord(file) {
+  try {
+    return readJsonFile(file);
+  } catch {
+    return null;
+  }
+}
+
+// Rebuild the identity of a persisted followup record.
+// Priority: (1) an explicit persisted task_ref (the durable, source-accurate identity for any
+// non-github source); (2) otherwise reconstruct from the numeric issue under the CURRENT source
+// context (`defaultSource`) — a legacy record stored as `<n>.json` carries no source of its own,
+// so the discovering source is authoritative; (3) last resort, derive the taskId from the filename.
+function followupTaskRef(record, fileName, defaultSource) {
+  if (record.task_ref && typeof record.task_ref === 'object') {
+    try {
+      return makeTaskRef(record.task_ref);
+    } catch {
+      // fall through to reconstruction
+    }
+  }
+  const numericIssue = Number(record.issue);
+  if (Number.isInteger(numericIssue) && numericIssue > 0) {
+    const taskId = String(numericIssue);
+    const displayId = defaultSource === 'github' ? `#${taskId}` : taskId;
+    return makeTaskRef({ source: defaultSource, taskId, displayId });
+  }
+  const base = String(fileName).replace(/\.json$/, '');
+  return makeTaskRef({ source: defaultSource, taskId: base, displayId: base });
 }
 
 function candidateKey(candidate) {
   return `${candidate.taskRef?.source ?? 'github'}:${candidate.taskRef?.taskId ?? String(candidate.issue)}`;
-}
-
-function displayIdForSource(source, issue) {
-  return source === 'github' ? `#${issue}` : String(issue);
 }
 
 export function createSchedulerTaskSource({ repoDir, config = {}, deps = {} }) {

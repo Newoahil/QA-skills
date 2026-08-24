@@ -9,6 +9,17 @@ import { existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { readJsonFile } from './runtime-io.mjs';
 import { atomicWriteJson } from './atomic-io.mjs';
+import { storageKey as taskRefStorageKey } from './task-ref.mjs';
+
+// A1 (PM-adapter prep, decision-e8c0d364): resolve the storage key for a record. A record
+// carrying a persisted `task_ref` uses its source-qualified storageKey; a legacy/github record
+// falls back to its numeric `issue`, keeping `${n}.json` byte-identical.
+function recordStorageKey(record) {
+  if (record?.task_ref && typeof record.task_ref === 'object') {
+    return taskRefStorageKey(record.task_ref);
+  }
+  return Number(record?.issue);
+}
 
 // Canonical state set (§11 state machine). "active" states carry a heartbeat and are
 // lease-checked for STALLED; "waiting"/"terminal" states do not occupy the concurrency
@@ -64,10 +75,17 @@ export function isTerminalState(state) {
 }
 
 // A fresh state record for a newly discovered issue.
+// `issueNumber` is the numeric GitHub id for github-sourced work; for a non-github source it may
+// be null/absent (identity then lives in the record's `task_ref`).
 export function newState(issueNumber, now = new Date().toISOString()) {
+  const numericIssue = Number(issueNumber);
   return {
     schema_version: 3,
-    issue: Number(issueNumber),
+    issue: Number.isInteger(numericIssue) ? numericIssue : null,
+    // A1 (decision-e8c0d364): full source-neutral identity. null for legacy/github records,
+    // which continue to key off the numeric `issue`. A non-github source persists its TaskRef
+    // here so the storage key, branch, ledger token and session binding can be source-qualified.
+    task_ref: null,
     state: STATES.DISCOVERED,
     risk: null, // LOW | HIGH once assessed
     branch: null, // fix/issue-<n>
@@ -139,8 +157,14 @@ export function newState(issueNumber, now = new Date().toISOString()) {
 // Normalize an on-disk record, filling any missing fields against the current schema so
 // state files written by older versions still round-trip safely.
 export function normalizeState(record, issueNumber) {
-  const base = newState(issueNumber ?? record.issue, record.updated_at);
-  const merged = { ...base, ...record, issue: Number(issueNumber ?? record.issue) };
+  // `issueNumber` may be a numeric github id, a storageKey string, or omitted. Only a genuine
+  // integer becomes the numeric `issue`; a non-numeric storage key leaves `issue` from the record
+  // (or null) and identity is carried by `task_ref`.
+  const rawKey = issueNumber ?? record.issue;
+  const numericKey = Number(rawKey);
+  const resolvedIssue = Number.isInteger(numericKey) ? numericKey : (Number.isInteger(Number(record.issue)) ? Number(record.issue) : null);
+  const base = newState(resolvedIssue, record.updated_at);
+  const merged = { ...base, ...record, issue: resolvedIssue };
   // Deep-merge opencode so a partial/older record keeps base defaults for missing sub-fields.
   if (record.opencode && typeof record.opencode === 'object') {
     merged.opencode = {
@@ -187,15 +211,22 @@ export function startFollowupRound(record, command, now = new Date().toISOString
   };
 }
 
-function statePath(guardianDir, issueNumber) {
-  return path.join(guardianDir, `${Number(issueNumber)}.json`);
+// A1 (PM-adapter prep, decision-e8c0d364): the on-disk filename is the STORAGE KEY, not
+// necessarily a number. A GitHub issue passes its numeric id and gets `${n}.json` exactly as
+// before (byte-identical); a non-github source passes its storageKey string (e.g. "pm__<uuid>")
+// and gets `pm__<uuid>.json`. `key` may be a number (github) or a pre-computed storageKey string.
+function statePath(guardianDir, key) {
+  const name = typeof key === 'number' || /^[1-9][0-9]*$/.test(String(key)) ? String(Number(key)) : String(key);
+  return path.join(guardianDir, `${name}.json`);
 }
 
 // Read a state record; returns null when no record exists (a genuinely new issue, §11A.2).
-export function readState(guardianDir, issueNumber) {
-  const file = statePath(guardianDir, issueNumber);
+// `key` is the storage key: a numeric GitHub issue id (back-compat) or a source-qualified
+// storageKey string for non-github sources.
+export function readState(guardianDir, key) {
+  const file = statePath(guardianDir, key);
   if (!existsSync(file)) return null;
-  return normalizeState(readJsonFile(file), issueNumber);
+  return normalizeState(readJsonFile(file), key);
 }
 
 // Always stamps updated_at unless the caller froze it. The canonical file is replaced only after
@@ -204,7 +235,9 @@ export function writeState(guardianDir, record, { touch = true, now = new Date()
   mkdirSync(guardianDir, { recursive: true });
   const out = normalizeState(record, record.issue);
   if (touch) out.updated_at = now;
-  const file = statePath(guardianDir, out.issue);
+  // Filename is the storage key: github → `${issue}.json` (byte-identical); non-github →
+  // source-qualified storageKey from the persisted task_ref.
+  const file = statePath(guardianDir, recordStorageKey(out));
   atomicWriteJson(file, out, { ...(fsOps ? { fsOps } : {}), ...(makeId ? { makeId } : {}) });
   return out;
 }

@@ -165,7 +165,7 @@ test('runtime GitHub TaskSource discovery preserves updatedAt ordering metadata'
   }
 });
 
-test('runtime discovery keeps source identity separate and rejects nonnumeric IDs before NaN state', async () => {
+test('runtime discovery keeps source identity separate and accepts nonnumeric IDs (A1: storage key)', async () => {
   const repoDir = repoWithGuardian();
   try {
     writeState(path.join(repoDir, '.qa', 'guardian'), { ...newState(205), state: STATES.DONE }, { touch: false });
@@ -176,9 +176,17 @@ test('runtime discovery keeps source identity separate and rejects nonnumeric ID
       { key: 'github:205', claim_source: 'followup' },
     ]);
 
-    await assert.rejects(() => listCandidatesFromTaskSource(repoDir, {
+    // A1 (decision-e8c0d364): a non-numeric taskId is no longer rejected. It resolves to a
+    // source-qualified storage key ("http__job-42") that never collides with a numeric github key,
+    // so PM Result UUIDs can be persisted durably. This replaces the old P8 numeric hard-reject.
+    const nonNumeric = await listCandidatesFromTaskSource(repoDir, {
       listTasks: async () => [{ source: 'http', taskId: 'job-42', displayId: 'job-42' }],
-    }), /positive numeric taskId until P8/);
+    });
+    const nonNumericCandidate = nonNumeric.find(({ taskRef }) => taskRef.taskId === 'job-42');
+    assert.deepEqual(
+      { issue: nonNumericCandidate.issue, key: `${nonNumericCandidate.taskRef.source}:${nonNumericCandidate.taskRef.taskId}`, claim_source: nonNumericCandidate.claim_source },
+      { issue: 'http__job-42', key: 'http:job-42', claim_source: 'discovered' },
+    );
   } finally {
     rmSync(repoDir, { recursive: true, force: true });
   }
