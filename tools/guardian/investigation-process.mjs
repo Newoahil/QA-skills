@@ -424,6 +424,17 @@ const PLAN_SCHEMA = Object.freeze({
 function normalizePlanRisk(plan) {
   if (!plan || typeof plan !== 'object' || Array.isArray(plan)) return plan;
   const normalized = { ...plan };
+  const affected = Array.isArray(plan.affected_files) ? plan.affected_files : [];
+  const affectedDetails = affected.filter((item) => item && typeof item === 'object' && !Array.isArray(item));
+  normalized.affected_files = affected.map((item) => {
+    if (typeof item === 'string') return item.trim();
+    if (!item || typeof item !== 'object' || Array.isArray(item)) return '';
+    const candidate = item.file ?? item.path ?? item.file_path;
+    return typeof candidate === 'string' ? candidate.trim() : '';
+  }).filter(Boolean);
+  if (affectedDetails.length > 0 && normalized.affected_file_details === undefined) {
+    normalized.affected_file_details = affectedDetails;
+  }
   const risk = normalized.risk;
   const riskText = typeof risk === 'string' ? risk.trim() : null;
 

@@ -679,6 +679,48 @@ test('processPlanBuilder normalizes child-process fallback risk and defaults amb
   assert.equal(result.risk_prose, '中');
 });
 
+test('processPlanBuilder normalizes described affected_files to path strings for fixer scope checks', async () => {
+  const client = {
+    createSession: async () => 'ses_plan_affected_files',
+    prompt: async () => ({
+      kind: 'ok',
+      result: {
+        structured: {
+          root_cause: 'root',
+          affected_files: [
+            { file: 'frontend/apps/alipay-miniapp/src/pages/classifyAgain/index.js', '说明': 'core page' },
+            { path: 'frontend/apps/alipay-miniapp/package.json', reason: 'test command' },
+          ],
+          risk: 'HIGH',
+          risk_assessment: {
+            certain: false,
+            lowDangerSurfaceOnly: false,
+            touchedSurfaces: [],
+            localImpact: true,
+            diffLines: 80,
+            reproducibleOracle: false,
+            scopeExpansionRequested: false,
+          },
+        },
+      },
+    }),
+  };
+
+  const result = await processPlanBuilder({
+    issue: 263,
+    repoDir: 'D:/repo',
+    dossier: { evidence: [] },
+    opencodeClient: client,
+  });
+
+  assert.deepEqual(result.affected_files, [
+    'frontend/apps/alipay-miniapp/src/pages/classifyAgain/index.js',
+    'frontend/apps/alipay-miniapp/package.json',
+  ]);
+  assert.equal(result.affected_file_details.length, 2);
+  assert.equal(result.affected_file_details[0].file, 'frontend/apps/alipay-miniapp/src/pages/classifyAgain/index.js');
+});
+
 test('runAgentJson reports malformed event lines without treating them as final output', async () => {
   // Given: one malformed progress line followed by a valid text result.
   const child = fakeChild();
