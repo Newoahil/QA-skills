@@ -265,3 +265,32 @@ test('passes scheduler AbortSignal into fixer prompt', async () => {
 
   assert.equal(calls.prompt[0].signal, controller.signal);
 });
+
+test('does not write PR summary or accept fixer completion after the active-run fence falls false', async () => {
+  const { client } = fakeClient();
+  const prSummaries = [];
+
+  const result = await runFixerSession({
+    client,
+    state: { opencode: { fixer: null, qa: null, specialists: {}, inflight: null } },
+    issue: 211,
+    repoDir: 'D:/repo',
+    dossierPath: 'dossier.json',
+    planPath: 'plan.json',
+    plan: { affected_files: ['tools/guardian/fix.mjs'] },
+    writePrSummary: (markdown) => { prSummaries.push(markdown); },
+    isActiveRun: () => false,
+  });
+
+  assert.deepEqual(
+    prSummaries,
+    [],
+    'late or stale fixer completion must be fenced before writePrSummary runs',
+  );
+  assert.equal(
+    result.completion,
+    null,
+    'once the active-run fence is false, the runner must not keep the completion as current',
+  );
+  assert.notEqual(result.status, 'ok');
+});

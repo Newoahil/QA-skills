@@ -351,3 +351,28 @@ test('passes scheduler AbortSignal into QA prompt', async () => {
 
   assert.equal(calls.prompt[0].signal, controller.signal);
 });
+
+test('does not write QA acceptance or accept a verdict after the active-run fence falls false', async () => {
+  const { client } = fakeClient();
+  const acceptances = [];
+
+  const result = await runQaSession({
+    client,
+    state: { opencode: { fixer: null, qa: null, specialists: {}, inflight: null } },
+    issue: 211,
+    repoDir: 'D:/repo',
+    branch: 'fix/issue-211',
+    diffSummary: 'changed color to pink',
+    intendedBehavior: 'bad debt amount shows pink',
+    writeQaAcceptance: (markdown) => { acceptances.push(markdown); },
+    isActiveRun: () => false,
+  });
+
+  assert.deepEqual(
+    acceptances,
+    [],
+    'a fenced QA completion must not emit downstream acceptance effects once ownership is lost',
+  );
+  assert.equal(result.verdict, null);
+  assert.notEqual(result.status, 'ok');
+});

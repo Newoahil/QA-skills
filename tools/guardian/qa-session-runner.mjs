@@ -32,6 +32,7 @@ export async function runQaSession({
   writeQaAcceptance = null,
   model = undefined, fallbackModels = [],
   signal = null,
+  isActiveRun = () => true,
 }) {
   const startedAt = Date.now();
   const opencode = state.opencode ?? { schema_version: 1, fixer: null, qa: null, specialists: {}, inflight: null };
@@ -59,9 +60,33 @@ export async function runQaSession({
     () => client.abort(sessionId),
     () => { control.cancelled = true; },
   );
+  if (!isActiveRun()) {
+    return {
+      status: 'fenced',
+      sessionId,
+      state,
+      verdict: null,
+      report: '',
+      error: new Error('qa completion fenced after active run ended'),
+      abortError: null,
+      recreateOnNextRun: false,
+    };
+  }
   const status = normalizeOutcomeStatus(outcome);
   const text = typeof outcome?.result?.text === 'string' ? outcome.result.text : '';
   const verdict = status === 'ok' ? parseOverallStatus(text) : null;
+  if (status === 'ok' && !isActiveRun()) {
+    return {
+      status: 'fenced',
+      sessionId,
+      state,
+      verdict: null,
+      report: '',
+      error: new Error('qa completion fenced after active run ended'),
+      abortError: null,
+      recreateOnNextRun: false,
+    };
+  }
   if (status === 'ok' && text.trim() && typeof writeQaAcceptance === 'function') {
     writeQaAcceptance(text);
   }

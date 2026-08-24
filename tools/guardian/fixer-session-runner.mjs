@@ -94,6 +94,7 @@ export async function runFixerSession({
   model = undefined,
   fallbackModels = [],
   signal = null,
+  isActiveRun = () => true,
 }) {
   const opencode = state.opencode ?? { schema_version: 1, fixer: null, qa: null, specialists: {}, inflight: null };
   const decision = await resolveSessionForRole({
@@ -129,9 +130,38 @@ export async function runFixerSession({
     () => client.abort(sessionId),
   );
 
+  if (!isActiveRun()) {
+    return {
+      status: 'fenced',
+      sessionId,
+      state,
+      result: null,
+      error: new Error('fixer completion fenced after active run ended'),
+      abortError: null,
+      completion: null,
+      completionError: 'active-run-fenced',
+      finalization: null,
+      recreateOnNextRun: false,
+    };
+  }
+
   const status = normalizeOutcomeStatus(outcome);
   const completion = status === 'ok' ? validateFixerCompletion(outcome.result, plan) : null;
   const finalStatus = status === 'ok' && completion && !completion.ok ? 'unverified' : status;
+  if (finalStatus === 'ok' && !isActiveRun()) {
+    return {
+      status: 'fenced',
+      sessionId,
+      state,
+      result: null,
+      error: new Error('fixer completion fenced after active run ended'),
+      abortError: null,
+      completion: null,
+      completionError: 'active-run-fenced',
+      finalization: null,
+      recreateOnNextRun: false,
+    };
+  }
   if (finalStatus === 'ok' && completion?.prSummaryMarkdown && typeof writePrSummary === 'function') {
     writePrSummary(completion.prSummaryMarkdown);
   }
