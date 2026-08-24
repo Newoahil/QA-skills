@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { existsSync, readFileSync } from 'node:fs';
 
-import { deliverNotifications, defaultCurlPost, defaultGhComment, notifyTargetState } from '../../tools/guardian/notify-io.mjs';
+import { closeoutTransition, deliverNotifications, defaultCurlPost, defaultGhComment, notifyTargetState } from '../../tools/guardian/notify-io.mjs';
 import { newState } from '../../tools/guardian/state.mjs';
 import { ACTORS } from '../../tools/guardian/actor-routing.mjs';
 
@@ -68,6 +68,59 @@ test('idempotent: a state already notified is not re-delivered', () => {
   });
   assert.equal(results[0].skipped, true);
   assert.equal(io.calls.comment.length, 0);
+});
+
+test('duplicate delivery calls claim one transition before injected I/O', () => {
+  const fs = fakeStore({ 43: newState(43) });
+  const io = spyIo();
+  const claim = (() => {
+    let claimed = false;
+    return () => {
+      if (claimed) return false;
+      claimed = true;
+      return true;
+    };
+  })();
+  const deps = { readState: fs.readState, writeState: fs.writeState, claimNotification: claim };
+
+  const first = deliverNotifications({
+    decisions: [{ issue: 43, action: 'STALLED' }], guardianDir: '/g', config: {}, io,
+    actor: ACTORS.SUPERVISOR, deps,
+  });
+  const second = deliverNotifications({
+    decisions: [{ issue: 43, action: 'STALLED' }], guardianDir: '/g', config: {}, io,
+    actor: ACTORS.SUPERVISOR, deps,
+  });
+
+  assert.deepEqual(first, [{ issue: 43, delivered: true }]);
+  assert.deepEqual(second, [{ issue: 43, delivered: false, skipped: true, reasonSkipped: 'transition-claimed' }]);
+  assert.equal(io.calls.comment.length, 1);
+  assert.equal(fs.store[43].last_notified_state, 'STALLED');
+});
+
+test('failed closeout delivery leaves the marker retryable and preserves authoritative state', () => {
+  const fs = fakeStore({ 44: newState(44) });
+  const order = [];
+  const result = closeoutTransition({
+    guardianDir: '/g',
+    decision: { issue: 44, action: 'GATE_1_WAIT' },
+    statePatch: { state: 'GATE_1_WAIT' },
+    io: spyIo(),
+    actor: ACTORS.SUPERVISOR,
+    deps: {
+      readState: fs.readState,
+      writeState: (_dir, record) => {
+        order.push(record.last_notified_state ? 'marker' : 'state');
+        fs.store[record.issue] = { ...record };
+      },
+    },
+    deliver: () => { order.push('delivery'); throw new Error('comment unavailable'); },
+  });
+
+  assert.deepEqual(result, [{ issue: 44, delivered: false, error: 'comment unavailable' }]);
+  assert.deepEqual(order, ['state', 'delivery']);
+  assert.equal(fs.store[44].state, 'GATE_1_WAIT');
+  assert.equal(fs.store[44].last_notified_state, null);
 });
 
 test('webhook fires when notify_webhook configured (feishu channel wraps a card)', () => {

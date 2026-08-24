@@ -21,7 +21,7 @@ import { storageKey as taskRefStorageKey, isNumericStorageKey, makeTaskRef } fro
 import { routeIssue } from './state-router.mjs';
 import { commandlessStateTransition, planTick } from './scheduler-core.mjs';
 import { acquireLock, renewLock, releaseLock } from './lock.mjs';
-import { deliverNotifications, defaultGhComment, defaultCurlPost } from './notify-io.mjs';
+import { closeoutTransition, deliverNotifications, defaultGhComment, defaultCurlPost } from './notify-io.mjs';
 import { createLogger } from './runtime-io.mjs';
 import { projectLabels } from './label-io.mjs';
 import { prepareInvestigation } from './investigation-runtime.mjs';
@@ -242,6 +242,8 @@ export async function pollTaskObservation({ repoDir, guardianDir, taskSource, ta
     issue,
     issueTitle: observation.facts?.title ?? null,
     issueBody: observation.facts?.body ?? '',
+    taskRef,
+    executionSpec: observation.spec,
     ...decision,
     invoke: null,
     invokeArgv: invocationArgvFor(repoDir, issue, decision),
@@ -467,6 +469,15 @@ async function tick(repoDir, config, logger, signal = null, runtime = createSche
   // the ATOMIC lock acquire below — planTick's lock arg is null here so it only picks a candidate.
   const plan = planTick({ decisions, lock: null, leaseMs, now });
 
+  if (plan.toRun?.taskRef && plan.toRun.taskRef.source !== 'github') {
+    logger.warn('run.unsupported_source', {
+      issue: plan.toRun.issue,
+      source: plan.toRun.taskRef.source,
+      reason: `unsupported-source:${plan.toRun.taskRef.source}`,
+    });
+    return;
+  }
+
   persistCommandlessTransitions({
     decisions,
     guardianDir: guardianDirOf(repoDir),
@@ -476,17 +487,18 @@ async function tick(repoDir, config, logger, signal = null, runtime = createSche
   // Deliver notifications (FR-21 / §11B.5) for gate-stop/STALLED/HANDED_BACK decisions BEFORE
   // handling the run. Idempotent per last_notified_state; independent of the N=1 run lock, so a
   // stopped issue is announced even while another issue is running. Best-effort per issue.
-  if (plan.notify.length > 0) {
+  const notifyDecisions = plan.notify.filter((decision) => !decision.taskRef || decision.taskRef.source === 'github');
+  if (notifyDecisions.length > 0) {
     const guardianDir = guardianDirOf(repoDir);
     const results = deliverNotifications({
-      decisions: plan.notify,
+       decisions: notifyDecisions,
       guardianDir,
       config,
        actor: ACTORS.SUPERVISOR,
        io: { ghComment: defaultGhComment(repoDir, ACTORS.SUPERVISOR), curlPost: defaultCurlPost(ACTORS.SUPERVISOR) },
     });
     const delivered = results.filter((r) => r.delivered).length;
-    logger.info('notify.summary', { attempted: plan.notify.length, delivered });
+     logger.info('notify.summary', { attempted: notifyDecisions.length, delivered });
   }
 
   if (!plan.toRun) {
@@ -687,19 +699,29 @@ async function tick(repoDir, config, logger, signal = null, runtime = createSche
     });
     if (!gate.allowed || gate.shadow === true) {
       const current = readState(guardianDir, issue) ?? { issue };
-      writeState(guardianDir, {
-        ...current,
+      const gate1StatePatch = {
         state: 'GATE_1_WAIT',
         risk: 'HIGH',
-         gate_1_approved_comment_id: null,
-         gate_1_approved_plan_hash: null,
-         gate_1_approved_plan_revision: null,
-         gate_1_revision_data: null,
+        gate_1_approved_comment_id: null,
+        gate_1_approved_plan_hash: null,
+        gate_1_approved_plan_revision: null,
+        gate_1_revision_data: null,
         last_phase: 'gate1-wait',
         plan_validation_errors: gate.plan_result?.errors ?? [],
-      }, { touch: false });
+      };
       try {
-       defaultGhComment(repoDir, ACTORS.SUPERVISOR)(issue, buildGate1Comment({ issue, plan: planArtifact, dossier, planHash: identity.plan_hash, planRevision: identity.plan_revision }));
+       closeoutTransition({
+         guardianDir,
+         decision: { action: 'GATE_1_WAIT', issue, taskRef: plan.toRun.taskRef },
+         statePatch: gate1StatePatch,
+         config,
+         actor: ACTORS.SUPERVISOR,
+          io: {
+            ghComment: (commentIssue, text) => defaultGhComment(repoDir, ACTORS.SUPERVISOR)(commentIssue, text),
+            curlPost: defaultCurlPost(ACTORS.SUPERVISOR),
+          },
+          deliver: () => defaultGhComment(repoDir, ACTORS.SUPERVISOR)(issue, buildGate1Comment({ issue, plan: planArtifact, dossier, planHash: identity.plan_hash, planRevision: identity.plan_revision })),
+        });
       } catch (error) {
         logger.warn('gate1.comment_failed', { issue, error_message: error instanceof Error ? error.message : 'unknown' });
       }
@@ -741,9 +763,11 @@ async function tick(repoDir, config, logger, signal = null, runtime = createSche
         stages: pipelineStages,
         runners: pipelineRunners,
         context: stageRunnerContext({
-          client: opencodeClient,
-          issue,
-          repoDir,
+           client: opencodeClient,
+           issue,
+           taskRef: plan.toRun.taskRef,
+           executionSpec: plan.toRun.executionSpec,
+           repoDir,
           guardianDir,
           command: plan.toRun.command,
           issueTitle: plan.toRun.issueTitle,

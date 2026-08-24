@@ -78,6 +78,10 @@ function validateProjectPipelineManifest(manifest) {
 }
 
 export async function runPipeline({ stages = loadPipelineManifest(), context, runners = RUNNERS }) {
+  const profile = selectExecutionProfile(context);
+  if (!profile.supported) {
+    return Object.freeze({ completion: null, qaVerdict: null, stopped: true, status: profile.reason });
+  }
   const state = { completion: null, qaVerdict: null };
   for (const stage of stages) {
     const runner = runners[stage.runner];
@@ -88,6 +92,14 @@ export async function runPipeline({ stages = loadPipelineManifest(), context, ru
     if (result?.stop) return Object.freeze({ ...state, stopped: true, stage: stage.id, status: result.status });
   }
   return Object.freeze({ ...state, stopped: false });
+}
+
+function selectExecutionProfile(context = {}) {
+  const source = context.taskRef?.source ?? 'github';
+  if (source !== 'github') {
+    return Object.freeze({ supported: false, reason: `unsupported-source:${source}` });
+  }
+  return Object.freeze({ supported: true, executionType: 'coding' });
 }
 
 export async function runFixerStage(context) {

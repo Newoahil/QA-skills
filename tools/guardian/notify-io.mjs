@@ -14,6 +14,24 @@ import { readState, writeState } from './state.mjs';
 import { assertActorMayPerform, EFFECTS } from './actor-routing.mjs';
 import { withGithubBodyFile } from './github-body-file.mjs';
 
+const claimedTransitions = new Set();
+
+function notificationClaimKey(guardianDir, issue, targetState) {
+  return `${guardianDir}:${String(issue)}:${targetState}`;
+}
+
+function claimNotificationTransition(guardianDir, issue, targetState, record) {
+  if (record.last_notified_state === targetState) return false;
+  const key = notificationClaimKey(guardianDir, issue, targetState);
+  if (claimedTransitions.has(key)) return false;
+  claimedTransitions.add(key);
+  return true;
+}
+
+function releaseNotificationClaim(guardianDir, issue, targetState) {
+  claimedTransitions.delete(notificationClaimKey(guardianDir, issue, targetState));
+}
+
 // Default gh-backed issue-comment channel. Writes the notification text as an issue comment.
 export function defaultGhComment(repoDir, actor, run = spawnSync) {
   return function ghComment(issue, text) {
@@ -69,15 +87,25 @@ export function deliverNotifications(args) {
   const rs = args.deps?.readState ?? readState;
   const ws = args.deps?.writeState ?? writeState;
   const now = args.deps?.now;
+  const claim = args.deps?.claimNotification ?? claimNotificationTransition;
+  const releaseClaim = args.deps?.releaseNotificationClaim ?? releaseNotificationClaim;
 
   const results = [];
   for (const d of decisions) {
     const targetState = notifyTargetState(d);
     if (!targetState) continue;
     try {
+      if (d.taskRef && d.taskRef.source !== 'github') {
+        results.push({ issue: d.issue, delivered: false, skipped: true, error: `unsupported-source:${d.taskRef.source}` });
+        continue;
+      }
       const record = rs(guardianDir, d.issue);
       if (!record) {
         results.push({ issue: d.issue, delivered: false, skipped: true, error: 'no-state-record' });
+        continue;
+      }
+      if (!claim(guardianDir, d.issue, targetState, record)) {
+        results.push({ issue: d.issue, delivered: false, skipped: true, reasonSkipped: 'transition-claimed' });
         continue;
       }
       const outcome = notify(
@@ -96,18 +124,47 @@ export function deliverNotifications(args) {
         },
       );
       if (outcome.skipped) {
+        releaseClaim(guardianDir, d.issue, targetState);
         results.push({ issue: d.issue, delivered: false, skipped: true });
         continue;
       }
       // Persist idempotency marker so the same state is not re-notified next tick.
       ws(guardianDir, { ...record, last_notified_state: targetState }, { touch: false, ...(now ? { now } : {}) });
+      releaseClaim(guardianDir, d.issue, targetState);
       results.push({ issue: d.issue, delivered: true });
     } catch (e) {
+      releaseClaim(guardianDir, d.issue, targetState);
       const msg = e instanceof Error ? e.message : 'unknown';
       results.push({ issue: d.issue, delivered: false, error: msg });
     }
   }
   return results;
+}
+
+export function closeoutTransition({ guardianDir, decision, statePatch, config = {}, io, actor, deps = {}, deliver = null }) {
+  const rs = deps.readState ?? readState;
+  const ws = deps.writeState ?? writeState;
+  const claim = deps.claimNotification ?? claimNotificationTransition;
+  const releaseClaim = deps.releaseNotificationClaim ?? releaseNotificationClaim;
+  const current = rs(guardianDir, decision.issue);
+  if (!current) return [{ issue: decision.issue, delivered: false, skipped: true, error: 'no-state-record' }];
+  const targetState = notifyTargetState(decision);
+  if (!claim(guardianDir, decision.issue, targetState, current)) {
+    return [{ issue: decision.issue, delivered: false, skipped: true, reasonSkipped: 'transition-claimed' }];
+  }
+  ws(guardianDir, { ...current, ...statePatch }, { touch: false, ...(deps.now ? { now: deps.now } : {}) });
+  if (typeof deliver === 'function') {
+    try {
+      deliver();
+      ws(guardianDir, { ...current, ...statePatch, last_notified_state: targetState }, { touch: false, ...(deps.now ? { now: deps.now } : {}) });
+      releaseClaim(guardianDir, decision.issue, targetState);
+      return [{ issue: decision.issue, delivered: true }];
+    } catch (error) {
+      releaseClaim(guardianDir, decision.issue, targetState);
+      return [{ issue: decision.issue, delivered: false, error: error instanceof Error ? error.message : 'unknown' }];
+    }
+  }
+  return deliverNotifications({ decisions: [decision], guardianDir, config, io, actor, deps });
 }
 
 // The state a notify-worthy decision announces. STALLED/HANDED_BACK come straight from the

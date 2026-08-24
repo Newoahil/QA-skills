@@ -83,6 +83,27 @@ test('runPipeline dispatches custom runners from caller registry', async () => {
   assert.deepEqual(calls, ['custom']);
 });
 
+test('runPipeline fails closed for a non-GitHub TaskRef before any stage runner or effect', async () => {
+  let runnerCalls = 0;
+  const result = await runPipeline({
+    stages: loadPipelineManifest(),
+    context: stageRunnerContext({
+      taskRef: { source: 'http', taskId: 'job-42', displayId: 'job-42' },
+      executionSpec: { executionType: 'coding' },
+      repoDir: 'D:/repo',
+    }),
+    runners: {
+      runFixerStage: async () => { runnerCalls += 1; return {}; },
+      runQaStage: async () => { runnerCalls += 1; return {}; },
+      runNotifyStage: async () => { runnerCalls += 1; return {}; },
+    },
+  });
+
+  assert.equal(result.stopped, true);
+  assert.equal(result.status, 'unsupported-source:http');
+  assert.equal(runnerCalls, 0);
+});
+
 test('loadPipelineManifest rejects malformed stages', () => {
   const valid = BUILTIN_PIPELINE_MANIFEST[0];
 
