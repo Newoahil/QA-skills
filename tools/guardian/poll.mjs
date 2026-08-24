@@ -14,11 +14,12 @@
 
 import path from 'node:path';
 import { existsSync } from 'node:fs';
-import { spawnSync } from 'node:child_process';
 import { readJsonFile } from './runtime-io.mjs';
 
+import { defaultGhReader } from './github-task-source.mjs';
 import { readState, STATES } from './state.mjs';
 import { routeIssue } from './state-router.mjs';
+export { defaultGhReader };
 
 // Read the target repo's guardian config (command_authors, lease_ms, etc.). Returns {} when absent.
 export function readGuardianConfig(repoDir) {
@@ -68,39 +69,7 @@ const runtimeGuardrailText = RUNTIME_GUARDRAILS
   .map(({ id, text }) => `[${id}] ${text}`)
   .join(' ');
 
-// --- GitHub access (injectable for tests) -------------------------------------------------
-
-// Default gh-backed reader: fetches the issue's closed flag + comments.
-export function defaultGhReader(repoDir) {
-  return function readGithubIssue(issueNumber) {
-    const args = [
-      'issue', 'view', String(issueNumber),
-      '--json', 'state,comments,title,body,labels',
-      // comments include author login for the command-authorization boundary (security).
-    ];
-    const res = spawnSync('gh', args, {
-      cwd: repoDir,
-      encoding: 'utf8',
-      shell: false,
-      windowsHide: true,
-    });
-    if (res.status !== 0) {
-      throw new Error(`gh issue view #${issueNumber} failed: ${res.stderr || res.stdout || 'unknown'}`);
-    }
-    const data = JSON.parse(res.stdout);
-    return {
-      title: data.title ?? null,
-      body: data.body ?? '',
-      closed: String(data.state).toUpperCase() === 'CLOSED',
-      comments: (data.comments ?? []).map((c) => ({
-        id: c.id ?? c.url ?? c.createdAt,
-        body: c.body ?? '',
-        createdAt: c.createdAt ?? null,
-        author: c.author?.login ?? c.author ?? null,
-      })),
-    };
-  };
-}
+// --- Invocation contract ------------------------------------------------------------------
 
 // Build the guardian invocation string for a routing decision (informational; the scheduler
 // executes it). Kept as data so the MVP can be driven by hand.
