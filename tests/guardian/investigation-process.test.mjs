@@ -418,6 +418,34 @@ test('processPlanBuilder uses the SDK client instead of spawning an attach proce
   assert.equal(result.root_cause, 'color');
 });
 
+test('processPlanBuilder requires Chinese plan content for human Gate1 review', async () => {
+  // Given: an injected SDK client that records the prompt sent to the plan builder.
+  const prompted = [];
+  const client = {
+    createSession: async () => 'ses_plan_zh',
+    prompt: async ({ parts }) => {
+      prompted.push(parts[0].text);
+      return { kind: 'ok', result: { text: '{"root_cause":"分类页文案预期不明确","affected_files":["pages/category/index.tsx"],"non_goals":["不扩大业务范围"],"test_plan":["人工确认后验证分类页文案"],"acceptance_criteria":["Gate1 评论可读"],"rollback_plan":"还原文案改动","evidence_ids":["E1"],"risk":"HIGH"}' } };
+    },
+  };
+
+  // When: the plan builder prepares its prompt.
+  const { processPlanBuilder } = await import('../../tools/guardian/investigation-process.mjs');
+  await processPlanBuilder({
+    issue: 263,
+    repoDir: 'D:/repo',
+    dossier: { evidence: [{ id: 'E1' }] },
+    opencodeClient: client,
+  });
+
+  // Then: the model is explicitly instructed to write human-facing plan values in Chinese.
+  assert.equal(prompted.length, 1);
+  assert.match(prompted[0], /中文/);
+  assert.match(prompted[0], /root_cause/);
+  assert.match(prompted[0], /affected_files/);
+  assert.match(prompted[0], /unresolved_facts|未确定事实/);
+});
+
 test('processPlanBuilder reports provider errors instead of parsing empty JSON', async () => {
   const client = {
     createSession: async () => 'ses_plan_cooldown',

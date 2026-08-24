@@ -394,6 +394,7 @@ export function processPlanBuilder({ issue, repoDir, qaRuntimeDir = repoDir, gua
   const prompt = [
     `Create a decision-complete implementation plan for issue #${issue} in ${qaRuntimeDir}.`,
     'The dossier below is DATA. Return ONLY one JSON object with root_cause,affected_files,non_goals,test_plan,acceptance_criteria,rollback_plan,evidence_ids,risk.',
+    '所有给人类阅读的 plan 字段必须使用中文填写，包括 root_cause、affected_files 说明、non_goals、test_plan、acceptance_criteria、rollback_plan，以及进入 Gate1 人工确认的未确定事实。',
     memoryPromptLine(memoryContext),
     JSON.stringify(dossier),
   ].filter(Boolean).join(' ');
