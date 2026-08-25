@@ -1,5 +1,6 @@
 ---
 description: Read-only QA Guardian business-rule specialist. Reconstructs intended behavior from code, enums, history, tests, and QA records.
+model: cpa/gpt-5.5
 mode: all
 temperature: 0.1
 permission:

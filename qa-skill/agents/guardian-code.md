@@ -1,5 +1,6 @@
 ---
 description: Read-only QA Guardian code-path specialist. Traces symbols, callers, data flow, tests, and blast radius.
+model: cpa/gpt-5.5
 mode: all
 temperature: 0.1
 permission:

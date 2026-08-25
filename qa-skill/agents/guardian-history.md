@@ -1,5 +1,6 @@
 ---
 description: Read-only QA Guardian history specialist. Uses local git history to identify regressions, ownership, and prior fixes.
+model: cpa/gpt-5.5
 mode: all
 temperature: 0.1
 permission:
