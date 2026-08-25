@@ -149,7 +149,10 @@ export function createSupervisorExecutor({ repoDir, run = spawnSync } = {}) {
     }
   }
 
-  async function finalizeFix({ issue, plan, mode = 'enforced' }) {
+  async function finalizeFix({ issue, plan, mode = 'enforced', isActiveRun = () => true }) {
+    const assertActiveRun = () => {
+      if (!isActiveRun()) throw new Error('finalization fenced: active run is false');
+    };
     const affectedFiles = Array.isArray(plan?.affected_files) ? plan.affected_files.map((file) => repoRelativePath(file, 'affected file')) : [];
     if (affectedFiles.length === 0) throw new Error('affected files are required');
     const expected = new Set(affectedFiles);
@@ -168,6 +171,7 @@ export function createSupervisorExecutor({ repoDir, run = spawnSync } = {}) {
     if (current.status !== 0 || current.stdout.trim() !== branch) {
       throw new Error(`finalization requires current branch ${branch}`);
     }
+    assertActiveRun();
     // Enforced mode must run executable scoped tests before commit/push.
     if (mode === 'enforced' && (!Array.isArray(testCommands) || testCommands.length === 0)) {
       throw new Error('enforced finalization requires executable test_commands');
@@ -176,19 +180,22 @@ export function createSupervisorExecutor({ repoDir, run = spawnSync } = {}) {
     const evidence = exec({ operation: 'status-diff' });
     if (evidence.status !== 0) throw new Error(`status/diff failed: ${evidence.stderr || 'unknown'}`);
     const tests = Array.isArray(testCommands) && testCommands.length > 0
-      ? exec({ operation: 'run-tests', commands: testCommands })
+      ? (assertActiveRun(), exec({ operation: 'run-tests', commands: testCommands }))
       : { status: 0, skipped: true, reason: 'no test_commands supplied' };
     if (tests.status !== 0) throw new Error(`scoped tests failed: ${tests.stderr || tests.stdout || 'unknown'}`);
     rejectOutOfScope(stagedNames(), 'pre-existing');
+    assertActiveRun();
     const stage = exec({ operation: 'stage-files', files: affectedFiles });
     if (stage.status !== 0) throw new Error(`stage failed: ${stage.stderr || 'unknown'}`);
     const stagedAfterAdd = stagedNames();
     rejectOutOfScope(stagedAfterAdd, 'post-add');
     if (stagedAfterAdd.length === 0) throw new Error('no scoped files staged for finalization');
+    assertActiveRun();
     const commit = exec({ operation: 'commit', issue });
     if (commit.status !== 0 && !/nothing to commit/i.test(commit.stdout + commit.stderr)) {
       throw new Error(`commit failed: ${commit.stderr || 'unknown'}`);
     }
+    assertActiveRun();
     const push = exec({ operation: 'push', branch });
     if (push.status !== 0) throw new Error(`push failed: ${push.stderr || 'unknown'}`);
     return { branch, evidence, tests, commit, push };

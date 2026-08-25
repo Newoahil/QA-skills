@@ -181,6 +181,38 @@ test('clean scoped finalization stages only the affected files and excludes code
   assert.equal(calls.some((call) => call.argv.includes('.codegraph')), false);
 });
 
+test('finalization refuses to continue before irreversible operations when the active-run fence is already false', async () => {
+  const calls = [];
+  const run = (file, argv, options) => {
+    calls.push({ file, argv, options });
+    if (argv[0] === 'branch') return { status: 0, stdout: 'fix/issue-211\n', stderr: '' };
+    return { status: 0, stdout: '', stderr: '' };
+  };
+  const executor = createSupervisorExecutor({ repoDir: 'D:/repo', run });
+
+  await assert.rejects(
+    () => executor.finalizeFix({
+      issue: 211,
+      mode: 'enforced',
+      isActiveRun: () => false,
+      plan: {
+        affected_files: ['tools/guardian/foo.mjs'],
+        test_commands: [['node', '--test', 'tests/guardian/foo.test.mjs']],
+      },
+    }),
+    /active|fence|stale/i,
+  );
+
+  assert.deepEqual(calls.map((call) => call.argv), [
+    ['branch', '--show-current'],
+  ]);
+  assert.equal(calls.some((call) => call.argv[0] === 'status'), false, 'must not inspect diff/worktree after the fence closes');
+  assert.equal(calls.some((call) => call.file === 'node'), false, 'must not launch scoped tests after the fence closes');
+  assert.equal(calls.some((call) => call.argv[0] === 'add'), false, 'must not stage files after the fence closes');
+  assert.equal(calls.some((call) => call.argv[0] === 'commit'), false, 'must not commit after the fence closes');
+  assert.equal(calls.some((call) => call.argv[0] === 'push'), false, 'must not push after the fence closes');
+});
+
 test('ensure-fix-branch creates only when switching an existing branch fails', () => {
   const calls = [];
   const run = (file, argv, options) => {

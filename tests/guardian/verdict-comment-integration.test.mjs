@@ -146,3 +146,27 @@ test('writeVerdictComment rejects QA, fixer, and unknown actors before comment I
     } finally { cleanup(dir); }
   }
 });
+
+test('writeVerdictComment skips GitHub comment I/O when the active-run fence is already false', () => {
+  const dir = tempGuardianDir();
+  try {
+    writeState(dir, { ...newState(212), branch: 'fix/issue-212' }, { touch: false });
+    let calls = 0;
+
+    const result = writeVerdictComment(dir, 212, {
+      approved: true,
+      status: 'PASS',
+      branch: 'fix/issue-212',
+      prUrl: 'https://github.com/x/y/pull/212',
+      reportHash: 'sha256:fence212',
+    }, {
+      actor: ACTORS.SUPERVISOR,
+      isActiveRun: () => false,
+      ghComment: () => { calls += 1; },
+    });
+
+    assert.equal(result.delivered, false);
+    assert.equal(calls, 0, 'stale run must not write a verdict comment');
+    assert.equal(readState(dir, 212).last_verdict_comment_hash, null);
+  } finally { cleanup(dir); }
+});

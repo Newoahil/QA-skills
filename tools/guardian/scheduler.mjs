@@ -828,7 +828,7 @@ async function tick(repoDir, config, logger, signal = null, runtime = createSche
 
     if (opencodeClient && investigationMode === 'enforced' && qaAudit.approved) {
       if (!isActiveRun()) return;
-      finalization = await supervisor.finalizeFix({ issue, plan: readArtifactPair(guardianDir, issue).plan, mode: investigationMode });
+      finalization = await supervisor.finalizeFix({ issue, plan: readArtifactPair(guardianDir, issue).plan, mode: investigationMode, isActiveRun });
       if (!isActiveRun()) return;
       const finalizedState = readState(guardianDir, issue) ?? afterRun;
       writeState(guardianDir, { ...finalizedState, branch: finalization.branch }, { touch: false });
@@ -846,7 +846,7 @@ async function tick(repoDir, config, logger, signal = null, runtime = createSche
         reason: qaAudit.reason,
         reportHash: qaVerdict?.report_hash ?? null,
         attempt: afterRun.fix_rounds ?? 1,
-      }, { actor: ACTORS.SUPERVISOR, ghComment: defaultGhComment(repoDir, ACTORS.SUPERVISOR), logger });
+      }, { actor: ACTORS.SUPERVISOR, isActiveRun, ghComment: defaultGhComment(repoDir, ACTORS.SUPERVISOR), logger });
     }
 
     if (investigationMode === 'enforced' && qaAudit.approved) {
@@ -902,7 +902,7 @@ async function tick(repoDir, config, logger, signal = null, runtime = createSche
           qaAcceptanceMarkdown: qaAcceptance,
           reportHash: qaVerdict?.report_hash ?? null,
           attempt: afterRun.fix_rounds ?? 1,
-        }, { actor: ACTORS.SUPERVISOR, ghComment: defaultGhComment(repoDir, ACTORS.SUPERVISOR), logger });
+        }, { actor: ACTORS.SUPERVISOR, isActiveRun, ghComment: defaultGhComment(repoDir, ACTORS.SUPERVISOR), logger });
       }
     }
     logger.info('run.exit', { issue, exit_code: code });
@@ -925,6 +925,9 @@ async function tick(repoDir, config, logger, signal = null, runtime = createSche
 // a gh delivery failure is logged and swallowed so the resident loop survives (like notify-io).
 // Side effects (ghComment/readState/writeState) are injected so this is unit-testable without gh.
 export function writeVerdictComment(guardianDir, issue, params, deps) {
+  const isActiveRun = deps?.isActiveRun ?? (() => true);
+  const fenceError = 'verdict comment fenced: active run is false';
+  if (!isActiveRun()) return { delivered: false, fenced: true, error: fenceError, marker: markerForApproval(params.approved) };
   const rs = deps?.readState ?? readState;
   const ws = deps?.writeState ?? writeState;
   const ghComment = deps.ghComment;
@@ -952,6 +955,7 @@ export function writeVerdictComment(guardianDir, issue, params, deps) {
   }
   try {
     assertActorMayPerform(actor, EFFECTS.FACT_COMMENT);
+    if (!isActiveRun()) return { delivered: false, fenced: true, error: fenceError, marker };
     ghComment(issue, body);
     const fresh = rs(guardianDir, issue) ?? record ?? { issue };
     ws(guardianDir, { ...fresh, last_verdict_comment_hash: hash }, { touch: false });
