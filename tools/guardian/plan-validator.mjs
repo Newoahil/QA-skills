@@ -10,6 +10,7 @@ const REQUIRED_PLAN_FIELDS = Object.freeze([
   'affected_files',
   'non_goals',
   'test_plan',
+  'test_commands',
   'acceptance_criteria',
   'rollback_plan',
   'risk',

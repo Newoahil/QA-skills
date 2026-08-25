@@ -14,6 +14,7 @@ const dossier = {
 };
 const plan = {
   root_cause: 'root', affected_files: ['a.mjs'], non_goals: ['b'], test_plan: ['test'],
+  test_commands: [['node', '--test', 'tests/guardian/plan-gate.test.mjs']],
   acceptance_criteria: ['works'], rollback_plan: 'revert', evidence_ids: ['E1'], risk: 'LOW',
   risk_assessment: {
     certain: true,

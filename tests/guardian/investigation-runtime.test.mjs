@@ -6,6 +6,17 @@ import path from 'node:path';
 
 import { investigationArtifactsReady, prepareInvestigation } from '../../tools/guardian/investigation-runtime.mjs';
 
+const testCommands = [['node', '--test', 'tests/guardian/investigation-runtime.test.mjs']];
+const riskAssessment = {
+  certain: true,
+  lowDangerSurfaceOnly: true,
+  touchedSurfaces: [],
+  localImpact: true,
+  diffLines: 10,
+  reproducibleOracle: true,
+  scopeExpansionRequested: false,
+};
+
 test('prepareInvestigation runs bounded specialists and persists dossier/plan', async () => {
   const root = mkdtempSync(path.join(tmpdir(), 'guardian-investigation-'));
   const calls = [];
@@ -26,7 +37,7 @@ test('prepareInvestigation runs bounded specialists and persists dossier/plan', 
       },
       buildPlan: async ({ memoryContext }) => {
         assert.equal(memoryContext.provider, 'sybermem');
-        return { root_cause: 'root', affected_files: ['a.mjs'], non_goals: ['b'], test_plan: ['test'], acceptance_criteria: ['works'], rollback_plan: 'revert', evidence_ids: ['E-guardian-code', 'E-guardian-runtime'], risk: 'LOW' };
+        return { root_cause: 'root', affected_files: ['a.mjs'], non_goals: ['b'], test_plan: ['test'], test_commands: testCommands, acceptance_criteria: ['works'], rollback_plan: 'revert', evidence_ids: ['E-guardian-code', 'E-guardian-runtime'], risk: 'LOW', risk_assessment: riskAssessment };
       },
     });
     assert.equal(calls.length, 2);
@@ -51,7 +62,7 @@ test('prepareInvestigation logs specialist and plan lifecycle events', async () 
       issue: 205, repoDir: 'D:/repo', guardianDir: root, issueClass: 'bug', complexity: 'simple',
       issueData: { title: 't', body: 'b' }, capabilities: {}, config: {}, logger,
       runSpecialist: async ({ role }) => ({ specialist: role, hypotheses: [{ id: 'H1', statement: 'r' }], evidence: [{ id: `E-${role}`, kind: 'source_invariant', source: role, observation: 'o', supports: ['H1'], contradicts: [] }], unresolved_facts: [], acceptance_criteria: [] }),
-      buildPlan: async () => ({ root_cause: 'r', affected_files: ['a.mjs'], non_goals: ['b'], test_plan: ['t'], acceptance_criteria: ['w'], rollback_plan: 'revert', evidence_ids: ['E-guardian-code'], risk: 'LOW' }),
+      buildPlan: async () => ({ root_cause: 'r', affected_files: ['a.mjs'], non_goals: ['b'], test_plan: ['t'], test_commands: testCommands, acceptance_criteria: ['w'], rollback_plan: 'revert', evidence_ids: ['E-guardian-code'], risk: 'LOW', risk_assessment: riskAssessment }),
     });
     const names = events.map((e) => e.event);
     assert.equal(names.includes('specialist.begin'), true);
@@ -75,7 +86,7 @@ test('prepareInvestigation logs specialist failure without leaking issue body', 
       issue: 205, repoDir: 'D:/repo', guardianDir: root, issueClass: 'bug', complexity: 'simple',
       issueData: { title: 'SECRET-TITLE', body: 'SECRET-BODY' }, capabilities: {}, config: {}, logger,
       runSpecialist: async () => { throw new Error('model_cooldown'); },
-      buildPlan: async () => ({ root_cause: 'r', affected_files: ['a.mjs'], non_goals: ['b'], test_plan: ['t'], acceptance_criteria: ['w'], rollback_plan: 'revert', evidence_ids: [], risk: 'LOW' }),
+      buildPlan: async () => ({ root_cause: 'r', affected_files: ['a.mjs'], non_goals: ['b'], test_plan: ['t'], test_commands: testCommands, acceptance_criteria: ['w'], rollback_plan: 'revert', evidence_ids: [], risk: 'LOW', risk_assessment: riskAssessment }),
     }).then(() => null, (e) => e);
     const failed = events.filter((e) => e.event === 'specialist.failed');
     assert.equal(failed.length >= 1, true);
@@ -100,7 +111,7 @@ test('prepareInvestigation respects disabled optional specialists', async () => 
         roles.push(role);
         return { specialist: role, hypotheses: [{ id: 'H1', statement: 'root' }], evidence: [{ id: `E-${role}`, kind: 'source_invariant', source: role, observation: 'obs', supports: ['H1'], contradicts: [] }], unresolved_facts: [], acceptance_criteria: [] };
       },
-      buildPlan: async () => ({ root_cause: 'root', affected_files: ['a.mjs'], non_goals: ['b'], test_plan: ['test'], acceptance_criteria: ['works'], rollback_plan: 'revert', evidence_ids: ['E-guardian-code', 'E-guardian-business', 'E-guardian-runtime', 'E-guardian-docs'], risk: 'HIGH' }),
+      buildPlan: async () => ({ root_cause: 'root', affected_files: ['a.mjs'], non_goals: ['b'], test_plan: ['test'], test_commands: testCommands, acceptance_criteria: ['works'], rollback_plan: 'revert', evidence_ids: ['E-guardian-code', 'E-guardian-business', 'E-guardian-runtime', 'E-guardian-docs'], risk: 'HIGH' }),
     });
     assert.deepEqual(roles, ['guardian-code', 'guardian-business', 'guardian-runtime', 'guardian-docs']);
   } finally {
@@ -124,7 +135,7 @@ test('prepareInvestigation records overall + per-role durations without enforcin
         clock += 5000; // simulate 5s of work per specialist
         return { specialist: role, hypotheses: [{ id: 'H1', statement: 'root' }], evidence: [{ id: `E-${role}`, kind: 'source_invariant', source: role, observation: 'o', supports: ['H1'], contradicts: [] }], unresolved_facts: [], acceptance_criteria: [] };
       },
-      buildPlan: async () => { clock += 2000; return { root_cause: 'root', affected_files: ['a.mjs'], non_goals: ['b'], test_plan: ['t'], acceptance_criteria: ['works'], rollback_plan: 'revert', evidence_ids: ['E-guardian-code', 'E-guardian-runtime'], risk: 'LOW' }; },
+      buildPlan: async () => { clock += 2000; return { root_cause: 'root', affected_files: ['a.mjs'], non_goals: ['b'], test_plan: ['t'], test_commands: testCommands, acceptance_criteria: ['works'], rollback_plan: 'revert', evidence_ids: ['E-guardian-code', 'E-guardian-runtime'], risk: 'LOW', risk_assessment: riskAssessment }; },
     });
     // No forced timeout: specialists receive 0 (unlimited).
     assert.equal(seenTimeouts.every((ms) => ms === 0), true);

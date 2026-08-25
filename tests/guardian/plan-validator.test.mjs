@@ -19,6 +19,7 @@ function plan(overrides = {}) {
     affected_files: ['src/config.mjs'],
     non_goals: ['do not change deployment'],
     test_plan: ['add regression test'],
+    test_commands: [['node', '--test', 'tests/guardian/plan-validator.test.mjs']],
     acceptance_criteria: ['request returns success'],
     rollback_plan: 'revert one commit',
     evidence_ids: ['E1'],
@@ -100,6 +101,14 @@ test('valid plan materializes executable test_commands as argv arrays', () => {
   const result = validatePlan(plan({ test_commands: [['node', 'frontend/apps/alipay-miniapp/scripts/test-category-builder-runtime.js']] }), dossier);
   assert.equal(result.valid, true);
   assert.deepEqual(result.plan.test_commands, [['node', 'frontend/apps/alipay-miniapp/scripts/test-category-builder-runtime.js']]);
+});
+
+test('plan validation requires executable test_commands before Gate 1 or fixing', () => {
+  const result = validatePlan(plan({ test_commands: undefined }), dossier);
+  assert.equal(result.valid, false);
+  assert.equal(result.autonomousReady, false);
+  assert.equal(result.errors.includes('plan:missing-test_commands'), true);
+  assert.equal(result.plan, null);
 });
 
 test('plan validation rejects string and unsafe test_commands', () => {

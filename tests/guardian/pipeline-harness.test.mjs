@@ -16,7 +16,7 @@ const riskAssessment = {
   reproducibleOracle: true,
   scopeExpansionRequested: false,
 };
-const plan = { root_cause: 'guard', affected_files: ['a.mjs'], non_goals: ['b'], test_plan: ['regression'], acceptance_criteria: ['works'], rollback_plan: 'revert', evidence_ids: ['E1', 'E2'], risk: 'LOW', risk_assessment: riskAssessment };
+const plan = { root_cause: 'guard', affected_files: ['a.mjs'], non_goals: ['b'], test_plan: ['regression'], test_commands: [['node', '--test', 'tests/guardian/pipeline-harness.test.mjs']], acceptance_criteria: ['works'], rollback_plan: 'revert', evidence_ids: ['E1', 'E2'], risk: 'LOW', risk_assessment: riskAssessment };
 
 test('clear bug pipeline reaches Gate2 only after independent QA PASS', async () => {
   const result = await runInjectedPipeline({
