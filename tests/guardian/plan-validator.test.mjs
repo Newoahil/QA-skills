@@ -95,3 +95,20 @@ test('mechanical HIGH overrides model LOW and blocks autonomous fixing', () => {
   assert.equal(result.mechanicalRisk.risk, 'HIGH');
   assert.ok(result.errors.some((error) => error.startsWith('plan:risk-assessment-not-low:')));
 });
+
+test('valid plan materializes executable test_commands as argv arrays', () => {
+  const result = validatePlan(plan({ test_commands: [['node', 'frontend/apps/alipay-miniapp/scripts/test-category-builder-runtime.js']] }), dossier);
+  assert.equal(result.valid, true);
+  assert.deepEqual(result.plan.test_commands, [['node', 'frontend/apps/alipay-miniapp/scripts/test-category-builder-runtime.js']]);
+});
+
+test('plan validation rejects string and unsafe test_commands', () => {
+  for (const commands of [
+    ['node frontend/apps/alipay-miniapp/scripts/test-category-builder-runtime.js'],
+    [['node', 'frontend/apps/alipay-miniapp/scripts/../../secret.js']],
+  ]) {
+    const result = validatePlan(plan({ test_commands: commands }), dossier);
+    assert.equal(result.valid, false);
+    assert.equal(result.errors.some((error) => error.startsWith('plan:test_commands')), true);
+  }
+});

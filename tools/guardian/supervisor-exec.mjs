@@ -9,6 +9,9 @@ export const SUPERVISOR_OPERATIONS = Object.freeze([
 ]);
 
 const TEST_PATH = /^(?:tests|test|src)[\\/][^\\/].*\.(?:mjs|js|cjs|ts|tsx|jsx)$/;
+const ALLOWED_PROJECT_TEST_SCRIPTS = Object.freeze([
+  'frontend/apps/alipay-miniapp/scripts/test-category-builder-runtime.js',
+]);
 
 // Paths the Guardian runtime legitimately mutates outside the plan scope. These are never staged
 // into the product commit but must not block worktree isolation.
@@ -40,10 +43,16 @@ function testArgv(argv) {
     throw new Error('test command is not allowed');
   }
   const [, subcommand, ...args] = argv;
-  if (subcommand !== '--test' || args.length === 0 || args.some((arg) => !TEST_PATH.test(repoRelativePath(arg, 'test path')))) {
-    throw new Error('test command is not allowed');
+  if (argv.length === 2 && ALLOWED_PROJECT_TEST_SCRIPTS.includes(repoRelativePath(subcommand, 'test script'))) {
+    return ['node', repoRelativePath(subcommand, 'test script')];
   }
-  return ['node', '--test', ...args.map((arg) => repoRelativePath(arg, 'test path'))];
+  if (subcommand === '--test' && args.length > 0 && args.every((arg) => TEST_PATH.test(repoRelativePath(arg, 'test path')))) {
+    return ['node', '--test', ...args.map((arg) => repoRelativePath(arg, 'test path'))];
+  }
+  if (args.length === 1 && ALLOWED_PROJECT_TEST_SCRIPTS.includes(repoRelativePath(args[0], 'test script'))) {
+    return ['node', repoRelativePath(args[0], 'test script')];
+  }
+  throw new Error('test command is not allowed');
 }
 
 export function parseValidatedTestPlan(commands) {

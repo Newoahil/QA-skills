@@ -3,6 +3,7 @@
 
 import { isDecisionReady, validateDossier } from './evidence.mjs';
 import { gradeRisk, RISK } from './risk.mjs';
+import { parseValidatedTestPlan } from './supervisor-exec.mjs';
 
 const REQUIRED_PLAN_FIELDS = Object.freeze([
   'root_cause',
@@ -49,6 +50,15 @@ export function validatePlan(plan, dossier) {
     errors.push('plan:missing-evidence_ids');
   }
 
+  let normalizedTestCommands = p.test_commands;
+  if (p.test_commands !== undefined) {
+    try {
+      normalizedTestCommands = parseValidatedTestPlan(p.test_commands);
+    } catch (error) {
+      errors.push(`plan:test_commands:${error instanceof Error ? error.message : 'invalid'}`);
+    }
+  }
+
   const readiness = isDecisionReady(d);
   const mechanicalRisk = gradeRisk(p.risk_assessment);
   const riskMismatch = p.risk === 'LOW' && mechanicalRisk.risk !== RISK.LOW;
@@ -62,6 +72,7 @@ export function validatePlan(plan, dossier) {
     gateRequired,
     errors: [...errors, ...riskErrors],
     mechanicalRisk,
+    plan: errors.length === 0 ? { ...p, ...(normalizedTestCommands ? { test_commands: normalizedTestCommands } : {}) } : null,
   };
 }
 

@@ -61,6 +61,19 @@ test('validated test commands accept only scoped node test argv and reject wrapp
   assert.throws(() => parseValidatedTestPlan(['node --test tests/foo.test.mjs']), /command strings/i);
 });
 
+test('validated test commands allow the project category builder script and reject unsafe variants', () => {
+  assert.deepEqual(parseValidatedTestPlan([['node', 'frontend/apps/alipay-miniapp/scripts/test-category-builder-runtime.js']]), [
+    ['node', 'frontend/apps/alipay-miniapp/scripts/test-category-builder-runtime.js'],
+  ]);
+  for (const command of [
+    ['node', 'frontend/apps/alipay-miniapp/scripts/../../secret.js'],
+    ['node', 'frontend/apps/alipay-miniapp/scripts/test-category-builder-runtime.js', '--network'],
+    ['node', 'frontend/apps/alipay-miniapp/scripts/test-category-builder-runtime.js', '&&', 'git', 'push'],
+    ['node', 'node_modules/.bin/test-runner.js'],
+    ['node', 'powershell-wrapper.js'],
+  ]) assert.throws(() => parseValidatedTestPlan([command]), /not allowed|protected|network|wrapper|scoped/i);
+});
+
 test('pre-QA evidence returns actual status/diff and scoped test command evidence without mutation', () => {
   const calls = [];
   const run = (file, argv, options) => {
