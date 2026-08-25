@@ -123,6 +123,48 @@ test('failed closeout delivery leaves the marker retryable and preserves authori
   assert.equal(fs.store[44].last_notified_state, null);
 });
 
+test('Given custom Gate 1 closeout comment delivery with notify_webhook, When closeoutTransition succeeds, Then it also posts webhook before persisting last_notified_state', () => {
+  const fs = fakeStore({ 45: newState(45) });
+  const calls = [];
+  const io = {
+    calls: { comment: [], webhook: [] },
+    ghComment: (issue, text) => { calls.push('comment'); io.calls.comment.push({ issue, text }); },
+    curlPost: (url, body) => { calls.push('webhook'); io.calls.webhook.push({ url, body }); },
+  };
+  const result = closeoutTransition({
+    guardianDir: '/g', decision: { issue: 45, action: 'SKIP', reason: 'gate1-waiting' }, statePatch: { state: 'GATE_1_WAIT' },
+    config: { notify_webhook: 'https://example.test/hook' }, io, actor: ACTORS.SUPERVISOR,
+    deps: { readState: fs.readState, writeState: (_dir, record) => { calls.push(record.last_notified_state ? 'marker' : 'state'); fs.store[record.issue] = { ...record }; } },
+    deliver: () => { calls.push('deliver'); io.ghComment(45, 'custom Gate 1 closeout comment'); },
+  });
+
+  assert.deepEqual(result, [{ issue: 45, delivered: true }]);
+  assert.equal(io.calls.comment.length, 1);
+  assert.equal(io.calls.webhook.length, 1);
+  assert.equal(fs.store[45].last_notified_state, 'GATE_1_WAIT');
+  assert.deepEqual(calls, ['state', 'deliver', 'comment', 'webhook', 'marker']);
+});
+
+test('Given custom Gate 1 closeout comment delivery with failing notify_webhook, When closeoutTransition runs, Then it leaves last_notified_state retryable', () => {
+  const fs = fakeStore({ 46: newState(46) });
+  const calls = [];
+  const io = {
+    ghComment: () => { calls.push('comment'); },
+    curlPost: () => { calls.push('webhook'); throw new Error('webhook unavailable'); },
+  };
+  const result = closeoutTransition({
+    guardianDir: '/g', decision: { issue: 46, action: 'SKIP', reason: 'gate1-waiting' }, statePatch: { state: 'GATE_1_WAIT' },
+    config: { notify_webhook: 'https://example.test/hook' }, io, actor: ACTORS.SUPERVISOR,
+    deps: { readState: fs.readState, writeState: (_dir, record) => { calls.push(record.last_notified_state ? 'marker' : 'state'); fs.store[record.issue] = { ...record }; } },
+    deliver: () => { calls.push('deliver'); io.ghComment(46, 'custom Gate 1 closeout comment'); },
+  });
+
+  assert.deepEqual(result, [{ issue: 46, delivered: false, error: 'webhook unavailable' }]);
+  assert.deepEqual(calls, ['state', 'deliver', 'comment', 'webhook']);
+  assert.equal(fs.store[46].state, 'GATE_1_WAIT');
+  assert.equal(fs.store[46].last_notified_state, null);
+});
+
 test('webhook fires when notify_webhook configured (feishu channel wraps a card)', () => {
   const fs = fakeStore({ 7: newState(7) });
   const io = spyIo();

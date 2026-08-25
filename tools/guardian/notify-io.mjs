@@ -144,6 +144,7 @@ export function deliverNotifications(args) {
 export function closeoutTransition({ guardianDir, decision, statePatch, config = {}, io, actor, deps = {}, deliver = null }) {
   const rs = deps.readState ?? readState;
   const ws = deps.writeState ?? writeState;
+  const now = deps.now;
   const claim = deps.claimNotification ?? claimNotificationTransition;
   const releaseClaim = deps.releaseNotificationClaim ?? releaseNotificationClaim;
   const current = rs(guardianDir, decision.issue);
@@ -156,7 +157,24 @@ export function closeoutTransition({ guardianDir, decision, statePatch, config =
   if (typeof deliver === 'function') {
     try {
       deliver();
-      ws(guardianDir, { ...current, ...statePatch, last_notified_state: targetState }, { touch: false, ...(deps.now ? { now: deps.now } : {}) });
+      const patchedRecord = { ...current, ...statePatch };
+      const outcome = notify(
+        patchedRecord,
+        { targetState, link: config?.issue_url_for?.(decision.issue) ?? null, reason: decision.reason ?? decision.handedBackReason ?? null },
+        config,
+        {
+          comment: () => {},
+          webhook: (url, body) => {
+            assertActorMayPerform(actor, EFFECTS.FACT_WEBHOOK);
+            return io.curlPost(url, body);
+          },
+        },
+      );
+      if (outcome.skipped) {
+        releaseClaim(guardianDir, decision.issue, targetState);
+        return [{ issue: decision.issue, delivered: false, skipped: true }];
+      }
+      ws(guardianDir, { ...patchedRecord, last_notified_state: targetState }, { touch: false, ...(now ? { now } : {}) });
       releaseClaim(guardianDir, decision.issue, targetState);
       return [{ issue: decision.issue, delivered: true }];
     } catch (error) {
