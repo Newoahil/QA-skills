@@ -30,6 +30,8 @@ export async function runQaSession({
   client, state, issue, repoDir, branch, diffSummary, intendedBehavior, round = 1,
   deadlineMs = 60 * 60 * 1000, pollIntervalMs = 1000,
   writeQaAcceptance = null,
+  onSessionReady = null,
+  onProgress = null,
   model = undefined, fallbackModels = [],
   signal = null,
   isActiveRun = () => true,
@@ -48,14 +50,19 @@ export async function runQaSession({
     return { status: 'aborted', sessionId, state, error };
   }
 
+  const readyState = nextStateWithQaSession({ state, opencode, sessionId, repoDir, issue, round, status: 'running', bindingRepoDir: decision.binding?.repo_dir });
+  if (typeof onSessionReady === 'function') onSessionReady({ state: readyState, sessionId });
+  if (typeof onProgress === 'function') onProgress({ sessionId, stage: 'session-ready' });
+
   const baselineResult = await raceDeadline(() => baselineMessageIds(client, sessionId), remaining()).catch((error) => ({ error }));
   if (baselineResult?.error) return { status: baselineResult.error.name === 'DeadlineError' ? 'aborted' : 'retry', sessionId, state, error: baselineResult.error };
+  if (typeof onProgress === 'function') onProgress({ sessionId, stage: 'baseline-read' });
 
   const operationMarker = randomUUID();
   const prompt = buildQaPrompt({ issue, repoDir, branch, diffSummary, intendedBehavior, round, operationMarker });
   const control = { cancelled: false };
   const outcome = await withDeadline(
-    () => promptOrCompletedMessage({ client, sessionId, prompt, baseline: baselineResult, promptStartedAt: Date.now(), operationMarker, pollIntervalMs, control, deadlineMs: remaining(), model, fallbackModels, signal }),
+    () => promptOrCompletedMessage({ client, sessionId, prompt, baseline: baselineResult, promptStartedAt: Date.now(), operationMarker, pollIntervalMs, control, deadlineMs: remaining(), model, fallbackModels, signal, onProgress }),
     remaining(),
     () => client.abort(sessionId),
     () => { control.cancelled = true; },
@@ -90,15 +97,22 @@ export async function runQaSession({
   if (status === 'ok' && text.trim() && typeof writeQaAcceptance === 'function') {
     writeQaAcceptance(text);
   }
-  const nextState = {
+  const nextState = status === 'unusable-session'
+    ? { ...state, opencode: { ...opencode, qa: null } }
+    : nextStateWithQaSession({ state, opencode, sessionId, repoDir, issue, round, status, bindingRepoDir: decision.binding?.repo_dir });
+  return { status, sessionId, state: nextState, verdict, report: text, error: outcome?.error, abortError: outcome?.abortError, recreateOnNextRun: status === 'unusable-session' };
+}
+
+function nextStateWithQaSession({ state, opencode, sessionId, repoDir, issue, round, status, bindingRepoDir }) {
+  return {
     ...state,
     opencode: {
       ...opencode,
-      qa: status === 'unusable-session' ? null : {
+      qa: {
         ...(opencode.qa ?? {}),
         session_id: sessionId,
         agent: 'qa',
-        repo_dir: decision.binding?.repo_dir ?? opencode.qa?.repo_dir ?? repoDir,
+        repo_dir: bindingRepoDir ?? opencode.qa?.repo_dir ?? repoDir,
         issue: Number(issue),
         role: 'qa',
         permission_policy_version: PERMISSION_POLICY_VERSION,
@@ -109,7 +123,6 @@ export async function runQaSession({
       },
     },
   };
-  return { status, sessionId, state: nextState, verdict, report: text, error: outcome?.error, abortError: outcome?.abortError, recreateOnNextRun: status === 'unusable-session' };
 }
 
 async function baselineMessageIds(client, sessionId) {
@@ -119,7 +132,7 @@ async function baselineMessageIds(client, sessionId) {
   return new Set(result.messages.map(messageId).filter(Boolean));
 }
 
-async function promptOrCompletedMessage({ client, sessionId, prompt, baseline, promptStartedAt, operationMarker, pollIntervalMs, control, deadlineMs, model = undefined, fallbackModels = [], signal = null }) {
+async function promptOrCompletedMessage({ client, sessionId, prompt, baseline, promptStartedAt, operationMarker, pollIntervalMs, control, deadlineMs, model = undefined, fallbackModels = [], signal = null, onProgress = null }) {
   let promptResult = null;
   let promptSettled = false;
   const rawPromptPromise = client.prompt({ sessionId, agent: 'qa', parts: [{ type: 'text', text: prompt }], model, fallbackModels, signal })
@@ -134,10 +147,12 @@ async function promptOrCompletedMessage({ client, sessionId, prompt, baseline, p
       if (status !== 'ok') return promptResult ?? { status: 'unverified' };
       if (parseOverallStatus(promptResult?.result?.text) !== null) return promptResult;
       promptId = promptIdFromResult(promptResult);
+      if (typeof onProgress === 'function') onProgress({ sessionId, stage: 'prompt-settled', status });
     }
 
     await delay(pollIntervalMs);
     const result = await client.getMessages(sessionId);
+    if (typeof onProgress === 'function') onProgress({ sessionId, stage: 'poll', attempt: attempt + 1 });
     if (result.kind !== 'ok' || !Array.isArray(result.messages)) continue;
     const messages = result.messages.slice(-MAX_MESSAGES);
     promptId ??= discoverPromptUserId(messages, baseline, promptStartedAt, prompt, operationMarker);

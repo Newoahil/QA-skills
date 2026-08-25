@@ -39,6 +39,31 @@ test('creates a qa session on first verification and persists its id', async () 
   assert.equal(result.state.opencode.qa.agent, 'qa');
 });
 
+test('reports a running qa session as soon as it is created', async () => {
+  const { client } = fakeClient();
+  const ready = [];
+  const progress = [];
+
+  await runQaSession({
+    client,
+    state: { opencode: { fixer: null, qa: null, specialists: {}, inflight: null } },
+    issue: 211,
+    repoDir: 'D:/repo',
+    branch: 'fix/issue-211',
+    diffSummary: 'changed color to pink',
+    intendedBehavior: 'bad debt amount shows pink',
+    onSessionReady: (event) => ready.push(event),
+    onProgress: (event) => progress.push(event),
+  });
+
+  assert.equal(ready.length, 1);
+  assert.equal(ready[0].sessionId, 'ses_qa');
+  assert.equal(ready[0].state.opencode.qa.session_id, 'ses_qa');
+  assert.equal(ready[0].state.opencode.qa.last_status, 'running');
+  assert.ok(progress.some((event) => event.stage === 'session-ready'));
+  assert.ok(progress.some((event) => event.stage === 'baseline-read'));
+});
+
 test('recovers a completed QA result from messages when the prompt HTTP request hangs', async () => {
   const { client, calls } = fakeClient();
   const state = { opencode: { fixer: null, qa: { session_id: 'ses_qa', agent: 'qa', repo_dir: 'D:/repo', issue: 211, role: 'qa', permission_policy_version: 2 }, specialists: {}, inflight: null } };
