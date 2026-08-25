@@ -16,6 +16,8 @@ const REQUIRED_PLAN_FIELDS = Object.freeze([
   'risk',
 ]);
 
+const SAFE_RELATIVE_PATH_RE = /^[A-Za-z0-9._/@+-][A-Za-z0-9._/@+\\-]*$/;
+
 function nonEmpty(value) {
   return typeof value === 'string' && value.trim().length > 0;
 }
@@ -52,13 +54,17 @@ export function validatePlan(plan, dossier) {
   }
 
   let normalizedTestCommands = p.test_commands;
+  let normalizedScope = null;
   if (p.test_commands !== undefined) {
     try {
       normalizedTestCommands = parseValidatedTestPlan(p.test_commands);
+      normalizedScope = normalizePlanScope(p, normalizedTestCommands);
     } catch (error) {
       errors.push(`plan:test_commands:${error instanceof Error ? error.message : 'invalid'}`);
     }
   }
+  for (const error of validateDeclaredFiles('primary_files', p.primary_files)) errors.push(error);
+  for (const error of validateDeclaredFiles('affected_files', p.affected_files)) errors.push(error);
 
   const readiness = isDecisionReady(d);
   const mechanicalRisk = gradeRisk(p.risk_assessment);
@@ -73,8 +79,52 @@ export function validatePlan(plan, dossier) {
     gateRequired,
     errors: [...errors, ...riskErrors],
     mechanicalRisk,
-    plan: errors.length === 0 ? { ...p, ...(normalizedTestCommands ? { test_commands: normalizedTestCommands } : {}) } : null,
+    plan: errors.length === 0 ? { ...p, ...(normalizedTestCommands ? { test_commands: normalizedTestCommands } : {}), ...(normalizedScope ? { affected_files: normalizedScope } : {}) } : null,
   };
+}
+
+function normalizePlanScope(plan, testCommands) {
+  const files = [];
+  for (const value of [...pathList(plan.affected_files), ...pathList(plan.primary_files), ...testFilesFromCommands(testCommands)]) {
+    if (!files.includes(value)) files.push(value);
+  }
+  return files;
+}
+
+function pathList(value) {
+  if (!Array.isArray(value)) return [];
+  return value.map((item) => {
+    if (typeof item === 'string') return item.trim();
+    if (!item || typeof item !== 'object' || Array.isArray(item)) return '';
+    const candidate = item.path ?? item.file ?? item.file_path;
+    return typeof candidate === 'string' ? candidate.trim() : '';
+  }).filter(Boolean);
+}
+
+function testFilesFromCommands(commands) {
+  const files = [];
+  for (const command of Array.isArray(commands) ? commands : []) {
+    for (let index = 1; index < command.length; index += 1) {
+      const arg = command[index];
+      if (typeof arg === 'string' && (arg.endsWith('.test.mjs') || arg.endsWith('.test.js') || arg.endsWith('.js'))) files.push(arg);
+    }
+  }
+  return files;
+}
+
+function validateDeclaredFiles(field, value) {
+  return pathList(value)
+    .filter((item) => !isSafeRelativePath(item))
+    .map((item) => `plan:unsafe-${field}:${item}`);
+}
+
+function isSafeRelativePath(value) {
+  return typeof value === 'string'
+    && value.length > 0
+    && !value.includes('..')
+    && !value.startsWith('/')
+    && !/^[A-Za-z]:[\\/]/.test(value)
+    && SAFE_RELATIVE_PATH_RE.test(value);
 }
 
 export function canEnterFixing(plan, dossier) {

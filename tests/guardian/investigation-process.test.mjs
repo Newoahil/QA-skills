@@ -784,6 +784,42 @@ test('processPlanBuilder normalizes described affected_files to path strings for
   assert.equal(result.affected_file_details[0].file, 'frontend/apps/alipay-miniapp/src/pages/classifyAgain/index.js');
 });
 
+test('processPlanBuilder includes declared test_files in normalized affected_files', async () => {
+  const client = {
+    createSession: async () => 'ses_plan_test_files',
+    prompt: async () => ({
+      kind: 'ok',
+      result: {
+        structured: {
+          root_cause: 'root',
+          primary_files: ['src/controller.js'],
+          affected_files: ['src/controller.js'],
+          test_files: ['tests/controller.test.js'],
+          risk: 'HIGH',
+          risk_assessment: {
+            certain: false,
+            lowDangerSurfaceOnly: false,
+            touchedSurfaces: [],
+            localImpact: true,
+            diffLines: 80,
+            reproducibleOracle: false,
+            scopeExpansionRequested: false,
+          },
+        },
+      },
+    }),
+  };
+
+  const result = await processPlanBuilder({
+    issue: 324,
+    repoDir: 'D:/repo',
+    dossier: { evidence: [] },
+    opencodeClient: client,
+  });
+
+  assert.deepEqual(result.affected_files, ['src/controller.js', 'tests/controller.test.js']);
+});
+
 test('runAgentJson reports malformed event lines without treating them as final output', async () => {
   // Given: one malformed progress line followed by a valid text result.
   const child = fakeChild();

@@ -103,6 +103,24 @@ test('valid plan materializes executable test_commands as argv arrays', () => {
   assert.deepEqual(result.plan.test_commands, [['node', 'frontend/apps/alipay-miniapp/scripts/test-category-builder-runtime.js']]);
 });
 
+test('valid plan normalizes primary and declared test command files into affected_files', () => {
+  const result = validatePlan(plan({
+    primary_files: ['src/config.mjs', 'tests/guardian/new-regression.test.mjs'],
+    affected_files: ['src/config.mjs'],
+    test_commands: [['node', '--test', 'tests/guardian/new-regression.test.mjs']],
+  }), dossier);
+
+  assert.equal(result.valid, true);
+  assert.deepEqual(result.plan.affected_files, ['src/config.mjs', 'tests/guardian/new-regression.test.mjs']);
+});
+
+test('plan validation rejects unsafe declared primary files', () => {
+  const result = validatePlan(plan({ primary_files: ['../outside.test.mjs'] }), dossier);
+
+  assert.equal(result.valid, false);
+  assert.ok(result.errors.includes('plan:unsafe-primary_files:../outside.test.mjs'));
+});
+
 test('plan validation requires executable test_commands before Gate 1 or fixing', () => {
   const result = validatePlan(plan({ test_commands: undefined }), dossier);
   assert.equal(result.valid, false);
