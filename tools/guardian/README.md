@@ -345,7 +345,7 @@ Because each run is a one-shot process, you resume by leaving a comment the next
 | Comment | Effect |
 |---|---|
 | `/guardian approve` | (gate 1) fix as planned |
-| `/guardian revise <plan>` | (gate 1) fix with your adjustment (`<plan>` is data) |
+| `/guardian revise <feedback>` | (gate 1) treat feedback as DATA, re-investigate/regenerate the proposal, and wait for approval again |
 | `/guardian reject` | (gate 1) stop; issue is handed back (terminal) |
 | `/guardian rework <opinion>` | (gate 2) send the PR back for another fix round |
 | `/guardian retry` | (handed-back) re-enter the pipeline from scratch |

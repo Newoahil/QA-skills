@@ -87,6 +87,7 @@ test('selectCommand: data tail is never executed — returned as opaque string',
 
 test('COMMANDS table state-guards every verb per §11.2', () => {
   assert.deepEqual(COMMANDS.approve.validIn, [STATES.GATE_1_WAIT]);
+  assert.equal(COMMANDS.revise.target, STATES.INVESTIGATING);
   assert.deepEqual(COMMANDS.rework.validIn, [STATES.GATE_2_WAIT]);
   assert.deepEqual(COMMANDS.retry.validIn, [STATES.HANDED_BACK]);
   assert.equal(COMMANDS.reject.target, STATES.HANDED_BACK);

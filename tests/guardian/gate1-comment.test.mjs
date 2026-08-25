@@ -14,6 +14,7 @@ test('gate1 comment carries marker, plan summary, unresolved facts, and commands
   assert.equal(body.split('\n')[0], '[GATE_1_WAIT]');
   assert.equal(body.includes('/guardian approve'), true);
   assert.equal(body.includes('/guardian revise'), true);
+  assert.match(body, /重新生成|更新方案/);
   assert.equal(body.includes('/guardian reject'), true);
   assert.equal(body.includes('exact pink token?'), true);
   assert.equal(body.includes('plan_hash: sha256:plan-a'), true);

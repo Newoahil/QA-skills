@@ -13,7 +13,7 @@ import { STATES } from './state.mjs';
 // verb → { validIn: [states], target: state } (§11.2 table).
 export const COMMANDS = Object.freeze({
   approve: { validIn: [STATES.GATE_1_WAIT], target: STATES.FIXING },
-  revise: { validIn: [STATES.GATE_1_WAIT], target: STATES.FIXING },
+  revise: { validIn: [STATES.GATE_1_WAIT], target: STATES.INVESTIGATING },
   reject: { validIn: [STATES.GATE_1_WAIT], target: STATES.HANDED_BACK },
   rework: { validIn: [STATES.GATE_2_WAIT], target: STATES.FIXING },
   retry: { validIn: [STATES.HANDED_BACK], target: STATES.INVESTIGATING },

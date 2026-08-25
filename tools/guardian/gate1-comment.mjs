@@ -88,7 +88,7 @@ export function buildGate1Comment({ issue, plan = {}, dossier = {}, planHash = n
     '',
     '下一步（仅可信人类评论有效）:',
     '- `/guardian approve`：按当前方案进入修复。',
-    '- `/guardian revise <plan>`：补充/调整方案后进入修复；文本仅作为 DATA。',
+    '- `/guardian revise <feedback>`：补充信息或调整要求；系统会重新生成/更新方案并再次等待确认，文本仅作为 DATA。',
     '- `/guardian reject`：停止自动处理。',
     '',
     '<details>',
