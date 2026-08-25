@@ -8,7 +8,7 @@ import { hashArtifact, writeArtifact } from '../../tools/guardian/artifacts.mjs'
 import { ACTORS } from '../../tools/guardian/actor-routing.mjs';
 import { deliverNotifications } from '../../tools/guardian/notify-io.mjs';
 import { buildGate1Comment } from '../../tools/guardian/gate1-comment.mjs';
-import { createLeaseFence, persistCommandlessTransitions, publishWaitingGate1Proposals } from '../../tools/guardian/scheduler.mjs';
+import { buildInvestigationFailureState, createLeaseFence, persistCommandlessTransitions, publishWaitingGate1Proposals } from '../../tools/guardian/scheduler.mjs';
 import { newState, readState, STATES, writeState } from '../../tools/guardian/state.mjs';
 
 function fakeStore(initial) {
@@ -126,6 +126,38 @@ test('persisted STALLED recovery is written to INVESTIGATING before the runnable
   assert.equal(store.store[42].state, STATES.INVESTIGATING);
   assert.equal(store.store[42].last_phase, 'stalled-retry');
   assert.deepEqual(store.writes.map((write) => write.state), [STATES.INVESTIGATING]);
+});
+
+test('investigation failure becomes explicit handback instead of a fresh active lease', () => {
+  const failureState = {
+    ...newState(263),
+    state: STATES.INVESTIGATING,
+    claim_id: 'claim-263',
+    claimed_at: '2026-08-25T09:39:19.350Z',
+    investigation_attempts: 1,
+  };
+  const investigationState = {
+    opencode: {
+      specialists: {
+        'guardian-business': { last_status: 'failed', duration_ms: 357855 },
+        'guardian-code': { last_status: 'ok', duration_ms: 376239 },
+      },
+    },
+  };
+  const error = new Error('specialist-final-json parse failed for guardian-business: Unexpected end of JSON input');
+  error.specialist_failures = ['guardian-business'];
+  error.specialist_durations_ms = { 'guardian-business': 357855, 'guardian-code': 376239 };
+
+  const record = buildInvestigationFailureState({ failureState, investigationState, error });
+
+  assert.equal(record.state, STATES.HANDED_BACK);
+  assert.equal(record.handed_back_reason, 'investigation-failed');
+  assert.equal(record.dossier_status, 'failed');
+  assert.equal(record.plan_status, 'failed');
+  assert.equal(record.investigation_attempts, 2);
+  assert.deepEqual(record.specialist_failures, ['guardian-business']);
+  assert.deepEqual(record.specialist_durations_ms, { 'guardian-business': 357855, 'guardian-code': 376239 });
+  assert.deepEqual(record.plan_validation_errors, [error.message]);
 });
 
 test('gate waiting SKIP does not rewrite authoritative state', () => {

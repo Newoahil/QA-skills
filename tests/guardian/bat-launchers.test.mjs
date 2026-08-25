@@ -227,10 +227,13 @@ test('scheduler keeps investigation state visible to failure handler', () => {
   const outerDeclaration = text.indexOf('const investigationState = readState(guardianDir, issue) ?? { issue };');
   const tryIndex = text.indexOf('try {', outerDeclaration);
   const catchIndex = text.indexOf('} catch (error) {', tryIndex);
-  const failureUse = text.indexOf('investigationState.opencode?.specialists', catchIndex);
+  const helperUse = text.indexOf('buildInvestigationFailureState({ failureState, investigationState, error })', catchIndex);
+  const helperDeclaration = text.indexOf('export function buildInvestigationFailureState');
+  const failureUse = text.indexOf('investigationState.opencode?.specialists', helperDeclaration);
   assert.ok(outerDeclaration > 0);
   assert.ok(outerDeclaration < tryIndex);
-  assert.ok(failureUse > catchIndex);
+  assert.ok(helperUse > catchIndex);
+  assert.ok(failureUse > helperDeclaration);
 });
 
 test('launcher docs and config describe explicit project switching and independent bindings', () => {

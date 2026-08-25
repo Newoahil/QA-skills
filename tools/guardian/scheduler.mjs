@@ -71,6 +71,33 @@ function jsonFailureFields(error) {
   };
 }
 
+export function buildInvestigationFailureState({ failureState, investigationState, error }) {
+  const failureRoles = Array.isArray(error?.specialist_failures) ? error.specialist_failures : null;
+  const failedSpecialists = failureRoles ?? Object.entries(investigationState.opencode?.specialists ?? {})
+    .filter(([, session]) => session?.last_status === 'failed')
+    .map(([role]) => role);
+  const failureDurations = error?.specialist_durations_ms && typeof error.specialist_durations_ms === 'object' ? error.specialist_durations_ms : null;
+  const failedDurations = failureDurations ?? Object.fromEntries(
+    Object.entries(investigationState.opencode?.specialists ?? {})
+      .filter(([, session]) => typeof session?.duration_ms === 'number')
+      .map(([role, session]) => [role, session.duration_ms]),
+  );
+  return {
+    ...failureState,
+    state: STATES.HANDED_BACK,
+    handed_back_reason: 'investigation-failed',
+    opencode: investigationState.opencode ?? failureState.opencode,
+    specialist_failures: failedSpecialists.length > 0 ? failedSpecialists : failureState.specialist_failures,
+    specialist_durations_ms: Object.keys(failedDurations).length > 0 ? failedDurations : failureState.specialist_durations_ms,
+    dossier_status: 'failed',
+    plan_status: 'failed',
+    investigation_attempts: (failureState.investigation_attempts ?? 0) + 1,
+    last_error_class: 'investigation-failed',
+    last_phase: 'investigation',
+    plan_validation_errors: [error instanceof Error ? error.message : 'investigation failed'],
+  };
+}
+
 function writeQaVerdictArtifact(guardianDir, issue, qaVerdict) {
   return writeArtifact(guardianDir, issue, 'qa-verdict', qaVerdict);
 }
@@ -716,30 +743,10 @@ async function tick(repoDir, config, logger, signal = null, runtime = createSche
       } catch (error) {
         if (!isActiveRun()) return;
         const failureState = readState(guardianDir, issue) ?? { issue };
-        // Persist session metadata + measured durations even on failure so a retry can resume the
-        // same specialist sessions and the read-only TUI can show which roles ran and how long.
-        const failureRoles = Array.isArray(error?.specialist_failures) ? error.specialist_failures : null;
-        const failedSpecialists = failureRoles ?? Object.entries(investigationState.opencode?.specialists ?? {})
-          .filter(([, session]) => session?.last_status === 'failed')
-          .map(([role]) => role);
-        const failureDurations = error?.specialist_durations_ms && typeof error.specialist_durations_ms === 'object' ? error.specialist_durations_ms : null;
-        const failedDurations = failureDurations ?? Object.fromEntries(
-          Object.entries(investigationState.opencode?.specialists ?? {})
-            .filter(([, session]) => typeof session?.duration_ms === 'number')
-            .map(([role, session]) => [role, session.duration_ms]),
-        );
-        writeState(guardianDir, {
-          ...failureState,
-          opencode: investigationState.opencode ?? failureState.opencode,
-          specialist_failures: failedSpecialists.length > 0 ? failedSpecialists : failureState.specialist_failures,
-          specialist_durations_ms: Object.keys(failedDurations).length > 0 ? failedDurations : failureState.specialist_durations_ms,
-          dossier_status: 'failed',
-          plan_status: 'failed',
-          investigation_attempts: (failureState.investigation_attempts ?? 0) + 1,
-          last_error_class: 'investigation-failed',
-          last_phase: 'investigation',
-          plan_validation_errors: [error instanceof Error ? error.message : 'investigation failed'],
-        }, { touch: false });
+        // Persist session metadata + measured durations even on failure so a retry can inspect the
+        // same specialist sessions. The state must stop being active immediately; otherwise a failed
+        // investigation looks like a fresh in-progress lease until timeout.
+        writeState(guardianDir, buildInvestigationFailureState({ failureState, investigationState, error }), { touch: false });
         releaseLock(lockFile, handle);
         logger.error('investigation.failed', { issue, error_message: error instanceof Error ? error.message : 'unknown', ...jsonFailureFields(error) });
         return;
