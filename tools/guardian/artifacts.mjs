@@ -35,7 +35,7 @@ export function artifactIdentity({ dossier, plan }) {
   };
 }
 
-const JSON_ARTIFACTS = Object.freeze(['issue-data', 'dossier', 'plan', 'qa-verdict']);
+const JSON_ARTIFACTS = Object.freeze(['issue-data', 'dossier', 'plan', 'plan-invalid', 'qa-verdict']);
 const MARKDOWN_ARTIFACTS = Object.freeze(['pr-summary', 'qa-acceptance']);
 
 export function writeArtifact(guardianDir, issue, name, value) {

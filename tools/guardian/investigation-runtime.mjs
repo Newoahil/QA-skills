@@ -82,6 +82,9 @@ export async function prepareInvestigation({ issue, issueData, repoDir, qaRuntim
   const planDurationMs = now() - planStartedAt;
   const planResult = validatePlan(plan, dossier);
   if (!planResult.valid) {
+    // Persist the rejected plan as a diagnostic sidecar so the operator can inspect exactly what the
+    // model produced (e.g. test_commands argv) instead of guessing from the error string.
+    writeArtifact(guardianDir, issue, 'plan-invalid', plan);
     throw new Error(`generated plan is structurally invalid: ${planResult.errors.join(',')}`);
   }
   logger.info('plan.ok', { issue, duration_ms: planDurationMs, valid: planResult.valid });

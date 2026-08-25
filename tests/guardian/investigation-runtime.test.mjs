@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import { investigationArtifactsReady, prepareInvestigation } from '../../tools/guardian/investigation-runtime.mjs';
+import { readArtifact } from '../../tools/guardian/artifacts.mjs';
 
 const testCommands = [['node', '--test', 'tests/guardian/investigation-runtime.test.mjs']];
 const riskAssessment = {
@@ -209,6 +210,7 @@ test('prepareInvestigation fails closed without specialist runner', async () => 
 test('prepareInvestigation does not persist a structurally invalid plan', async () => {
   const root = mkdtempSync(path.join(tmpdir(), 'guardian-investigation-'));
   try {
+    const badPlan = { risk: { level: '中' }, test_commands: [['node', '--bad', 'x']] };
     await assert.rejects(() => prepareInvestigation({
       issue: 263,
       repoDir: 'D:/repo',
@@ -223,9 +225,13 @@ test('prepareInvestigation does not persist a structurally invalid plan', async 
         unresolved_facts: [],
         acceptance_criteria: [],
       }),
-      buildPlan: async () => ({ risk: { level: '中' } }),
+      buildPlan: async () => badPlan,
     }), /generated plan is structurally invalid/);
     assert.equal(investigationArtifactsReady(root, 263), false);
+    // The rejected plan is preserved as a diagnostic sidecar so operators can inspect the exact
+    // model output (e.g. test_commands argv) instead of guessing from the error string.
+    const invalid = readArtifact(root, 263, 'plan-invalid');
+    assert.deepEqual(invalid, { ...badPlan, investigation_id: invalid.investigation_id });
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
