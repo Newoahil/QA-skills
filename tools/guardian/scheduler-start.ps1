@@ -394,11 +394,27 @@ function Ensure-ControlWorktree([string]$SourceRepo, [string]$Destination, [stri
     throw "control worktree 存在计划外工作区修改：活动 issue #$issue 缺少权威 state/plan，已停止：$Destination"
   }
   $state = Read-JsonUtf8 $statePath
-  if (@('GATE_1_WAIT', 'FIXING', 'VERIFYING', 'GATE_2_WAIT') -notcontains [string]$state.state) {
+  $recoverablePlanScopeHandback = [string]$state.state -eq 'HANDED_BACK' -and
+    [string]$state.last_error_class -eq 'fixer-completion-unverified' -and
+    [string]$state.opencode.fixer.last_error -eq 'changed-file-not-in-plan'
+  if ((@('GATE_1_WAIT', 'FIXING', 'VERIFYING', 'GATE_2_WAIT') -notcontains [string]$state.state) -and -not $recoverablePlanScopeHandback) {
     throw "control worktree 存在计划外工作区修改：issue #$issue 当前状态 $($state.state) 不允许恢复 dirty fixer，已停止：$Destination"
   }
   $plan = Read-JsonUtf8 $planPath
-  $activePlanPaths = @($plan.affected_files | ForEach-Object { if ($_ -is [string]) { $_.Trim().Replace('\', '/') } } | Where-Object { $_ })
+  $activePlanPaths = @(
+    $plan.affected_files | ForEach-Object { if ($_ -is [string]) { $_.Trim().Replace('\', '/') } }
+    $plan.primary_files | ForEach-Object {
+      if ($_ -is [string]) { $_.Trim().Replace('\', '/') }
+      elseif ($_.path -is [string]) { $_.path.Trim().Replace('\', '/') }
+      elseif ($_.file -is [string]) { $_.file.Trim().Replace('\', '/') }
+      elseif ($_.file_path -is [string]) { $_.file_path.Trim().Replace('\', '/') }
+    }
+    $plan.test_commands | ForEach-Object {
+      foreach ($arg in @($_)) {
+        if ($arg -is [string] -and ($arg.EndsWith('.test.mjs') -or $arg.EndsWith('.test.js') -or $arg.EndsWith('.js'))) { $arg.Trim().Replace('\', '/') }
+      }
+    }
+  ) | Where-Object { $_ } | Select-Object -Unique
   $unplannedDirty = @($unownedDirty | Where-Object { $activePlanPaths -notcontains $_ })
   if ($unplannedDirty.Count -gt 0) {
     throw "control worktree 存在计划外工作区修改：$($unplannedDirty -join ', ')。已停止以避免覆盖现有修改：$Destination"

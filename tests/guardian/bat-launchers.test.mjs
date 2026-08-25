@@ -139,6 +139,18 @@ test('scheduler launcher resumes a dirty fix branch only when every product path
   assert.match(controlFunction, /control worktree 存在计划外工作区修改/);
 });
 
+test('scheduler launcher allows dirty recovery for changed-file-not-in-plan handbacks using full plan scope', () => {
+  const text = readFileSync('tools/guardian/scheduler-start.ps1', 'utf8');
+  const controlFunction = text.slice(text.indexOf('function Ensure-ControlWorktree'), text.indexOf('function Ensure-QaSnapshot'));
+  assert.match(controlFunction, /\$recoverablePlanScopeHandback = \[string\]\$state\.state -eq 'HANDED_BACK'/);
+  assert.match(controlFunction, /\[string\]\$state\.last_error_class -eq 'fixer-completion-unverified'/);
+  assert.match(controlFunction, /\[string\]\$state\.opencode\.fixer\.last_error -eq 'changed-file-not-in-plan'/);
+  assert.match(controlFunction, /-and -not \$recoverablePlanScopeHandback/);
+  assert.match(controlFunction, /\$plan\.primary_files/);
+  assert.match(controlFunction, /\$plan\.test_commands/);
+  assert.match(controlFunction, /Select-Object -Unique/);
+});
+
 test('scheduler DryRun fails before first-run binding prompt or write', () => {
   const text = readFileSync('tools/guardian/scheduler-start.ps1', 'utf8');
   assert.match(text, /if \(-not \$Dashboard -and \$DryRun -and -not \$binding\)/);
