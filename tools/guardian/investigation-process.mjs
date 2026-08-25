@@ -89,6 +89,33 @@ function extractJson(text, context = {}) {
   return parsed;
 }
 
+function isSpecialistFinalJsonParseError(error) {
+  return error?.name === 'InvestigationJsonParseError' && error?.json_phase === 'specialist-final-json';
+}
+
+function specialistJsonRetryPrompt(prompt, error) {
+  return [
+    prompt,
+    'Your previous final response was not valid JSON and could not be consumed by QA Guardian.',
+    `Parse error: ${error?.parse_error_message ?? error?.message ?? 'invalid JSON'}.`,
+    'Retry now. Return ONLY one complete JSON object. Do not wrap it in Markdown. Do not include commentary before or after the object. Escape all newlines inside string values as \\n.',
+  ].join(' ');
+}
+
+function markJsonRetryFailure(error, previousErrors) {
+  if (error && typeof error === 'object') {
+    error.retry_count = previousErrors.length;
+    error.previous_parse_errors = previousErrors.map((item) => ({
+      parse_error_message: item.parse_error_message,
+      json_source: item.json_source,
+      output_bytes: item.output_bytes,
+      output_preview: item.output_preview,
+      prompt_response: item.prompt_response ?? null,
+    }));
+  }
+  return error;
+}
+
 function promptFailureMessage(prefix, outcome) {
   const error = outcome?.error;
   const parts = [prefix];
@@ -335,11 +362,11 @@ export function processSpecialistRunner({ role, issue, issueDataPath, issueData 
       stampSpecialistSession(state, role, { ...baseRecord, last_status: 'running', last_seen_at: new Date(startedAt).toISOString() });
       const progressTimer = startSpecialistProgressHeartbeat({ issue, role, sessionId, startedAt, deadlineMs, sink: progressSink, intervalMs: progressIntervalMs });
       try {
-        const outcome = await withPromptDeadline(
+        const promptSpecialist = (text) => withPromptDeadline(
           () => opencodeClient.prompt({
             sessionId,
             agent: role,
-            parts: [{ type: 'text', text: sdkPrompt }],
+            parts: [{ type: 'text', text }],
             format: { type: 'json_schema', schema: SPECIALIST_SCHEMA },
             signal,
             fallbackModels,
@@ -348,11 +375,27 @@ export function processSpecialistRunner({ role, issue, issueDataPath, issueData 
           deadlineMs,
           () => opencodeClient.abort?.(sessionId),
         );
+        let outcome = await promptSpecialist(sdkPrompt);
         if (outcome.kind !== 'ok') throw new Error(promptFailureMessage(`specialist ${role} prompt failed`, outcome));
         stampSpecialistSession(state, role, { last_status: 'ok', last_seen_at: new Date().toISOString(), duration_ms: Date.now() - startedAt });
         if (outcome.result?.structured && typeof outcome.result.structured === 'object') return outcome.result.structured;
-        const text = typeof outcome.result?.text === 'string' ? outcome.result.text : JSON.stringify(outcome.result ?? {});
-        return extractJson(text, { phase: 'specialist-final-json', role, response: outcome.result?.prompt_response ?? null });
+        const parseFinal = (response) => {
+          const text = typeof response.result?.text === 'string' ? response.result.text : JSON.stringify(response.result ?? {});
+          return extractJson(text, { phase: 'specialist-final-json', role, response: response.result?.prompt_response ?? null });
+        };
+        try {
+          return parseFinal(outcome);
+        } catch (error) {
+          if (!isSpecialistFinalJsonParseError(error) || signal?.aborted) throw error;
+          outcome = await promptSpecialist(specialistJsonRetryPrompt(sdkPrompt, error));
+          if (outcome.kind !== 'ok') throw new Error(promptFailureMessage(`specialist ${role} prompt failed`, outcome));
+          if (outcome.result?.structured && typeof outcome.result.structured === 'object') return outcome.result.structured;
+          try {
+            return parseFinal(outcome);
+          } catch (retryError) {
+            throw isSpecialistFinalJsonParseError(retryError) ? markJsonRetryFailure(retryError, [error]) : retryError;
+          }
+        }
       } catch (error) {
         stampSpecialistSession(state, role, { last_status: 'failed', last_seen_at: new Date().toISOString(), duration_ms: Date.now() - startedAt, last_error: error instanceof Error ? error.message : 'unknown' });
         throw error;

@@ -287,6 +287,69 @@ test('processSpecialistRunner reports SDK prompt response shape on empty text JS
   });
 });
 
+test('processSpecialistRunner retries malformed SDK final JSON once in the same session', async () => {
+  // Given: the first final text is malformed, then the same session returns valid specialist JSON.
+  const prompted = [];
+  const client = {
+    createSession: async () => 'ses_retry_json',
+    prompt: async ({ sessionId, parts }) => {
+      prompted.push({ sessionId, text: parts[0].text });
+      if (prompted.length === 1) return { kind: 'ok', result: { text: '{"specialist":"guardian-business"' } };
+      return { kind: 'ok', result: { text: '{"specialist":"guardian-business","hypotheses":[],"evidence":[],"unresolved_facts":[],"acceptance_criteria":[]}' } };
+    },
+    getSession: async () => ({ kind: 'ok', session: { id: 'ses_retry_json', agent: 'guardian-business' } }),
+  };
+
+  // When: a specialist malformed-final-JSON parse fails once.
+  const result = await processSpecialistRunner({
+    role: 'guardian-business',
+    issue: 263,
+    issueDataPath: 'D:/repo/.qa/guardian/263/issue-data.json',
+    repoDir: 'D:/repo',
+    dossierPath: 'D:/repo/.qa/guardian/263/dossier.json',
+    opencodeClient: client,
+  });
+
+  // Then: the runner retries exactly once, reusing the same session, and returns the valid JSON.
+  assert.equal(result.specialist, 'guardian-business');
+  assert.equal(prompted.length, 2);
+  assert.deepEqual(prompted.map((call) => call.sessionId), ['ses_retry_json', 'ses_retry_json']);
+  assert.match(prompted[1].text, /previous final response was not valid JSON/i);
+});
+
+test('processSpecialistRunner bounds final JSON retries and reports redacted parse metadata', async () => {
+  // Given: both attempts return malformed text with sensitive-looking material.
+  const secret = 'ghp_abcdefghijklmnopqrstuvwxyz1234567890';
+  const prompted = [];
+  const client = {
+    createSession: async () => 'ses_retry_exhausted',
+    prompt: async ({ sessionId }) => {
+      prompted.push(sessionId);
+      return { kind: 'ok', result: { text: `{ "token": "${secret}", "broken": ` } };
+    },
+    getSession: async () => ({ kind: 'ok', session: { id: 'ses_retry_exhausted', agent: 'guardian-history' } }),
+  };
+
+  // When: the corrective retry also returns malformed JSON.
+  const failure = await processSpecialistRunner({
+    role: 'guardian-history',
+    issue: 263,
+    issueDataPath: 'D:/repo/.qa/guardian/263/issue-data.json',
+    repoDir: 'D:/repo',
+    dossierPath: 'D:/repo/.qa/guardian/263/dossier.json',
+    opencodeClient: client,
+  }).then(() => null, (error) => error);
+
+  // Then: retry is bounded and the parse metadata is safe for persisted diagnostics.
+  assert.ok(failure instanceof Error);
+  assert.equal(failure.name, 'InvestigationJsonParseError');
+  assert.equal(failure.retry_count, 1);
+  assert.equal(prompted.length, 2);
+  assert.doesNotMatch(failure.output_preview, /ghp_/);
+  assert.match(failure.output_preview, /\[redacted\]/);
+  assert.equal(failure.previous_parse_errors.length, 1);
+});
+
 test('processSpecialistRunner aborts and fails when the prompt exceeds the deadline', async () => {
   let aborted = false;
   const client = {
