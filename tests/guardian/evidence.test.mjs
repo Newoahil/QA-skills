@@ -144,6 +144,15 @@ test('normalizeSpecialistResult namespaces duplicate evidence ids and rejects mi
   }, { seenEvidenceIds: seen });
   assert.equal(namespaced.evidence[0].id, 'guardian-code:E1');
 
+  const canonical = normalizeSpecialistResult({
+    specialist: 'guardian-runtime（只读复现专员）；复现状态：源码级复现成立',
+    evidence: [
+      { id: 'E1', kind: 'source_invariant', source: 'src/b.mjs:20', observation: 'second', supports: ['H1'], contradicts: [] },
+    ],
+  }, { seenEvidenceIds: new Set(['E1']), canonicalRole: 'guardian-runtime' });
+  assert.equal(canonical.specialist, 'guardian-runtime');
+  assert.equal(canonical.evidence[0].id, 'guardian-runtime:E1');
+
   assert.throws(() => normalizeSpecialistResult({
     specialist: 'guardian-code',
     evidence: [

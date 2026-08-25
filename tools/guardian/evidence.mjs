@@ -91,13 +91,14 @@ export function normalizeSpecialistResult(result, options = {}) {
   if (!result || typeof result !== 'object' || Array.isArray(result)) return result;
 
   const seenEvidenceIds = options.seenEvidenceIds instanceof Set ? options.seenEvidenceIds : new Set();
+  const canonicalSpecialist = isNonEmptyString(options.canonicalRole) ? options.canonicalRole.trim() : null;
+  const specialist = canonicalSpecialist ?? (isNonEmptyString(result.specialist) ? result.specialist.trim() : 'specialist');
   const evidence = Array.isArray(result.evidence) ? result.evidence.map((item) => {
     const normalized = normalizeEvidenceItem(item);
     if (!seenEvidenceIds.has(normalized.id)) {
       seenEvidenceIds.add(normalized.id);
       return normalized;
     }
-    const specialist = isNonEmptyString(result.specialist) ? result.specialist.trim() : 'specialist';
     let suffix = 1;
     let namespacedId = `${specialist}:${normalized.id}`;
     while (seenEvidenceIds.has(namespacedId)) {
@@ -110,6 +111,7 @@ export function normalizeSpecialistResult(result, options = {}) {
 
   return {
     ...result,
+    specialist,
     evidence,
   };
 }

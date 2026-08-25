@@ -48,7 +48,11 @@ export function buildInvestigationPrompt({ issue, repoDir, role, dossierPath, av
 export function synthesizeDossier({ issue, issueClass, specialistResults, capabilities, memoryContext = null }) {
   const evidenceIds = new Set();
   const results = Array.isArray(specialistResults)
-    ? specialistResults.map((result) => normalizeSpecialistResult(result, { seenEvidenceIds: evidenceIds }))
+    ? specialistResults.map((item) => {
+        const wrapped = item && typeof item === 'object' && !Array.isArray(item) && item.result && typeof item.role === 'string';
+        const result = wrapped ? item.result : item;
+        return normalizeSpecialistResult(result, { seenEvidenceIds: evidenceIds, canonicalRole: wrapped ? item.role : undefined });
+      })
     : [];
   const hypotheses = results.flatMap((result) => result.hypotheses ?? []);
   const evidence = results.flatMap((result) => result.evidence ?? []);

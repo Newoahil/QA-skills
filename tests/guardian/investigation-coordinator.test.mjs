@@ -161,6 +161,41 @@ test('synthesis fails closed on ungrounded kind and namespaces cross-specialist 
   assert.deepEqual(output.dossier.evidence.map((item) => item.id), ['E1', 'guardian-runtime:E1']);
 });
 
+test('synthesis uses scheduled role instead of verbose self-reported specialist for duplicate evidence ids', () => {
+  const output = synthesizeDossier({
+    issue: 263,
+    issueClass: 'bug',
+    capabilities: {},
+    specialistResults: [
+      {
+        role: 'guardian-code',
+        result: {
+          specialist: 'guardian-code',
+          hypotheses: [{ id: 'H1', statement: 'root cause' }],
+          evidence: [
+            { id: 'E1', kind: 'source_invariant', source: 'src/a.mjs:1', observation: 'first', supports: ['H1'], contradicts: [] },
+          ],
+          unresolved_facts: [],
+        },
+      },
+      {
+        role: 'guardian-runtime',
+        result: {
+          specialist: 'guardian-runtime（只读复现专员）；复现状态：源码级复现成立，未启动运行时',
+          hypotheses: [{ id: 'H1', statement: 'root cause' }],
+          evidence: [
+            { id: 'E1', kind: 'runtime_reproduction', source: 'runtime probe', observation: 'duplicate', supports: ['H1'], contradicts: [] },
+          ],
+          unresolved_facts: [],
+        },
+      },
+    ],
+  });
+
+  assert.deepEqual(output.dossier.evidence.map((item) => item.id), ['E1', 'guardian-runtime:E1']);
+  assert.deepEqual(output.dossier.specialists, ['guardian-code', 'guardian-runtime']);
+});
+
 test('coordinator context lists only capabilities actually available', () => {
   const context = coordinatorContext({ capabilities: { codegraph: { available: false }, context7: { available: true }, git_history: { available: true }, plan_critic: { available: false } } });
   assert.deepEqual(context.available_tools, ['explore', 'guardian-code', 'guardian-business', 'guardian-runtime', 'context7', 'guardian-docs', 'guardian-history']);
