@@ -163,11 +163,16 @@ export function createSupervisorExecutor({ repoDir, run = spawnSync } = {}) {
 
     const status = git(['status', '--porcelain=v1']);
     if (status.status !== 0) return { ...status, code: 'worktree-status-failed', recoverable: true };
-    if (status.stdout.trim() !== '') {
+    const dirtyPaths = status.stdout
+      .split(/\r?\n/)
+      .filter(Boolean)
+      .map((line) => line.slice(3).trim().replace(/ -> .*$/u, '').replace(/^"|"$/gu, '').replaceAll('\\', '/'))
+      .filter((path) => path !== '' && !GUARDIAN_ALLOWLIST.some((re) => re.test(path)));
+    if (dirtyPaths.length > 0) {
       return {
         status: 1,
         stdout: status.stdout,
-        stderr: `cannot prepare ${branch}: dirty worktree; recover by cleaning or preserving changes before retry`,
+        stderr: `cannot prepare ${branch}: dirty worktree outside Guardian-owned state (${dirtyPaths.join(', ')}); recover by cleaning or preserving changes before retry`,
         code: 'stale-dirty-fix-branch',
         recoverable: true,
       };
