@@ -140,8 +140,134 @@ test('GATE_1_WAIT + revise carries data tail (as DATA)', () => {
   const r = rec({ state: STATES.GATE_1_WAIT });
   const d = route(r, { comments: [comment(1, '/guardian revise use a guard clause instead')] }, OPTS);
   assert.equal(d.action, 'RESUME');
+  assert.equal(d.toState, STATES.INVESTIGATING);
   assert.equal(d.command.verb, 'revise');
   assert.equal(d.command.data, 'use a guard clause instead');
+});
+
+test('approved FIXING without branch or fixer session resumes pre-fixer work despite a fresh lease', () => {
+  const r = rec({
+    state: STATES.FIXING,
+    updated_at: new Date(NOW - 60 * 1000).toISOString(),
+    branch: null,
+    gate_1_approved_comment_id: 7,
+    gate_1_approved_plan_hash: 'sha256:plan',
+    gate_1_approved_plan_revision: 'rev-1',
+    plan_hash: 'sha256:plan',
+    plan_revision: 'rev-1',
+    plan_status: 'valid',
+    dossier_status: 'valid',
+    opencode: { fixer: null, qa: null, specialists: {}, inflight: null },
+  });
+
+  const d = route(r, {}, { leaseMs: LEASE, now: NOW });
+
+  assert.equal(d.action, 'RESUME');
+  assert.equal(d.reason, 'approved-pre-fixer-recovery');
+  assert.equal(d.toState, STATES.FIXING);
+});
+
+test('approved INVESTIGATING with valid plan identity resumes the pre-fixer handoff without reset', () => {
+  const r = rec({
+    state: STATES.INVESTIGATING,
+    updated_at: new Date(NOW - 60 * 1000).toISOString(),
+    branch: null,
+    gate_1_approved_comment_id: 7,
+    gate_1_approved_plan_hash: 'sha256:plan',
+    gate_1_approved_plan_revision: 'rev-1',
+    plan_hash: 'sha256:plan',
+    plan_revision: 'rev-1',
+    plan_status: 'valid',
+    dossier_status: 'valid',
+    opencode: { fixer: null, qa: null, specialists: {}, inflight: null },
+  });
+
+  const d = route(r, {}, { leaseMs: LEASE, now: NOW });
+
+  assert.equal(d.action, 'RESUME');
+  assert.equal(d.reason, 'approved-pre-fixer-recovery');
+  assert.equal(d.toState, STATES.FIXING);
+});
+
+test('approved INVESTIGATING with invalid plan status does not bypass fresh lease', () => {
+  const r = rec({
+    state: STATES.INVESTIGATING,
+    updated_at: new Date(NOW - 60 * 1000).toISOString(),
+    branch: null,
+    gate_1_approved_comment_id: 7,
+    gate_1_approved_plan_hash: 'sha256:plan',
+    gate_1_approved_plan_revision: 'rev-1',
+    plan_hash: 'sha256:plan',
+    plan_revision: 'rev-1',
+    plan_status: 'invalid',
+    dossier_status: 'valid',
+    opencode: { fixer: null, qa: null, specialists: {}, inflight: null },
+  });
+
+  const d = route(r, {}, { leaseMs: LEASE, now: NOW });
+
+  assert.equal(d.action, 'SKIP');
+  assert.equal(d.reason, 'in-progress-fresh-lease');
+});
+
+test('approved FIXING with starting fixer inflight marker resumes the crash window', () => {
+  const r = rec({
+    state: STATES.FIXING,
+    updated_at: new Date(NOW - 60 * 1000).toISOString(),
+    branch: null,
+    gate_1_approved_comment_id: 7,
+    gate_1_approved_plan_hash: 'sha256:plan',
+    gate_1_approved_plan_revision: 'rev-1',
+    plan_hash: 'sha256:plan',
+    plan_revision: 'rev-1',
+    plan_status: 'valid',
+    dossier_status: 'valid',
+    opencode: {
+      fixer: null,
+      qa: null,
+      specialists: {},
+      inflight: { kind: 'fixer-start', role: 'fixer', status: 'starting' },
+    },
+  });
+
+  const d = route(r, {}, { leaseMs: LEASE, now: NOW });
+
+  assert.equal(d.action, 'RESUME');
+  assert.equal(d.reason, 'approved-pre-fixer-recovery');
+  assert.equal(d.toState, STATES.FIXING);
+});
+
+test('active FIXING with a fixer session still skips on a fresh lease', () => {
+  const r = rec({
+    state: STATES.FIXING,
+    updated_at: new Date(NOW - 60 * 1000).toISOString(),
+    branch: 'fix/issue-42',
+    gate_1_approved_comment_id: 7,
+    gate_1_approved_plan_hash: 'sha256:plan',
+    gate_1_approved_plan_revision: 'rev-1',
+    plan_hash: 'sha256:plan',
+    plan_revision: 'rev-1',
+    opencode: { fixer: { session_id: 'ses_fixer' }, qa: null, specialists: {}, inflight: null },
+  });
+
+  const d = route(r, {}, { leaseMs: LEASE, now: NOW });
+
+  assert.equal(d.action, 'SKIP');
+  assert.equal(d.reason, 'in-progress-fresh-lease');
+});
+
+test('handed back changed-file-not-in-plan from old incomplete scope resumes investigation without reset', () => {
+  const r = rec({
+    state: STATES.HANDED_BACK,
+    last_error_class: 'fixer-completion-unverified',
+    opencode: { fixer: { session_id: 'ses_old', last_status: 'unverified', last_error: 'changed-file-not-in-plan' } },
+  });
+
+  const d = route(r, {}, { leaseMs: LEASE, now: NOW });
+
+  assert.equal(d.action, 'RESUME');
+  assert.equal(d.reason, 'plan-scope-recovery');
+  assert.equal(d.toState, STATES.INVESTIGATING);
 });
 
 test('HANDED_BACK default → SKIP permanently even with label (acceptance 20)', () => {

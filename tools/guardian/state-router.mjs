@@ -51,6 +51,13 @@ export function routeIssue(record, gh, opts) {
   // 3. HANDED_BACK is terminal (§11.3): default permanent skip, UNLESS a /guardian retry
   //    command appears — then clear fix_rounds and re-enter from INVESTIGATING.
   if (state === STATES.HANDED_BACK) {
+    if (record.last_error_class === 'fixer-completion-unverified' && record.opencode?.fixer?.last_error === 'changed-file-not-in-plan') {
+      return {
+        action: 'RESUME',
+        reason: 'plan-scope-recovery',
+        toState: STATES.INVESTIGATING,
+      };
+    }
     const cmd = selectControlCommand(controlEvents, STATES.HANDED_BACK);
     if (cmd && cmd.verb === 'retry') {
       return {
@@ -104,6 +111,14 @@ export function routeIssue(record, gh, opts) {
     };
   }
 
+  if ((state === STATES.FIXING || state === STATES.INVESTIGATING) && isApprovedPreFixer(record)) {
+    return {
+      action: 'RESUME',
+      reason: 'approved-pre-fixer-recovery',
+      toState: STATES.FIXING,
+    };
+  }
+
   // 4. GATE_1_WAIT (HIGH only) → consume approve/revise/reject; otherwise keep waiting.
   if (state === STATES.GATE_1_WAIT) {
     const cmd = selectControlCommand(controlEvents, STATES.GATE_1_WAIT);
@@ -116,7 +131,8 @@ export function routeIssue(record, gh, opts) {
         command: cmd,
       };
     }
-    // approve | revise → FIXING
+    if (cmd.verb === 'revise') return { action: 'RESUME', reason: 'revise', toState: STATES.INVESTIGATING, command: cmd };
+    // approve → FIXING
     return { action: 'RESUME', reason: cmd.verb, toState: STATES.FIXING, command: cmd };
   }
 
@@ -197,6 +213,23 @@ function selectControlCommand(events, currentState) {
 function commandIdFromEvent(event) {
   const n = Number(event.id);
   return Number.isInteger(n) && String(n) === String(event.id) ? n : event.id;
+}
+
+function isApprovedPreFixer(record) {
+  return Boolean(record.gate_1_approved_comment_id)
+    && record.gate_1_approved_plan_hash === record.plan_hash
+    && record.gate_1_approved_plan_revision === record.plan_revision
+    && record.plan_status === 'valid'
+    && record.dossier_status === 'valid'
+    && !record.branch
+    && !record.opencode?.fixer?.session_id
+    && (!record.opencode?.inflight || isStartingFixerInflight(record.opencode.inflight));
+}
+
+function isStartingFixerInflight(inflight) {
+  return inflight?.kind === 'fixer-start'
+    && inflight?.role === 'fixer'
+    && inflight?.status === 'starting';
 }
 
 export { STATES, RISK };
