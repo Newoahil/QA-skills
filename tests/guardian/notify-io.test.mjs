@@ -308,6 +308,40 @@ test('later tick with the same Gate 1 proposal hash marker does not republish th
   assert.equal(io.calls.comment.length, 0);
 });
 
+test('Gate 1 first-entry proposal survives generic notification and compensation without duplication', () => {
+  const writes = [];
+  const comments = [];
+  let record = {
+    issue: 217,
+    state: 'GATE_1_WAIT',
+    plan_hash: 'sha256:plan-217',
+    last_notified_state: null,
+    gate_1_comment_hash: null,
+    last_gate_1_proposal_hash: null,
+  };
+  const deps = {
+    readState: () => record,
+    writeState: (_dir, next) => { writes.push(next); record = next; },
+    claimNotification: () => true,
+    releaseNotificationClaim: () => {},
+  };
+  const io = { ghComment: (_issue, body) => { comments.push(body); return { ok: true }; }, curlPost: () => ({ ok: true }) };
+  const decision = {
+    issue: 217,
+    action: 'GATE_1_WAIT',
+    proposal: { plan: { root_cause: 'root' }, dossier: { issue: 217 }, planHash: 'sha256:plan-217', planRevision: 'rev-1' },
+  };
+
+  closeoutTransition({ guardianDir: 'D:/guardian', decision, statePatch: { state: 'GATE_1_WAIT' }, io, actor: 'supervisor', deps });
+  closeoutTransition({ guardianDir: 'D:/guardian', decision: { issue: 217, action: 'SKIP', reason: 'gate1-waiting' }, statePatch: {}, io, actor: 'supervisor', deps, deliver: () => {} });
+  const recovered = publishGate1Proposal({ guardianDir: 'D:/guardian', issue: 217, record, plan: decision.proposal.plan, dossier: decision.proposal.dossier, planHash: 'sha256:plan-217', planRevision: 'rev-1', ghComment: io.ghComment, actor: 'supervisor', deps });
+
+  assert.equal(comments.length, 1);
+  assert.equal(recovered.published, false);
+  assert.equal(typeof record.gate_1_comment_hash, 'string');
+  assert.equal(record.last_gate_1_proposal_hash, 'sha256:plan-217');
+});
+
 test('publication failure keeps the Gate 1 proposal marker absent so the next tick can retry the same recovered proposal', () => {
   const issue = 266;
   const artifacts = gate1Artifacts({ investigation_id: 'inv-266' });

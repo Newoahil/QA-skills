@@ -238,7 +238,10 @@ export function closeoutTransition({ guardianDir, decision, statePatch, config =
           proposalPublished = true;
         }
       }
-      const patchedRecord = { ...current, ...statePatch };
+      // Proposal publication may have persisted a newer idempotency marker than the record read
+      // before the comment. Re-read before the final notification marker write so first-entry
+      // Gate 1 publication cannot be overwritten by this older snapshot.
+      const patchedRecord = { ...(rs(guardianDir, decision.issue) ?? current), ...statePatch };
       const outcome = notify(
         patchedRecord,
         { targetState, link: config?.issue_url_for?.(decision.issue) ?? null, reason: decision.reason ?? decision.handedBackReason ?? null },
