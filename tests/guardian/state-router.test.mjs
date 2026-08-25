@@ -208,6 +208,17 @@ test('FIXING with missing Supervisor evidence resumes QA instead of creating a f
   assert.equal(d.toState, STATES.VERIFYING);
 });
 
+test('VERIFYING with missing Supervisor evidence is not a retryable router state', () => {
+  const r = rec({
+    state: STATES.VERIFYING,
+    last_error_class: 'qa-missing-supervisor-evidence',
+    updated_at: new Date(NOW - 60 * 1000).toISOString(),
+  });
+  const d = route(r, {}, { leaseMs: LEASE, now: NOW });
+  assert.equal(d.action, 'SKIP');
+  assert.equal(d.reason, 'in-progress-fresh-lease');
+});
+
 test('GATE_1_WAIT + approve from an UNTRUSTED author → SKIP (authorization boundary)', () => {
   const r = rec({ state: STATES.GATE_1_WAIT });
   const d = route(r, { comments: [comment(1, '/guardian approve', 'attacker')] }, OPTS);

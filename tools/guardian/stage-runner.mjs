@@ -256,7 +256,7 @@ export async function runQaStage(context) {
     if (blockerClass === 'missing-supervisor-evidence') {
       context.writeState(context.guardianDir, {
         ...qaRun.state,
-        state: STATES.VERIFYING,
+        state: STATES.FIXING,
         last_phase: 'qa-evidence-retry',
         last_error_class: 'qa-missing-supervisor-evidence',
         qa_verdict_status: qaVerdict.status,
