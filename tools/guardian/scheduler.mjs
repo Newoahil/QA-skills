@@ -48,6 +48,8 @@ import { ACTORS, assertActorMayPerform, EFFECTS } from './actor-routing.mjs';
 import { atomicWriteJson } from './atomic-io.mjs';
 import { recallEngineeringMemory, recordEngineeringMemory } from './memory-provider.mjs';
 
+const FIXER_START_KIND = 'fixer-start';
+
 export function sessionStatusAction(status) {
   if (status === 'ok') return { continue: true, retry: false, failClosed: false };
   if (status === 'retry') return { continue: false, retry: true, failClosed: false };
@@ -95,6 +97,45 @@ export function buildInvestigationFailureState({ failureState, investigationStat
     last_error_class: 'investigation-failed',
     last_phase: 'investigation',
     plan_validation_errors: [error instanceof Error ? error.message : 'investigation failed'],
+  };
+}
+
+export function applyGateCommandState({ currentBeforeRun, command, currentIdentity, repoDir, qaRuntimeDir, now = new Date().toISOString() }) {
+  const gateApproved = command.verb === 'approve';
+  const gateRevision = command.verb === 'revise';
+  return {
+    ...currentBeforeRun,
+    control_repo_dir: repoDir,
+    qa_runtime_dir: qaRuntimeDir,
+    state: gateApproved ? STATES.FIXING : (gateRevision ? STATES.INVESTIGATING : currentBeforeRun.state),
+    last_consumed_comment_id: command.commentId,
+    gate_1_approved_comment_id: gateApproved ? command.commentId : null,
+    gate_1_approved_plan_hash: gateApproved ? currentIdentity.plan_hash : null,
+    gate_1_approved_plan_revision: gateApproved ? currentIdentity.plan_revision : null,
+    gate_1_revision_data: gateRevision ? command.data : currentBeforeRun.gate_1_revision_data,
+    gate_1_comment_hash: gateRevision ? null : currentBeforeRun.gate_1_comment_hash,
+    last_gate_1_proposal_hash: gateRevision ? null : currentBeforeRun.last_gate_1_proposal_hash,
+    last_notified_state: gateRevision ? null : currentBeforeRun.last_notified_state,
+    dossier_status: gateRevision ? 'superseded' : currentBeforeRun.dossier_status,
+    plan_status: gateRevision ? 'superseded' : currentBeforeRun.plan_status,
+    dossier_hash: gateRevision ? null : currentBeforeRun.dossier_hash,
+    dossier_revision: gateRevision ? null : currentBeforeRun.dossier_revision,
+    plan_hash: gateRevision ? null : currentBeforeRun.plan_hash,
+    plan_revision: gateRevision ? null : currentBeforeRun.plan_revision,
+    fix_rounds: command.clearFixRounds ? 0 : currentBeforeRun.fix_rounds,
+    stall_retries: command.nextStallRetries ?? currentBeforeRun.stall_retries,
+    last_phase: gateRevision ? 'gate1-revision' : currentBeforeRun.last_phase,
+    opencode: {
+      ...(currentBeforeRun.opencode ?? { schema_version: 1, fixer: null, qa: null, specialists: {}, inflight: null }),
+      inflight: gateApproved ? {
+        operation_id: randomUUID(),
+        role: 'fixer',
+        kind: FIXER_START_KIND,
+        round: currentBeforeRun.processing_round ?? 1,
+        started_at: now,
+        status: 'starting',
+      } : null,
+    },
   };
 }
 
@@ -646,22 +687,18 @@ async function tick(repoDir, config, logger, signal = null, runtime = createSche
     logger.info('claim.accepted', { issue, claim_source: 'discovered' });
   }
   if (currentBeforeRun && plan.toRun.command) {
-    const gateApproved = plan.toRun.command.verb === 'approve' || plan.toRun.command.verb === 'revise';
     const currentPair = readArtifactPair(guardianDirOf(repoDir), issue);
     const currentIdentity = artifactIdentity(currentPair);
-      writeState(guardianDirOf(repoDir), {
-        ...currentBeforeRun,
-        control_repo_dir: repoDir,
-        qa_runtime_dir: qaRuntimeDir,
-        state: gateApproved ? 'FIXING' : currentBeforeRun.state,
-      last_consumed_comment_id: plan.toRun.command.commentId,
-      gate_1_approved_comment_id: gateApproved ? plan.toRun.command.commentId : currentBeforeRun.gate_1_approved_comment_id,
-      gate_1_approved_plan_hash: gateApproved ? currentIdentity.plan_hash : currentBeforeRun.gate_1_approved_plan_hash,
-      gate_1_approved_plan_revision: gateApproved ? currentIdentity.plan_revision : currentBeforeRun.gate_1_approved_plan_revision,
-      gate_1_revision_data: plan.toRun.command.verb === 'revise' ? plan.toRun.command.data : currentBeforeRun.gate_1_revision_data,
-      fix_rounds: plan.toRun.clearFixRounds ? 0 : currentBeforeRun.fix_rounds,
-      stall_retries: plan.toRun.nextStallRetries ?? currentBeforeRun.stall_retries,
-    }, { touch: false });
+    const commandState = applyGateCommandState({
+      currentBeforeRun,
+      command: { ...plan.toRun.command, clearFixRounds: plan.toRun.clearFixRounds, nextStallRetries: plan.toRun.nextStallRetries },
+      currentIdentity,
+      repoDir,
+      qaRuntimeDir,
+      now: new Date(now).toISOString(),
+    });
+    writeState(guardianDirOf(repoDir), commandState, { touch: false });
+    if (plan.toRun.command.verb === 'revise') quarantineArtifacts(guardianDirOf(repoDir), issue);
   }
   const investigationMode = config.investigation_mode ?? 'enforced';
   if (investigationMode !== 'legacy') {

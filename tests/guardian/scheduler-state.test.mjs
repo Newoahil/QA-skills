@@ -8,7 +8,7 @@ import { hashArtifact, writeArtifact } from '../../tools/guardian/artifacts.mjs'
 import { ACTORS } from '../../tools/guardian/actor-routing.mjs';
 import { deliverNotifications } from '../../tools/guardian/notify-io.mjs';
 import { buildGate1Comment } from '../../tools/guardian/gate1-comment.mjs';
-import { buildInvestigationFailureState, createLeaseFence, persistCommandlessTransitions, publishWaitingGate1Proposals } from '../../tools/guardian/scheduler.mjs';
+import { applyGateCommandState, buildInvestigationFailureState, createLeaseFence, persistCommandlessTransitions, publishWaitingGate1Proposals } from '../../tools/guardian/scheduler.mjs';
 import { newState, readState, STATES, writeState } from '../../tools/guardian/state.mjs';
 
 function fakeStore(initial) {
@@ -319,4 +319,67 @@ test('lease fence aborts active work when heartbeat renewal loses ownership', ()
   assert.equal(fence.signal.aborted, true);
   fence.stop();
   assert.equal(cleared, true);
+});
+
+test('approve persists a pre-fixer inflight marker for crash-window recovery', () => {
+  const record = applyGateCommandState({
+    currentBeforeRun: {
+      ...newState(325),
+      state: STATES.GATE_1_WAIT,
+      opencode: { schema_version: 1, fixer: null, qa: null, specialists: {}, inflight: null },
+    },
+    command: { verb: 'approve', commentId: 'comment-approve' },
+    currentIdentity: { plan_hash: 'sha256:plan', plan_revision: 'rev-1' },
+    repoDir: 'D:/control',
+    qaRuntimeDir: 'D:/snapshot',
+    now: '2026-08-25T14:34:12.000Z',
+  });
+
+  assert.equal(record.state, STATES.FIXING);
+  assert.equal(record.gate_1_approved_comment_id, 'comment-approve');
+  assert.equal(record.opencode.inflight.kind, 'fixer-start');
+  assert.equal(record.opencode.inflight.status, 'starting');
+});
+
+test('revise clears approval/proposal markers and routes back to investigation', () => {
+  const record = applyGateCommandState({
+    currentBeforeRun: {
+      ...newState(324),
+      state: STATES.GATE_1_WAIT,
+      gate_1_approved_comment_id: 'old-approve',
+      gate_1_approved_plan_hash: 'sha256:old',
+      gate_1_approved_plan_revision: 'old-rev',
+      gate_1_comment_hash: 'old-comment',
+      last_gate_1_proposal_hash: 'sha256:old',
+      last_notified_state: STATES.GATE_1_WAIT,
+      dossier_status: 'valid',
+      plan_status: 'valid',
+      dossier_hash: 'sha256:old-dossier',
+      dossier_revision: 'old-rev',
+      plan_hash: 'sha256:old',
+      plan_revision: 'old-rev',
+      opencode: { schema_version: 1, fixer: null, qa: null, specialists: {}, inflight: null },
+    },
+    command: { verb: 'revise', commentId: 'comment-revise', data: '只确认触发场景' },
+    currentIdentity: { plan_hash: 'sha256:old', plan_revision: 'old-rev' },
+    repoDir: 'D:/control',
+    qaRuntimeDir: 'D:/snapshot',
+    now: '2026-08-25T14:30:42.000Z',
+  });
+
+  assert.equal(record.state, STATES.INVESTIGATING);
+  assert.equal(record.gate_1_revision_data, '只确认触发场景');
+  assert.equal(record.gate_1_approved_comment_id, null);
+  assert.equal(record.gate_1_approved_plan_hash, null);
+  assert.equal(record.gate_1_approved_plan_revision, null);
+  assert.equal(record.gate_1_comment_hash, null);
+  assert.equal(record.last_gate_1_proposal_hash, null);
+  assert.equal(record.last_notified_state, null);
+  assert.equal(record.dossier_status, 'superseded');
+  assert.equal(record.plan_status, 'superseded');
+  assert.equal(record.dossier_hash, null);
+  assert.equal(record.dossier_revision, null);
+  assert.equal(record.plan_hash, null);
+  assert.equal(record.plan_revision, null);
+  assert.equal(record.opencode.inflight, null);
 });
