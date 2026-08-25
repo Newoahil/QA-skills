@@ -9,6 +9,25 @@ import { randomUUID } from 'node:crypto';
 
 const NOOP_LOGGER = { info: () => {}, warn: () => {}, error: () => {} };
 
+function copyJsonParseDiagnostics(target, source) {
+  if (source?.name !== 'InvestigationJsonParseError') return target;
+  target.name = source.name;
+  for (const key of [
+    'json_phase',
+    'role',
+    'json_source',
+    'parse_error_message',
+    'output_bytes',
+    'output_preview',
+    'prompt_response',
+    'retry_count',
+    'previous_parse_errors',
+  ]) {
+    if (source[key] !== undefined) target[key] = source[key];
+  }
+  return target;
+}
+
 export async function prepareInvestigation({ issue, issueData, repoDir, qaRuntimeDir = repoDir, guardianDir, issueClass, complexity, capabilities, config = {}, agentRegistry, memoryContext = null, runSpecialist, buildPlan, state = null, round = 1, signal = null, now = () => Date.now(), logger = NOOP_LOGGER }) {
   const paths = artifactPaths(guardianDir, issue);
   const budgets = resolveBudgets(config, complexity);
@@ -62,7 +81,7 @@ export async function prepareInvestigation({ issue, issueData, repoDir, qaRuntim
     const first = failures[0];
     const reason = first.result.reason;
     const message = reason instanceof Error ? reason.message : String(reason ?? 'specialist failed');
-    const error = new Error(message);
+    const error = copyJsonParseDiagnostics(new Error(message), reason);
     error.cause = reason;
     error.specialist_failures = failures.map((item) => item.role);
     error.specialist_durations_ms = specialistDurations;

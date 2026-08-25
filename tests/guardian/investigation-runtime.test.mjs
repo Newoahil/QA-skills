@@ -198,6 +198,46 @@ test('prepareInvestigation waits for all started specialists before failing', as
   }
 });
 
+test('prepareInvestigation preserves specialist final JSON parse diagnostics on failure', async () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'guardian-investigation-'));
+  try {
+    const parseFailure = new Error('specialist-final-json parse failed for guardian-code: Unexpected end of JSON input');
+    parseFailure.name = 'InvestigationJsonParseError';
+    parseFailure.json_phase = 'specialist-final-json';
+    parseFailure.role = 'guardian-code';
+    parseFailure.json_source = 'full-text';
+    parseFailure.parse_error_message = 'Unexpected end of JSON input';
+    parseFailure.output_bytes = 48;
+    parseFailure.output_preview = '{"token":"[redacted]","broken":';
+    parseFailure.retry_count = 1;
+    parseFailure.previous_parse_errors = [{ parse_error_message: 'Unexpected end of JSON input', output_preview: '' }];
+
+    const failure = await prepareInvestigation({
+      issue: 263,
+      repoDir: 'D:/repo',
+      guardianDir: root,
+      issueClass: 'bug',
+      complexity: 'simple',
+      capabilities: {},
+      runSpecialist: async ({ role }) => {
+        if (role === 'guardian-code') throw parseFailure;
+        return { specialist: role, hypotheses: [{ id: 'H1', statement: 'root' }], evidence: [{ id: `E-${role}`, kind: 'source_invariant', source: role, observation: 'ok', supports: ['H1'], contradicts: [] }], unresolved_facts: [], acceptance_criteria: [] };
+      },
+      buildPlan: async () => ({ root_cause: 'root', affected_files: ['a.mjs'], non_goals: ['b'], test_plan: ['t'], test_commands: testCommands, acceptance_criteria: ['works'], rollback_plan: 'revert', evidence_ids: ['E-guardian-code'], risk: 'LOW', risk_assessment: riskAssessment }),
+    }).then(() => null, (error) => error);
+
+    assert.ok(failure instanceof Error);
+    assert.equal(failure.name, 'InvestigationJsonParseError');
+    assert.equal(failure.json_phase, 'specialist-final-json');
+    assert.equal(failure.role, 'guardian-code');
+    assert.equal(failure.retry_count, 1);
+    assert.equal(failure.output_preview.includes('[redacted]'), true);
+    assert.deepEqual(failure.specialist_failures, ['guardian-code']);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('prepareInvestigation fails closed without specialist runner', async () => {
   const root = mkdtempSync(path.join(tmpdir(), 'guardian-investigation-'));
   try {
