@@ -165,6 +165,10 @@ export async function runFixerStage(context) {
 export async function runQaStage(context) {
   const isActiveRun = context.isActiveRun ?? (() => true);
   const afterFix = context.readState(context.guardianDir, context.issue) ?? { issue: context.issue };
+  const plan = context.readArtifactPair?.(context.guardianDir, context.issue)?.plan ?? null;
+  const supervisorEvidence = typeof context.supervisor?.preQaEvidence === 'function'
+    ? context.supervisor.preQaEvidence({ plan })
+    : { status: 0, evidence: { status_diff: null, tests: [] } };
   context.logger.info('qa.begin', { issue: context.issue, round: afterFix.processing_round ?? 1 });
   const qaRun = await context.runQaSession({
     client: context.client,
@@ -176,6 +180,7 @@ export async function runQaStage(context) {
       branch: afterFix.branch ?? 'unknown',
       changed_files: context.pipeline.completion?.changedFiles ?? [],
       fixer_summary: context.pipeline.completion?.summary ?? null,
+      supervisor_evidence: supervisorEvidence.evidence ?? supervisorEvidence,
     },
     intendedBehavior: context.issueTitle ?? `issue #${context.issue}`,
     round: afterFix.processing_round ?? 1,

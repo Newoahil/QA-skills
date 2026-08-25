@@ -345,6 +345,26 @@ test('runPipeline preserves fixer to QA state and artifact write order', async (
   ]);
 });
 
+test('runQaStage passes Supervisor pre-QA evidence into the independent QA diff summary', async () => {
+  const evidence = { status_diff: { command: ['git', 'status', '--short'], exit_code: 0, stdout: ' M src/a.mjs\n', stderr: '' }, tests: [] };
+  let received = null;
+  const { runQaStage } = await import('../../tools/guardian/stage-runner.mjs');
+  const result = await runQaStage({
+    client: {}, issue: 266, repoDir: 'D:/repo', guardianDir: 'D:/repo/.qa/guardian', config: {}, fallbackModels: [], signal: null,
+    issueTitle: 'Fix the thing', logger: { info: () => {}, warn: () => {} },
+    readState: () => ({ issue: 266, state: STATES.VERIFYING, branch: 'fix/issue-266', opencode: {} }),
+    writeState: () => {}, writeArtifact: () => {}, writeMarkdownArtifact: () => {},
+    readArtifactPair: () => ({ plan: { test_commands: [['node', '--test', 'tests/guardian/fix.test.mjs']] } }),
+    pipeline: { completion: { changedFiles: [], summary: null } },
+    supervisor: { preQaEvidence: () => evidence },
+    resolveSessionDeadlineMs: () => 100, resolveModelForRole: () => undefined,
+    runQaSession: async (request) => { received = request.diffSummary; return { status: 'ok', state: request.state, verdict: 'PASS', report: 'Overall Status: PASS' }; },
+  });
+
+  assert.equal(result.stop, false);
+  assert.deepEqual(received.supervisor_evidence, evidence);
+});
+
 test('runFixerStage hands back an unverified completion instead of leaving a fresh FIXING lease', async () => {
   let state = { issue: 263, state: STATES.FIXING, handed_back_reason: null, opencode: {} };
   const warnings = [];

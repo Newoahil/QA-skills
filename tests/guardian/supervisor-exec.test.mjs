@@ -16,7 +16,7 @@ function fakeRun(calls, result = { status: 0, stdout: 'ok\n', stderr: '' }) {
 
 test('supervisor exposes only fixed direct-argv operations', () => {
   assert.deepEqual(SUPERVISOR_OPERATIONS, Object.freeze([
-    'current-branch', 'status-diff', 'staged-files', 'worktree-files', 'ensure-fix-branch', 'run-tests', 'stage-files', 'commit', 'push',
+     'current-branch', 'status-diff', 'staged-files', 'worktree-files', 'ensure-fix-branch', 'run-tests', 'pre-qa-evidence', 'stage-files', 'commit', 'push',
   ]));
   const calls = [];
   const executor = createSupervisorExecutor({ repoDir: 'D:/repo', run: fakeRun(calls) });
@@ -59,6 +59,46 @@ test('validated test commands accept only scoped node test argv and reject wrapp
     ['node', '--test', 'D:/other/tests/foo.test.mjs'],
   ]) assert.throws(() => parseValidatedTestPlan([command]), /not allowed|scoped|command strings/i);
   assert.throws(() => parseValidatedTestPlan(['node --test tests/foo.test.mjs']), /command strings/i);
+});
+
+test('pre-QA evidence returns actual status/diff and scoped test command evidence without mutation', () => {
+  const calls = [];
+  const run = (file, argv, options) => {
+    calls.push({ file, argv, options });
+    if (argv[0] === 'status' && argv[1] === '--short') return { status: 0, stdout: ' M src/fix.mjs\n', stderr: '' };
+    if (argv[0] === 'diff') return { status: 0, stdout: 'diff --git a/src/fix.mjs b/src/fix.mjs\n', stderr: '' };
+    if (file === 'node') return { status: 0, stdout: 'focused pass\n', stderr: '' };
+    return { status: 0, stdout: '', stderr: '' };
+  };
+  const executor = createSupervisorExecutor({ repoDir: 'D:/repo', run });
+
+  const result = executor.preQaEvidence({
+    plan: { affected_files: ['src/fix.mjs'], test_commands: [['node', '--test', 'tests/guardian/fix.test.mjs']] },
+  });
+
+  assert.equal(result.status, 0);
+  assert.equal(result.evidence.status_diff.command.join(' '), 'git status --short && git diff --');
+  assert.equal(result.evidence.status_diff.exit_code, 0);
+  assert.equal(result.evidence.tests[0].command.join(' '), 'node --test tests/guardian/fix.test.mjs');
+  assert.equal(result.evidence.tests[0].exit_code, 0);
+  assert.equal(calls.some((call) => call.argv[0] === 'add' || call.argv[0] === 'commit' || call.argv[0] === 'push'), false);
+});
+
+test('finalization reuses the same validated test command plan after QA evidence', async () => {
+  const calls = [];
+  const run = (file, argv, options) => {
+    calls.push({ file, argv, options });
+    if (argv[0] === 'branch') return { status: 0, stdout: 'fix/issue-214\n', stderr: '' };
+    if (argv[0] === 'status' && argv[1] === '--porcelain=v1') return { status: 0, stdout: ' M src/fix.mjs\0', stderr: '' };
+    if (argv[0] === 'diff' && argv[1] === '--cached') return { status: 0, stdout: calls.some((call) => call.argv[0] === 'add') ? 'src/fix.mjs\n' : '', stderr: '' };
+    return { status: 0, stdout: '', stderr: '' };
+  };
+  const executor = createSupervisorExecutor({ repoDir: 'D:/repo', run });
+  const plan = { affected_files: ['src/fix.mjs'], test_commands: [['node', '--test', 'tests/guardian/fix.test.mjs']] };
+
+  await executor.finalizeFix({ issue: 214, plan, mode: 'enforced' });
+
+  assert.deepEqual(calls.find((call) => call.file === 'node').argv, ['--test', 'tests/guardian/fix.test.mjs']);
 });
 
 test('supervisor denies arbitrary operation names and constructs exact finalization argv', () => {

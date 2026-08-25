@@ -5,7 +5,7 @@ import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 
 export const SUPERVISOR_OPERATIONS = Object.freeze([
-  'current-branch', 'status-diff', 'staged-files', 'worktree-files', 'ensure-fix-branch', 'run-tests', 'stage-files', 'commit', 'push',
+  'current-branch', 'status-diff', 'staged-files', 'worktree-files', 'ensure-fix-branch', 'run-tests', 'pre-qa-evidence', 'stage-files', 'commit', 'push',
 ]);
 
 const TEST_PATH = /^(?:tests|test|src)[\\/][^\\/].*\.(?:mjs|js|cjs|ts|tsx|jsx)$/;
@@ -102,6 +102,30 @@ export function createSupervisorExecutor({ repoDir, run = spawnSync } = {}) {
         const commands = parseValidatedTestPlan(request.commands);
         const results = commands.map((argv) => direct(argv));
         return results.find((result) => result.status !== 0) ?? results.at(-1);
+      }
+      case 'pre-qa-evidence': {
+        const commands = parseValidatedTestPlan(request.commands);
+        const status = git(['status', '--short']);
+        const diff = status.status === 0 ? git(['diff', '--']) : { status: 1, stdout: '', stderr: 'status failed' };
+        const tests = commands.map((argv) => ({ argv, result: direct(argv) }));
+        const evidence = {
+          status_diff: {
+            command: ['git', 'status', '--short', '&&', 'git', 'diff', '--'],
+            exit_code: status.status === 0 ? diff.status : status.status,
+            stdout: `${status.stdout}${diff.stdout}`,
+            stderr: status.status === 0 ? diff.stderr : status.stderr,
+          },
+          tests: tests.map(({ argv, result }) => ({
+            command: argv,
+            exit_code: result.status,
+            stdout: result.stdout,
+            stderr: result.stderr,
+          })),
+        };
+        const failed = evidence.status_diff.exit_code !== 0
+          ? evidence.status_diff
+          : evidence.tests.find((entry) => entry.exit_code !== 0);
+        return { status: failed?.exit_code ?? 0, evidence };
       }
       case 'stage-files': {
         if (!Array.isArray(request.files) || request.files.length === 0) throw new Error('stage files are required');
@@ -248,5 +272,9 @@ export function createSupervisorExecutor({ repoDir, run = spawnSync } = {}) {
     return { branch, evidence, tests, commit, push };
   }
 
-  return Object.freeze({ exec, prepareFixBranch, prepareFixBranchFromBase, finalizeFix });
+  function preQaEvidence({ plan }) {
+    return exec({ operation: 'pre-qa-evidence', commands: plan?.test_commands });
+  }
+
+  return Object.freeze({ exec, prepareFixBranch, prepareFixBranchFromBase, preQaEvidence, finalizeFix });
 }
