@@ -276,3 +276,80 @@ test('prepareInvestigation does not persist a structurally invalid plan', async 
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('prepareInvestigation retries one structurally invalid plan with validator feedback', async () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'guardian-investigation-'));
+  const planCalls = [];
+  try {
+    const result = await prepareInvestigation({
+      issue: 263,
+      repoDir: 'D:/repo',
+      guardianDir: root,
+      issueClass: 'bug',
+      complexity: 'simple',
+      capabilities: {},
+      runSpecialist: async ({ role }) => ({
+        specialist: role === 'guardian-runtime' ? 'guardian-runtime（只读复现专员）；复现状态：源码级复现成立' : role,
+        hypotheses: [{ id: 'H1', statement: 'root' }],
+        evidence: [{ id: 'E1', kind: 'source_invariant', source: role, observation: 'root', supports: ['H1'], contradicts: [] }],
+        unresolved_facts: [],
+        acceptance_criteria: [],
+      }),
+      buildPlan: async ({ previousPlanErrors, attempt }) => {
+        planCalls.push({ previousPlanErrors, attempt });
+        const basePlan = { root_cause: 'root', affected_files: ['a.mjs'], non_goals: ['b'], test_plan: ['t'], test_commands: testCommands, acceptance_criteria: ['works'], rollback_plan: 'revert', evidence_ids: ['E1', 'guardian-runtime:E1'], risk: 'LOW' };
+        if (attempt === 1) {
+          return { ...basePlan, risk_assessment: { ...riskAssessment, localImpact: 'local only', diffLines: '120' } };
+        }
+        assert.equal(previousPlanErrors.some((error) => error.includes('plan:risk-assessment-not-low:not-local-impact')), true);
+        assert.equal(previousPlanErrors.some((error) => error.includes('plan:risk-assessment-not-low:diff-over-budget')), true);
+        return { ...basePlan, risk_assessment: riskAssessment };
+      },
+    });
+
+    assert.equal(planCalls.length, 2);
+    assert.equal(result.planResult.valid, true);
+    assert.deepEqual(result.dossier.evidence.map((item) => item.id), ['E1', 'guardian-runtime:E1']);
+    assert.equal(investigationArtifactsReady(root, 263), true);
+    assert.equal(readArtifact(root, 263, 'plan').risk_assessment.localImpact, true);
+    assert.equal(readArtifact(root, 263, 'plan-invalid').risk_assessment.localImpact, 'local only');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('prepareInvestigation fails closed after one invalid plan retry', async () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'guardian-investigation-'));
+  let attempts = 0;
+  try {
+    const failure = await prepareInvestigation({
+      issue: 263,
+      repoDir: 'D:/repo',
+      guardianDir: root,
+      issueClass: 'bug',
+      complexity: 'simple',
+      capabilities: {},
+      runSpecialist: async ({ role }) => ({
+        specialist: role,
+        hypotheses: [{ id: 'H1', statement: 'root' }],
+        evidence: [{ id: `E-${role}`, kind: 'source_invariant', source: role, observation: 'root', supports: ['H1'], contradicts: [] }],
+        unresolved_facts: [],
+        acceptance_criteria: [],
+      }),
+      buildPlan: async () => {
+        attempts += 1;
+        return { root_cause: 'root', affected_files: ['a.mjs'], non_goals: ['b'], test_plan: ['t'], test_commands: testCommands, acceptance_criteria: ['works'], rollback_plan: 'revert', evidence_ids: ['missing-evidence'], risk: 'LOW', risk_assessment: { ...riskAssessment, diffLines: 80 } };
+      },
+    }).then(() => null, (error) => error);
+
+    assert.ok(failure instanceof Error);
+    assert.equal(attempts, 2);
+    assert.match(failure.message, /plan:unknown-evidence:missing-evidence/);
+    assert.match(failure.message, /plan:risk-assessment-not-low:diff-over-budget/);
+    assert.equal(investigationArtifactsReady(root, 263), false);
+    assert.equal(readArtifact(root, 263, 'plan'), null);
+    assert.equal(readArtifact(root, 263, 'plan-invalid').evidence_ids[0], 'missing-evidence');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});

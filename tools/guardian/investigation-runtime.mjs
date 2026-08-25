@@ -8,6 +8,7 @@ import { resolveBudgets } from './budgets.mjs';
 import { randomUUID } from 'node:crypto';
 
 const NOOP_LOGGER = { info: () => {}, warn: () => {}, error: () => {} };
+const MAX_PLAN_ATTEMPTS = 2;
 
 function copyJsonParseDiagnostics(target, source) {
   if (source?.name !== 'InvestigationJsonParseError') return target;
@@ -87,7 +88,7 @@ export async function prepareInvestigation({ issue, issueData, repoDir, qaRuntim
     error.specialist_durations_ms = specialistDurations;
     throw error;
   }
-  const results = settled.map((item) => item.value);
+  const results = settled.map((item, index) => ({ role: selectedRoles[index], result: item.value }));
   const synthesis = synthesizeDossier({ issue, issueClass, specialistResults: results, capabilities, memoryContext });
   if (!synthesis.validation.valid) {
     throw new Error(`generated dossier is structurally invalid: ${synthesis.validation.errors.join(',')}`);
@@ -97,15 +98,21 @@ export async function prepareInvestigation({ issue, issueData, repoDir, qaRuntim
 
   const planStartedAt = now();
   logger.info('plan.begin', { issue });
-  const plan = { ...(await buildPlan({ issue, dossier, hypotheses: synthesis.ranked_hypotheses, repoDir, qaRuntimeDir, memoryContext, signal })), investigation_id: investigationId };
-  const planDurationMs = now() - planStartedAt;
-  const planResult = validatePlan(plan, dossier);
-  if (!planResult.valid) {
-    // Persist the rejected plan as a diagnostic sidecar so the operator can inspect exactly what the
-    // model produced (e.g. test_commands argv) instead of guessing from the error string.
+  let plan = null;
+  let planResult = null;
+  const priorPlanErrors = [];
+  for (let attempt = 1; attempt <= MAX_PLAN_ATTEMPTS; attempt += 1) {
+    if (attempt > 1) logger.warn('plan.retry', { issue, attempt, previous_errors: priorPlanErrors.join(',') });
+    plan = { ...(await buildPlan({ issue, dossier, hypotheses: synthesis.ranked_hypotheses, repoDir, qaRuntimeDir, memoryContext, signal, previousPlanErrors: priorPlanErrors, attempt })), investigation_id: investigationId };
+    planResult = validatePlan(plan, dossier);
+    if (planResult.errors.length === 0) break;
+    priorPlanErrors.splice(0, priorPlanErrors.length, ...planResult.errors);
     writeArtifact(guardianDir, issue, 'plan-invalid', plan);
-    throw new Error(`generated plan is structurally invalid: ${planResult.errors.join(',')}`);
+    if (attempt === MAX_PLAN_ATTEMPTS) {
+      throw new Error(`generated plan is structurally invalid: ${planResult.errors.join(',')}`);
+    }
   }
+  const planDurationMs = now() - planStartedAt;
   logger.info('plan.ok', { issue, duration_ms: planDurationMs, valid: planResult.valid });
   writeArtifact(guardianDir, issue, 'plan', plan);
   const investigationCompletedAt = now();
