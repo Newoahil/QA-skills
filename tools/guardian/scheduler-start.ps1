@@ -212,11 +212,30 @@ function Current-GitBranch([string]$Repo) {
   return $branch.output
 }
 
-function Assert-CleanAndLatest([string]$Repo, [string]$Branch, [string]$Label, [switch]$AllowBehind, [switch]$SkipFetch) {
+function Assert-CleanAndLatest([string]$Repo, [string]$Branch, [string]$Label, [switch]$AllowBehind, [switch]$SkipFetch, [string[]]$IgnorePathPrefixes) {
   $inside = Invoke-Git $Repo @('rev-parse', '--is-inside-work-tree')
   if ($inside.output -ne 'true') { throw "$Label is not a git repository: $Repo" }
   $status = Invoke-Git $Repo @('status', '--porcelain')
-  if ($status.output) { throw "$Label worktree is dirty; commit/stash/clean before startup: $Repo" }
+  if ($status.output) {
+    # Guardian-owned churn (e.g. .sybermem/ memory trails) legitimately changes on every run and must
+    # not block startup. Only paths OUTSIDE the ignore allowlist count as a blocking dirty worktree.
+    $blocking = @()
+    foreach ($line in ($status.output -split "`r?`n")) {
+      if (-not $line) { continue }
+      # Porcelain "XY <path>" (Invoke-Git may have trimmed the leading status column, so parse the
+      # 1-2 status chars then the path with a regex instead of a fixed offset). Renames read as
+      # "old -> new"; keep only the new/destination path.
+      if ($line -match '^\s*\S{1,2}\s+(.+)$') { $path = $Matches[1] } else { $path = $line }
+      $path = ($path -replace '^.* -> ', '').Trim().Trim('"').Replace('\', '/')
+      if (-not $path) { continue }
+      $ignored = $false
+      foreach ($prefix in $IgnorePathPrefixes) {
+        if ($prefix -and $path.StartsWith($prefix)) { $ignored = $true; break }
+      }
+      if (-not $ignored) { $blocking += $path }
+    }
+    if ($blocking.Count -gt 0) { throw "$Label worktree is dirty; commit/stash/clean before startup: $Repo ($($blocking -join ', '))" }
+  }
   $remote = Invoke-Git $Repo @('remote', 'get-url', 'origin')
   if (-not $remote.output) { throw "$Label is missing origin remote: $Repo" }
   if (-not $SkipFetch) {
@@ -230,9 +249,9 @@ function Assert-CleanAndLatest([string]$Repo, [string]$Branch, [string]$Label, [
   return [ordered]@{ label = $Label; repo = $Repo; branch = $Branch; remote = $remote.output; commit = $local.output; upstream_commit = $upstream.output; in_sync = $inSync }
 }
 
-function Assert-CleanAndUpstreamLatest([string]$Repo, [string]$Label, [switch]$SkipFetch) {
+function Assert-CleanAndUpstreamLatest([string]$Repo, [string]$Label, [switch]$SkipFetch, [string[]]$IgnorePathPrefixes) {
   $branch = Current-GitBranch $Repo
-  return Assert-CleanAndLatest $Repo $branch $Label -AllowBehind -SkipFetch:$SkipFetch
+  return Assert-CleanAndLatest $Repo $branch $Label -AllowBehind -SkipFetch:$SkipFetch -IgnorePathPrefixes $IgnorePathPrefixes
 }
 
 function Confirm-Start($message) {
@@ -583,7 +602,7 @@ if (-not $cfg.command_authors -or @($cfg.command_authors).Count -eq 0) {
 }
 
 $base = if ($cfg.base_branch) { [string]$cfg.base_branch } else { $BaseBranch }
-$guardianFacts = Assert-CleanAndUpstreamLatest $GuardianRepo 'Guardian tools repo' -SkipFetch:$DryRun
+$guardianFacts = Assert-CleanAndUpstreamLatest $GuardianRepo 'Guardian tools repo' -SkipFetch:$DryRun -IgnorePathPrefixes @('.sybermem/')
 $bindingMode = [string]$binding.mode
 
 $targetFacts = $null
