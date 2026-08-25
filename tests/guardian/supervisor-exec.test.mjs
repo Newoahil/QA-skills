@@ -46,6 +46,9 @@ test('validated test commands accept only scoped node test argv and reject wrapp
   assert.deepEqual(parseValidatedTestPlan([['node', '--test', 'tests/guardian/foo.test.mjs']]), [
     ['node', '--test', 'tests/guardian/foo.test.mjs'],
   ]);
+  assert.deepEqual(parseValidatedTestPlan([['node', '--test', 'frontend/apps/alipay-miniapp/test/classifyAgain-empty-state.test.js']]), [
+    ['node', '--test', 'frontend/apps/alipay-miniapp/test/classifyAgain-empty-state.test.js'],
+  ]);
   for (const command of [
     ['node', '-e', 'process.exit(0)'],
     ['cmd', '/c', 'node', '--test', 'tests/foo.test.mjs'],

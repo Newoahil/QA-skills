@@ -8,7 +8,7 @@ export const SUPERVISOR_OPERATIONS = Object.freeze([
   'current-branch', 'status-diff', 'staged-files', 'worktree-files', 'ensure-fix-branch', 'run-tests', 'pre-qa-evidence', 'stage-files', 'commit', 'push',
 ]);
 
-const TEST_PATH = /^(?:tests|test|src)[\\/][^\\/].*\.(?:mjs|js|cjs|ts|tsx|jsx)$/;
+const TEST_PATH = /(?:^|[\\/])(?:tests?|src|__tests__)[\\/].+\.(?:mjs|js|cjs|ts|tsx|jsx)$/;
 const ALLOWED_PROJECT_TEST_SCRIPTS = Object.freeze([
   'frontend/apps/alipay-miniapp/scripts/test-category-builder-runtime.js',
 ]);
