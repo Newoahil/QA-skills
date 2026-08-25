@@ -191,6 +191,12 @@ export async function runQaStage(context) {
     round: afterFix.processing_round ?? 1,
     deadlineMs: context.resolveSessionDeadlineMs(context.config, 'qa_deadline_ms'),
     writeQaAcceptance: (content) => context.writeMarkdownArtifact(context.guardianDir, context.issue, 'qa-acceptance', content),
+    onSessionReady: ({ state, sessionId }) => {
+      if (!isActiveRun()) return;
+      context.writeState(context.guardianDir, state, { touch: false });
+      context.logger.info('qa.session_ready', { issue: context.issue, session_id: sessionId });
+    },
+    onProgress: (event) => context.logger.info('qa.progress', { issue: context.issue, ...event }),
     model: context.resolveModelForRole(context.config, 'qa'),
     fallbackModels: context.fallbackModels,
     signal: context.signal,

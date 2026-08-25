@@ -365,6 +365,44 @@ test('runQaStage passes Supervisor pre-QA evidence into the independent QA diff 
   assert.deepEqual(received.supervisor_evidence, evidence);
 });
 
+test('runQaStage persists and logs the qa session before waiting for verdict', async () => {
+  let state = { issue: 269, state: STATES.VERIFYING, branch: 'fix/issue-269', opencode: {} };
+  const logs = [];
+  const stateWrites = [];
+  const { runQaStage } = await import('../../tools/guardian/stage-runner.mjs');
+
+  const result = await runQaStage({
+    client: {},
+    issue: 269,
+    repoDir: 'D:/repo',
+    guardianDir: 'D:/repo/.qa/guardian',
+    config: {},
+    fallbackModels: [],
+    signal: null,
+    issueTitle: 'Fix the thing',
+    pipeline: { completion: { changedFiles: ['src/a.mjs'], summary: 'fixed' } },
+    logger: { info: (event, fields) => logs.push({ event, fields }), warn: () => {} },
+    readState: () => state,
+    writeState: (_dir, next) => { state = next; stateWrites.push(next); },
+    readArtifactPair: () => ({ plan: { affected_files: ['src/a.mjs'] } }),
+    writeArtifact: () => {},
+    writeMarkdownArtifact: () => {},
+    resolveSessionDeadlineMs: () => 200,
+    resolveModelForRole: () => undefined,
+    runQaSession: async (request) => {
+      request.onSessionReady({ state: { ...request.state, opencode: { qa: { session_id: 'ses_qa', last_status: 'running' } } }, sessionId: 'ses_qa' });
+      request.onProgress({ sessionId: 'ses_qa', stage: 'baseline-read' });
+      return { status: 'ok', state: { ...request.state, opencode: { qa: { session_id: 'ses_qa', last_status: 'ok' } } }, verdict: 'PASS', report: 'Overall Status: PASS' };
+    },
+  });
+
+  assert.equal(result.stop, false);
+  assert.equal(stateWrites[0].opencode.qa.session_id, 'ses_qa');
+  assert.equal(stateWrites[0].opencode.qa.last_status, 'running');
+  assert.ok(logs.some((entry) => entry.event === 'qa.session_ready' && entry.fields.session_id === 'ses_qa'));
+  assert.ok(logs.some((entry) => entry.event === 'qa.progress' && entry.fields.stage === 'baseline-read'));
+});
+
 test('runFixerStage hands back an unverified completion instead of leaving a fresh FIXING lease', async () => {
   let state = { issue: 263, state: STATES.FIXING, handed_back_reason: null, opencode: {} };
   const warnings = [];
