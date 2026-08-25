@@ -372,7 +372,7 @@ function Ensure-ControlWorktree([string]$SourceRepo, [string]$Destination, [stri
   }
   $inside = Invoke-Git $Destination @('rev-parse', '--is-inside-work-tree')
   if ($inside.code -ne 0 -or $inside.output -ne 'true') { throw "已存在的 control worktree 路径不是有效 git worktree：$Destination" }
-  $status = Invoke-Git $Destination @('status', '--porcelain')
+  $status = Invoke-Git $Destination @('status', '--porcelain', '-uall')
   $dirtyPaths = @(($status.output -split "`r?`n") | ForEach-Object {
     $line = $_.Trim()
     if ($line.Length -lt 3) { return }

@@ -120,6 +120,7 @@ test('scheduler launcher preserves an active control branch on reuse', () => {
 test('scheduler launcher ignores Guardian-owned state when checking control worktree cleanliness', () => {
   const text = readFileSync('tools/guardian/scheduler-start.ps1', 'utf8');
   const controlFunction = text.slice(text.indexOf('function Ensure-ControlWorktree'), text.indexOf('function Ensure-QaSnapshot'));
+  assert.match(controlFunction, /'status', '--porcelain', '-uall'/);
   assert.match(controlFunction, /\.qa\/guardian\//);
   assert.match(controlFunction, /\.sybermem\//);
   assert.match(controlFunction, /\$line = \$_.Trim\(\)/);
@@ -149,6 +150,15 @@ test('scheduler launcher allows dirty recovery for changed-file-not-in-plan hand
   assert.match(controlFunction, /\$plan\.primary_files/);
   assert.match(controlFunction, /\$plan\.test_commands/);
   assert.match(controlFunction, /Select-Object -Unique/);
+});
+
+test('scheduler launcher expands untracked directories before matching dirty recovery paths', () => {
+  const text = readFileSync('tools/guardian/scheduler-start.ps1', 'utf8');
+  const controlFunction = text.slice(text.indexOf('function Ensure-ControlWorktree'), text.indexOf('function Ensure-QaSnapshot'));
+  assert.match(controlFunction, /Invoke-Git \$Destination @\('status', '--porcelain', '-uall'\)/);
+  assert.doesNotMatch(controlFunction, /Invoke-Git \$Destination @\('status', '--porcelain'\)/);
+  assert.match(controlFunction, /\$plan\.test_commands/);
+  assert.match(controlFunction, /\.EndsWith\('\.test\.js'\)/);
 });
 
 test('scheduler DryRun fails before first-run binding prompt or write', () => {
