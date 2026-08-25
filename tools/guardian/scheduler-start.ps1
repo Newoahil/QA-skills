@@ -523,19 +523,27 @@ if (-not $Dashboard -and -not $DryRun -and -not $binding) {
 }
 
 $bindingAuthors = @()
-if (-not $Dashboard -and -not $DryRun) {
-  if ($binding.PSObject.Properties.Name -contains 'command_authors') {
-    $bindingAuthors = @(Assert-CommandAuthorMatchesGitHubLogin $binding.command_authors)
-    $binding | Add-Member -NotePropertyName command_authors -NotePropertyValue $bindingAuthors -Force
-    Save-LauncherBinding $bindingPath $canonicalTarget $binding
-  } else {
-    if ($Yes -and -not $CommandAuthors) { throw "启动绑定缺少 command_authors。请先不带 -Yes 运行一次，输入可信 GitHub 登录名。" }
-    $authorInput = if ($CommandAuthors) { $CommandAuthors } else { Read-Host "    请输入可信 GitHub 登录名（多个用逗号或空格分隔；只需首次输入）" }
-    if (-not $authorInput) { throw "已取消：未配置可信 GitHub 登录名。" }
-    $bindingAuthors = Normalize-CommandAuthors @($authorInput -split '[,\s]+' | Where-Object { $_ })
+if ($Dashboard) {
+  $bindingAuthors = @()
+} elseif ($binding.PSObject.Properties.Name -contains 'command_authors') {
+  $bindingAuthors = @(Assert-CommandAuthorMatchesGitHubLogin $binding.command_authors)
+  if (-not $DryRun) {
     $binding | Add-Member -NotePropertyName command_authors -NotePropertyValue $bindingAuthors -Force
     Save-LauncherBinding $bindingPath $canonicalTarget $binding
   }
+} elseif ($CommandAuthors) {
+  $bindingAuthors = @(Assert-CommandAuthorMatchesGitHubLogin (Normalize-CommandAuthors @($CommandAuthors -split '[,\s]+' | Where-Object { $_ })))
+  if (-not $DryRun) {
+    $binding | Add-Member -NotePropertyName command_authors -NotePropertyValue $bindingAuthors -Force
+    Save-LauncherBinding $bindingPath $canonicalTarget $binding
+  }
+} elseif (-not $DryRun) {
+  if ($Yes) { throw "启动绑定缺少 command_authors。请先不带 -Yes 运行一次，输入可信 GitHub 登录名。" }
+  $authorInput = Read-Host "    请输入可信 GitHub 登录名（多个用逗号或空格分隔；只需首次输入）"
+  if (-not $authorInput) { throw "已取消：未配置可信 GitHub 登录名。" }
+  $bindingAuthors = Normalize-CommandAuthors @($authorInput -split '[,\s]+' | Where-Object { $_ })
+  $binding | Add-Member -NotePropertyName command_authors -NotePropertyValue $bindingAuthors -Force
+  Save-LauncherBinding $bindingPath $canonicalTarget $binding
 }
 
 # config + command_authors (fail-closed security key). If it already exists, start directly.

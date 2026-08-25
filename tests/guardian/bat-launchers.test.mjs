@@ -174,22 +174,31 @@ test('scheduler launcher repairs an existing config with empty command authors',
 
 test('scheduler launcher prompts once for missing binding authors and propagates them to runtime config', () => {
   const text = readFileSync('tools/guardian/scheduler-start.ps1', 'utf8');
-  const bindingAuthors = text.slice(text.indexOf('if (-not $Dashboard -and -not $DryRun) {'), text.indexOf('# config + command_authors'));
+  const bindingAuthors = text.slice(text.indexOf('$bindingAuthors = @()'), text.indexOf('# config + command_authors'));
   assert.match(bindingAuthors, /\$binding\.PSObject\.Properties\.Name -contains 'command_authors'/);
   assert.match(bindingAuthors, /启动绑定缺少 command_authors/);
   assert.match(bindingAuthors, /Add-Member -NotePropertyName command_authors -NotePropertyValue \$bindingAuthors -Force/);
   assert.match(text, /if \(\$bindingAuthors\.Count -gt 0\)/);
   assert.match(text, /\$cfg \| Add-Member -NotePropertyName command_authors -NotePropertyValue \$bindingAuthors -Force/);
-  assert.ok(text.indexOf('if (-not $Dashboard -and -not $DryRun) {') < text.indexOf('# config + command_authors'));
+  assert.ok(text.indexOf('$bindingAuthors = @()') < text.indexOf('# config + command_authors'));
+});
+
+test('scheduler DryRun still propagates provided command authors into config preflight', () => {
+  const text = readFileSync('tools/guardian/scheduler-start.ps1', 'utf8');
+  assert.match(text, /if \(\$Dashboard\) \{\s*\$bindingAuthors = @\(\)\s*\} elseif \(\$binding\.PSObject\.Properties\.Name -contains 'command_authors'\)/);
+  assert.match(text, /elseif \(\$CommandAuthors\) \{\s*\$bindingAuthors = @\(Assert-CommandAuthorMatchesGitHubLogin \(Normalize-CommandAuthors @\(\$CommandAuthors -split '\[,\\s\]\+' \| Where-Object \{ \$_ \}\)\)\)/);
+  const authorBlock = text.slice(text.indexOf('$bindingAuthors = @()'), text.indexOf('# config + command_authors'));
+  assert.ok(authorBlock.indexOf('$bindingAuthors = @(Assert-CommandAuthorMatchesGitHubLogin $binding.command_authors)') < authorBlock.indexOf('if (-not $DryRun)'));
+  assert.ok(authorBlock.indexOf('elseif ($CommandAuthors)') < authorBlock.indexOf('$bindingAuthors = @(Assert-CommandAuthorMatchesGitHubLogin (Normalize-CommandAuthors'));
 });
 
 test('scheduler launcher keeps binding author authorization fail-closed under -Yes', () => {
   const text = readFileSync('tools/guardian/scheduler-start.ps1', 'utf8');
-  assert.match(text, /if \(\$Yes -and -not \$CommandAuthors\) \{ throw "启动绑定缺少 command_authors/);
+  assert.match(text, /if \(\$Yes\) \{ throw "启动绑定缺少 command_authors/);
   assert.match(text, /请先不带 -Yes 运行一次，输入可信 GitHub 登录名/);
-  assert.match(text, /Normalize-CommandAuthors \$Binding\.command_authors/);
-  assert.match(text, /\$authorInput = if \(\$CommandAuthors\) \{ \$CommandAuthors \}/);
-  assert.match(text, /Normalize-CommandAuthors \$authorInput/);
+  assert.match(text, /Assert-CommandAuthorMatchesGitHubLogin \$binding\.command_authors/);
+  assert.match(text, /Assert-CommandAuthorMatchesGitHubLogin \(Normalize-CommandAuthors/);
+  assert.match(text, /\$authorInput = Read-Host/);
 });
 
 test('scheduler launcher makes command-author mistakes explicit before watching', () => {
