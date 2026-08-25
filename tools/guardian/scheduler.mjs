@@ -80,6 +80,34 @@ export const DEFAULT_INTERVAL_MS = 10 * 1000;
 // Heartbeat cadence: renew the lock well within the lease so a live long run never looks stale.
 const HEARTBEAT_MS = 30 * 1000;
 
+function normalizePositiveMs(value, fallback) {
+  const candidate = value ?? fallback;
+  const normalized = Number(candidate);
+  return Number.isFinite(normalized) && normalized > 0 ? normalized : null;
+}
+
+export function validateSchedulerConfig(config = {}) {
+  const pollIntervalMs = normalizePositiveMs(config.poll_interval_ms, DEFAULT_INTERVAL_MS);
+  if (pollIntervalMs === null) {
+    throw new Error('scheduler poll_interval_ms must be a finite positive number');
+  }
+
+  const leaseMs = normalizePositiveMs(config.lease_ms, DEFAULT_LEASE_MS);
+  if (leaseMs === null) {
+    throw new Error('scheduler lease_ms must be a finite positive number');
+  }
+
+  if (leaseMs < pollIntervalMs * 2) {
+    throw new Error('scheduler lease_ms must be at least 2x poll_interval_ms');
+  }
+
+  return Object.freeze({
+    ...config,
+    poll_interval_ms: pollIntervalMs,
+    lease_ms: leaseMs,
+  });
+}
+
 export function createLeaseFence({
   lockFile,
   handle,
@@ -429,7 +457,7 @@ function runInvocation(repoDir, invokeArgv, lockFile, handle, leaseMs, timeoutMs
 
 async function tick(repoDir, config, logger, signal = null, runtime = createSchedulerRuntime({ repoDir, config })) {
   const qaRuntimeDir = config.qa_runtime_dir ?? repoDir;
-  const leaseMs = Number(config.lease_ms ?? DEFAULT_LEASE_MS);
+  const leaseMs = config.lease_ms;
   const now = Date.now();
   const guardianDir = guardianDirOf(repoDir);
   const trustedAuthors = config.command_authors ?? [];
@@ -995,15 +1023,16 @@ export async function runScheduler({ repoDir, config = readConfig(repoDir), sign
   if (!config.qa_runtime_dir && process.env.QA_GUARDIAN_QA_RUNTIME_DIR) {
     config = { ...config, qa_runtime_dir: process.env.QA_GUARDIAN_QA_RUNTIME_DIR };
   }
-  const interval = Number(config.poll_interval_ms ?? DEFAULT_INTERVAL_MS);
+  const validatedConfig = validateSchedulerConfig(config);
+  const interval = validatedConfig.poll_interval_ms;
   const logger = createLogger({ component: 'scheduler' });
-  const runtime = createSchedulerRuntime({ repoDir, config });
+  const runtime = createSchedulerRuntime({ repoDir, config: validatedConfig });
 
   logger.info('watch.begin', { repo_dir: repoDir, interval_ms: interval, concurrency: 1 });
   while (!signal?.aborted) {
     try {
       logger.info('tick.begin');
-      await tick(repoDir, config, logger, signal, runtime);
+      await tick(repoDir, validatedConfig, logger, signal, runtime);
     } catch (e) {
       // no-excuse-ok: catch — resident loop must survive a transient gh/network error and retry
       const msg = e instanceof Error ? e.message : 'unknown';
