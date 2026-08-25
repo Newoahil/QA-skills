@@ -2,7 +2,7 @@
 
 ## Analysis Progress
 - status: analyzed
-- last_analysis_at: 2026-08-20T10:00:39+08:00
+- last_analysis_at: 2026-08-25T18:32:33+08:00
 - last_record_boundary: none
 - last_git_boundary: none
 - pending_new_records: none
@@ -18,8 +18,12 @@
 - lifecycle: active
 - covered_records:
   - bug-19e5ffff30db46ccbca9f8ca73551ad1
+  - bug-4efe5578aa8742ad884e419e62a1126d
+  - bug-d6d62a18f2394518ad9ee12f20e35315
   - change-260993fcf6504e8eb9e54f84f0dd45f4
-- confirmed_at: 2026-08-20
+  - change-35fabb09ed8e4e00bb48259a4f4ee8af
+  - change-ecc5d2f7577c49eb97ff1943f33fd5b0
+- confirmed_at: 2026-08-25
 
 ### Phase: 2026-08 qa-guardian cluster
 - phase_id: phase-002
@@ -34,6 +38,7 @@
   - change-0fcf1b08d1784c49b5e6ec1c2d6c527f
   - change-12b834a1483f4fad8368e33dfe64947a
   - change-2955e2780a8b4097bfdf09d765453605
+  - change-386571099b534df8bf7ef7ae67be6c86
   - change-39d97b0a4c854e3893e13ba9e9a5859d
   - change-41675aeea2c446eea10506e55cbbd08d
   - change-47dc8b8da91e4b6fa99315f0e3712686
@@ -78,7 +83,59 @@
   - change-d68ddced82a4440492d038e2b4aa8975
   - change-df0e3cad054847b7a529c6246bd4d603
   - change-eb83465c334b4e88b55e83d019123930
-- confirmed_at: 2026-08-20
+  - bug-01f49ed7e02b41eba58ccc630c6170d0
+  - bug-1a8b3cf22fc9424ba73e009dd9c4556d
+  - bug-5a7a143fe7f84b4e9ab88dc922c2511b
+  - bug-72dbe209aad24697a5bf36ffdf0b7a88
+  - bug-83b7d5b7c85e4316adc6fa751321262a
+  - bug-986e8e7b64f046c1bedbacbcbc65a083
+  - bug-99e2cc66c7d34cd28e3bf20ea38814cd
+  - bug-9ea4fabc7f0948ac9dcdf159659e61de
+  - bug-c9d39c21fcd640948f061bf092488b1b
+  - bug-e4748d924c68474b878a8da0c79c88a2
+  - change-43665fbe15694f7a94ae63d97c21396e
+  - change-5cb23fed3750411f9d0a01fddae5f6de
+  - change-856058c87cf3450e8460263aeef5cb2a
+  - change-8566e0c1beed41e28dc4c9b6eed93fa8
+  - change-cabd52ea36184a8885927911ff2e029e
+  - bug-18e1e4841f894cb49f1815d3cc2277c1
+  - change-5330fd1c1188484fa1647010616d8195
+  - change-8a7e53756a744118b2fe955d659e78d3
+  - change-96411a1dd44048a394cca9c0e583e5f5
+  - change-997b498ea9e54fe594fe0e7f1d2a4bed
+  - change-9a365188edb64e18ae022e7c6bd034c8
+  - change-9a4b5837878a4ecb8b3f19802d8933cf
+  - change-bc32a227720045119b782db221dbe469
+  - change-c239a32f90e64b70900d8c3e4b4b08fd
+  - change-c92529725557423dacc30e3244241a94
+  - change-ccc37d2238b34c2c847a647079a7d498
+  - change-f0555262f35442e0bf044d5402b00108
+  - bug-43128e7037e3460a95030c310a0af7f5
+  - bug-432ac9e0feec425a91229512c7603ac9
+  - bug-897d6e684d654aafba07f30dc5079f44
+  - bug-db865da450a5498fab70e7815cd3332b
+  - change-3045c5709920400db10cd5ae1215f1e0
+  - change-5063b13c015545409c92f8f26913ace8
+  - change-55e41d2949a84e69a7525fbf771f2201
+  - change-5f631dd8a8904afdac92cb71e142bb75
+  - change-75e3992edeb9459c93b83f20311e4e4e
+  - change-7b7985f66af5482f884cad18d2381c18
+  - change-a48837fbd4434ec68cb7a32391707f3f
+  - change-d5addda959474f75977877eb0f8f624d
+  - change-e31b414019474806aaf53ece0cf10e71
+  - change-eef1ebfd562a4bc5b2d86a6af9b4762a
+  - change-fd28379b349a4ea497f38b24065c1109
+  - decision-b531cef4d0f44652917eb044fbc0a31e
+  - decision-e8c0d364373b42a890557ce99762e7c8
+  - bug-209c918349934460abcb4741bece9f0d
+  - change-17308a56b3624791a0d2d64f2f049455
+  - change-87e938ab00a2459ba4cf6e70a1042c40
+  - change-9b2bd6d959c648cda2fd598bc20215fa
+  - change-f0b58f56a9aa4db49863cfe04ea14b5d
+  - change-fd7c109124a64af4893e087a8d7ea768
+  - decision-832596314b274789ab3bf5f8e354d69d
+  - decision-f177ceabeded4a5193afa0f2b58b6c13
+- confirmed_at: 2026-08-25
 
 ### Phase: 2026-08 opencode-sdk cluster
 - phase_id: phase-003
@@ -89,7 +146,7 @@
   - bug-682f269c0050412797459f52712af366
   - bug-95af95c0c87348659c6d36a12974beb0
   - bug-b963cb3902ec472fba0747de51688475
-- confirmed_at: 2026-08-20
+- confirmed_at: 2026-08-25
 
 ### Phase: 2026-08 opencode-server cluster
 - phase_id: phase-004
@@ -97,11 +154,112 @@
 - lifecycle: active
 - covered_records:
   - bug-8c8b03fc6c9c4adbb115442b042dd400
-- confirmed_at: 2026-08-20
+- confirmed_at: 2026-08-25
+
+### Phase: 2026-08 cluster
+- phase_id: phase-005
+- status: confirmed
+- lifecycle: active
+- covered_records:
+  - digest-001
+  - digest-002
+  - digest-003
+- confirmed_at: 2026-08-25
+
+### Phase: 2026-08 guardian-runtime cluster
+- phase_id: phase-006
+- status: confirmed
+- lifecycle: active
+- covered_records:
+  - bug-0555bcc31a2e4b2a81d7d41fe989ac86
+  - bug-209175d9b7974cc18bae1aea0eae8a6f
+  - bug-ed371946bdd44873af961a30f33378f8
+  - change-0187155e93c44e53b0dd8b136d4386c6
+  - change-27078cb8ae6e43b19f65ab149bdb87ca
+  - change-2b02bc5e4e534535a15f2ef47dc9986d
+  - change-7dc3767885cd4c9cb2ff5a1b5d8ca73d
+- confirmed_at: 2026-08-25
+
+### Phase: 2026-08 guardian-investigation cluster
+- phase_id: phase-007
+- status: confirmed
+- lifecycle: active
+- covered_records:
+  - change-0042ab69c2b94eb49a3576bfaadea0e4
+- confirmed_at: 2026-08-25
+
+### Phase: 2026-08 guardian-timeout cluster
+- phase_id: phase-008
+- status: confirmed
+- lifecycle: active
+- covered_records:
+  - change-30d32899761b40d8ac9f442695dfec62
+- confirmed_at: 2026-08-25
+
+### Phase: 2026-08 guardian-scheduler cluster
+- phase_id: phase-009
+- status: confirmed
+- lifecycle: active
+- covered_records:
+  - change-60858dbd238d4a13a5190dc40a7a1965
+- confirmed_at: 2026-08-25
+
+### Phase: 2026-08 opencode-serve cluster
+- phase_id: phase-010
+- status: confirmed
+- lifecycle: active
+- covered_records:
+  - change-76c5d0ed9fac48cb970da4f0329c2454
+- confirmed_at: 2026-08-25
+
+### Phase: 2026-08 opencode-events cluster
+- phase_id: phase-011
+- status: confirmed
+- lifecycle: active
+- covered_records:
+  - change-7e6fdf97764f412c921e2d9ab581c7b1
+- confirmed_at: 2026-08-25
+
+### Phase: 2026-08 guardian-tui cluster
+- phase_id: phase-012
+- status: confirmed
+- lifecycle: active
+- covered_records:
+  - change-cd0869b5cfa74261b9cf4655935f2317
+  - change-f78313d32e614657bce29b72264e20fb
+- confirmed_at: 2026-08-25
+
+### Phase: 2026-08 guardian-launcher cluster
+- phase_id: phase-013
+- status: confirmed
+- lifecycle: active
+- covered_records:
+  - change-fc28793f11104036ad20f0cb288bda6f
+- confirmed_at: 2026-08-25
+
+### Phase: 2026-08 workflow cluster
+- phase_id: phase-014
+- status: confirmed
+- lifecycle: active
+- covered_records:
+  - decision-038091b9b1ca447db6c8a2d2a86719b4
+- confirmed_at: 2026-08-25
+
+### Phase: 2026-08 opencode cluster
+- phase_id: phase-015
+- status: confirmed
+- lifecycle: active
+- covered_records:
+  - change-e7c66175f6064aa2af79e23ac1d22ff9
+- confirmed_at: 2026-08-25
 
 ## Coverage Map
 - bug-19e5ffff30db46ccbca9f8ca73551ad1 -> phase-001
+- bug-4efe5578aa8742ad884e419e62a1126d -> phase-001
+- bug-d6d62a18f2394518ad9ee12f20e35315 -> phase-001
 - change-260993fcf6504e8eb9e54f84f0dd45f4 -> phase-001
+- change-35fabb09ed8e4e00bb48259a4f4ee8af -> phase-001
+- change-ecc5d2f7577c49eb97ff1943f33fd5b0 -> phase-001
 - bug-1a88afaf58fe4f13859d209b49b49027 -> phase-002
 - bug-541a9d6211594221a5ceb08950e80881 -> phase-002
 - bug-9df5a75c67504f4fac0d315dd7cef2dd -> phase-002
@@ -110,6 +268,7 @@
 - change-0fcf1b08d1784c49b5e6ec1c2d6c527f -> phase-002
 - change-12b834a1483f4fad8368e33dfe64947a -> phase-002
 - change-2955e2780a8b4097bfdf09d765453605 -> phase-002
+- change-386571099b534df8bf7ef7ae67be6c86 -> phase-002
 - change-39d97b0a4c854e3893e13ba9e9a5859d -> phase-002
 - change-41675aeea2c446eea10506e55cbbd08d -> phase-002
 - change-47dc8b8da91e4b6fa99315f0e3712686 -> phase-002
@@ -154,8 +313,80 @@
 - change-d68ddced82a4440492d038e2b4aa8975 -> phase-002
 - change-df0e3cad054847b7a529c6246bd4d603 -> phase-002
 - change-eb83465c334b4e88b55e83d019123930 -> phase-002
+- bug-01f49ed7e02b41eba58ccc630c6170d0 -> phase-002
+- bug-1a8b3cf22fc9424ba73e009dd9c4556d -> phase-002
+- bug-5a7a143fe7f84b4e9ab88dc922c2511b -> phase-002
+- bug-72dbe209aad24697a5bf36ffdf0b7a88 -> phase-002
+- bug-83b7d5b7c85e4316adc6fa751321262a -> phase-002
+- bug-986e8e7b64f046c1bedbacbcbc65a083 -> phase-002
+- bug-99e2cc66c7d34cd28e3bf20ea38814cd -> phase-002
+- bug-9ea4fabc7f0948ac9dcdf159659e61de -> phase-002
+- bug-c9d39c21fcd640948f061bf092488b1b -> phase-002
+- bug-e4748d924c68474b878a8da0c79c88a2 -> phase-002
+- change-43665fbe15694f7a94ae63d97c21396e -> phase-002
+- change-5cb23fed3750411f9d0a01fddae5f6de -> phase-002
+- change-856058c87cf3450e8460263aeef5cb2a -> phase-002
+- change-8566e0c1beed41e28dc4c9b6eed93fa8 -> phase-002
+- change-cabd52ea36184a8885927911ff2e029e -> phase-002
+- bug-18e1e4841f894cb49f1815d3cc2277c1 -> phase-002
+- change-5330fd1c1188484fa1647010616d8195 -> phase-002
+- change-8a7e53756a744118b2fe955d659e78d3 -> phase-002
+- change-96411a1dd44048a394cca9c0e583e5f5 -> phase-002
+- change-997b498ea9e54fe594fe0e7f1d2a4bed -> phase-002
+- change-9a365188edb64e18ae022e7c6bd034c8 -> phase-002
+- change-9a4b5837878a4ecb8b3f19802d8933cf -> phase-002
+- change-bc32a227720045119b782db221dbe469 -> phase-002
+- change-c239a32f90e64b70900d8c3e4b4b08fd -> phase-002
+- change-c92529725557423dacc30e3244241a94 -> phase-002
+- change-ccc37d2238b34c2c847a647079a7d498 -> phase-002
+- change-f0555262f35442e0bf044d5402b00108 -> phase-002
+- bug-43128e7037e3460a95030c310a0af7f5 -> phase-002
+- bug-432ac9e0feec425a91229512c7603ac9 -> phase-002
+- bug-897d6e684d654aafba07f30dc5079f44 -> phase-002
+- bug-db865da450a5498fab70e7815cd3332b -> phase-002
+- change-3045c5709920400db10cd5ae1215f1e0 -> phase-002
+- change-5063b13c015545409c92f8f26913ace8 -> phase-002
+- change-55e41d2949a84e69a7525fbf771f2201 -> phase-002
+- change-5f631dd8a8904afdac92cb71e142bb75 -> phase-002
+- change-75e3992edeb9459c93b83f20311e4e4e -> phase-002
+- change-7b7985f66af5482f884cad18d2381c18 -> phase-002
+- change-a48837fbd4434ec68cb7a32391707f3f -> phase-002
+- change-d5addda959474f75977877eb0f8f624d -> phase-002
+- change-e31b414019474806aaf53ece0cf10e71 -> phase-002
+- change-eef1ebfd562a4bc5b2d86a6af9b4762a -> phase-002
+- change-fd28379b349a4ea497f38b24065c1109 -> phase-002
+- decision-b531cef4d0f44652917eb044fbc0a31e -> phase-002
+- decision-e8c0d364373b42a890557ce99762e7c8 -> phase-002
+- bug-209c918349934460abcb4741bece9f0d -> phase-002
+- change-17308a56b3624791a0d2d64f2f049455 -> phase-002
+- change-87e938ab00a2459ba4cf6e70a1042c40 -> phase-002
+- change-9b2bd6d959c648cda2fd598bc20215fa -> phase-002
+- change-f0b58f56a9aa4db49863cfe04ea14b5d -> phase-002
+- change-fd7c109124a64af4893e087a8d7ea768 -> phase-002
+- decision-832596314b274789ab3bf5f8e354d69d -> phase-002
+- decision-f177ceabeded4a5193afa0f2b58b6c13 -> phase-002
 - bug-09c23cce8bb443d7aadb0f5dea5ce3b7 -> phase-003
 - bug-682f269c0050412797459f52712af366 -> phase-003
 - bug-95af95c0c87348659c6d36a12974beb0 -> phase-003
 - bug-b963cb3902ec472fba0747de51688475 -> phase-003
 - bug-8c8b03fc6c9c4adbb115442b042dd400 -> phase-004
+- digest-001 -> phase-005
+- digest-002 -> phase-005
+- digest-003 -> phase-005
+- bug-0555bcc31a2e4b2a81d7d41fe989ac86 -> phase-006
+- bug-209175d9b7974cc18bae1aea0eae8a6f -> phase-006
+- bug-ed371946bdd44873af961a30f33378f8 -> phase-006
+- change-0187155e93c44e53b0dd8b136d4386c6 -> phase-006
+- change-27078cb8ae6e43b19f65ab149bdb87ca -> phase-006
+- change-2b02bc5e4e534535a15f2ef47dc9986d -> phase-006
+- change-7dc3767885cd4c9cb2ff5a1b5d8ca73d -> phase-006
+- change-0042ab69c2b94eb49a3576bfaadea0e4 -> phase-007
+- change-30d32899761b40d8ac9f442695dfec62 -> phase-008
+- change-60858dbd238d4a13a5190dc40a7a1965 -> phase-009
+- change-76c5d0ed9fac48cb970da4f0329c2454 -> phase-010
+- change-7e6fdf97764f412c921e2d9ab581c7b1 -> phase-011
+- change-cd0869b5cfa74261b9cf4655935f2317 -> phase-012
+- change-f78313d32e614657bce29b72264e20fb -> phase-012
+- change-fc28793f11104036ad20f0cb288bda6f -> phase-013
+- decision-038091b9b1ca447db6c8a2d2a86719b4 -> phase-014
+- change-e7c66175f6064aa2af79e23ac1d22ff9 -> phase-015
