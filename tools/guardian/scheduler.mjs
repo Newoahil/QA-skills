@@ -16,7 +16,7 @@ import { randomUUID } from 'node:crypto';
 import { readJsonFile } from './runtime-io.mjs';
 
 import { defaultGhReader, DEFAULT_LEASE_MS, invocationArgvFor } from './poll.mjs';
-import { readState, startFollowupRound, writeState } from './state.mjs';
+import { readState, startFollowupRound, STATES, writeState } from './state.mjs';
 import { storageKey as taskRefStorageKey, isNumericStorageKey, makeTaskRef } from './task-ref.mjs';
 import { routeIssue } from './state-router.mjs';
 import { commandlessStateTransition, planTick } from './scheduler-core.mjs';
@@ -541,7 +541,7 @@ async function tick(repoDir, config, logger, signal = null, runtime = createSche
   if (plan.toRun.claim_source === 'discovered' && !currentBeforeRun) {
     const claimId = randomUUID();
     writeState(guardianDirOf(repoDir), {
-      issue, state: 'DISCOVERED', claim_id: claimId, claimed_at: new Date(now).toISOString(), claim_source: 'discovered',
+      issue, state: STATES.INVESTIGATING, claim_id: claimId, claimed_at: new Date(now).toISOString(), claim_source: 'discovered',
     }, { touch: false });
     const claimProjection = projectLabels(repoDir, issue, { issue_class: null, risk: null, state: 'INVESTIGATING' }, undefined, ACTORS.SUPERVISOR);
     if (claimProjection.errors.length > 0) logger.warn('claim.doing_projection_failed', { issue, errors: claimProjection.errors.length });

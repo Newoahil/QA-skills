@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { pathToFileURL } from 'node:url';
 import path from 'node:path';
 
-import { createSchedulerRuntime, createSchedulerTaskSource, listCandidates, listCandidatesFromTaskSource, pollTaskObservation } from '../../tools/guardian/scheduler.mjs';
+import { createSchedulerRuntime, createSchedulerTaskSource, listCandidates, listCandidatesFromTaskSource, pollTaskObservation, runScheduler } from '../../tools/guardian/scheduler.mjs';
 import { newState, readState, STATES, writeState } from '../../tools/guardian/state.mjs';
 import { pollIssue } from '../../tools/guardian/poll.mjs';
 
@@ -12,6 +13,40 @@ function repoWithGuardian() {
   const repoDir = mkdtempSync(path.join(tmpdir(), 'guardian-discovery-'));
   mkdirSync(path.join(repoDir, '.qa', 'guardian'), { recursive: true });
   return repoDir;
+}
+
+function writeWindowsCommand(repoDir, name, body) {
+  const file = path.join(repoDir, `${name}.cmd`);
+  writeFileSync(file, `@echo off\r\n${body}\r\n`, 'utf8');
+  chmodSync(file, 0o755);
+  return file;
+}
+
+function withPatchedEnv(patch, run) {
+  const original = {};
+  for (const [key, value] of Object.entries(patch)) {
+    original[key] = process.env[key];
+    process.env[key] = value;
+  }
+  try {
+    return run();
+  } finally {
+    for (const [key, value] of Object.entries(original)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+}
+
+async function importSchedulerTickForTest(repoDir) {
+  const sourcePath = new URL('../../tools/guardian/scheduler.mjs', import.meta.url);
+  const tempModule = path.join(repoDir, 'scheduler-test-export.mjs');
+  const guardianDirUrl = new URL('../../tools/guardian/', import.meta.url);
+  const source = readFileSync(sourcePath, 'utf8')
+    .replaceAll("from './", `from '${guardianDirUrl.href}`)
+    .replace('async function tick(repoDir, config, logger, signal = null, runtime = createSchedulerRuntime({ repoDir, config })) {', 'export async function tick(repoDir, config, logger, signal = null, runtime = createSchedulerRuntime({ repoDir, config })) {');
+  writeFileSync(tempModule, source, 'utf8');
+  return import(`${pathToFileURL(tempModule).href}?v=${Date.now()}`);
 }
 
 test('all-open discovery includes historical unlabeled issues and orders deterministically', () => {
@@ -306,6 +341,67 @@ test('runtime polling routes TaskSource observations without legacy gh reader', 
     assert.equal(decision.action, 'START');
     assert.equal(decision.issueTitle, 'TaskSource issue');
     assert.equal(decision.invokeArgv.cmd, 'opencode');
+  } finally {
+    rmSync(repoDir, { recursive: true, force: true });
+  }
+});
+
+test('newly claimed discovered issue is persisted as INVESTIGATING before long investigation begins', async () => {
+  const repoDir = repoWithGuardian();
+  const guardianDir = path.join(repoDir, '.qa', 'guardian');
+  const binDir = path.join(repoDir, 'bin');
+  mkdirSync(binDir, { recursive: true });
+
+  writeWindowsCommand(binDir, 'gh', [
+    'setlocal enabledelayedexpansion',
+    'if "%2"=="edit" exit /b 0',
+    'exit /b 0',
+  ].join('\r\n'));
+  writeWindowsCommand(binDir, 'opencode', 'exit /b 0');
+  const { tick } = await importSchedulerTickForTest(repoDir);
+  const logger = { info: () => {}, warn: () => {}, error: () => {} };
+  const runtime = {
+    taskSource: {
+      listTasks: async () => [{ source: 'github', taskId: '205', displayId: '#205' }],
+      readTask: async () => ({
+        identity: { source: 'github', taskId: '205', displayId: '#205' },
+        terminal: null,
+        controlEvents: [],
+        facts: { title: 'Claim me', body: 'Investigate me' },
+        cursor: { lastConsumedId: null, lastConsumedSequence: null },
+      }),
+    },
+    agentRegistry: Object.freeze({}),
+    pipelineRunners: Object.freeze({}),
+    pipelineStages: Object.freeze([]),
+  };
+
+  try {
+    await withPatchedEnv({ PATH: `${binDir};${process.env.PATH ?? ''}` }, async () => {
+      await tick(repoDir, {
+        github_repo: 'owner/repo',
+        command_authors: ['ops'],
+        investigation_mode: 'legacy',
+        child_timeout_ms: 1000,
+      }, logger, null, runtime);
+    });
+
+    const claimed = readState(guardianDir, 205);
+    assert.ok(claimed, 'scheduler should persist a claim record for the discovered issue');
+    assert.equal(claimed.claim_source, 'discovered');
+    assert.equal(claimed.state, STATES.INVESTIGATING);
+
+    const secondPoll = await pollTaskObservation({
+      repoDir,
+      guardianDir,
+      taskSource: runtime.taskSource,
+      taskRef: { source: 'github', taskId: '205', displayId: '#205' },
+      leaseMs: 30 * 60 * 1000,
+      now: Date.parse(claimed.updated_at) + 60 * 1000,
+      trustedAuthors: ['ops'],
+    });
+    assert.equal(secondPoll.action, 'SKIP');
+    assert.equal(secondPoll.reason, 'in-progress-fresh-lease');
   } finally {
     rmSync(repoDir, { recursive: true, force: true });
   }
