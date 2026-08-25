@@ -49,6 +49,10 @@ test('validated test commands accept only scoped node test argv and reject wrapp
   assert.deepEqual(parseValidatedTestPlan([['node', '--test', 'frontend/apps/alipay-miniapp/test/classifyAgain-empty-state.test.js']]), [
     ['node', '--test', 'frontend/apps/alipay-miniapp/test/classifyAgain-empty-state.test.js'],
   ]);
+  // Monorepo convention: test scripts named test-*.js live beside build scripts under scripts/.
+  assert.deepEqual(parseValidatedTestPlan([['node', '--test', 'frontend/apps/alipay-miniapp/scripts/test-classify-again-empty-state.js']]), [
+    ['node', '--test', 'frontend/apps/alipay-miniapp/scripts/test-classify-again-empty-state.js'],
+  ]);
   for (const command of [
     ['node', '-e', 'process.exit(0)'],
     ['cmd', '/c', 'node', '--test', 'tests/foo.test.mjs'],
@@ -60,6 +64,9 @@ test('validated test commands accept only scoped node test argv and reject wrapp
     ['git', 'push', '--force'],
     ['npm', 'test'],
     ['node', '--test', 'D:/other/tests/foo.test.mjs'],
+    // product source under src/ is NOT a test target just because it sits under a src/ directory
+    ['node', '--test', 'frontend/apps/alipay-miniapp/src/pages/classifyAgain/index.js'],
+    ['node', '--test', 'frontend/apps/alipay-miniapp/scripts/build-alipay-target.js'],
   ]) assert.throws(() => parseValidatedTestPlan([command]), /not allowed|scoped|command strings/i);
   assert.throws(() => parseValidatedTestPlan(['node --test tests/foo.test.mjs']), /command strings/i);
 });

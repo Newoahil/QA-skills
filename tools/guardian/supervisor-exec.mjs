@@ -8,7 +8,12 @@ export const SUPERVISOR_OPERATIONS = Object.freeze([
   'current-branch', 'status-diff', 'staged-files', 'worktree-files', 'ensure-fix-branch', 'run-tests', 'pre-qa-evidence', 'stage-files', 'commit', 'push',
 ]);
 
-const TEST_PATH = /(?:^|[\\/])(?:tests?|src|__tests__)[\\/].+\.(?:mjs|js|cjs|ts|tsx|jsx)$/;
+// A scoped node test target is either (a) a file under a tests/test/__tests__ directory segment, or
+// (b) a file whose basename follows a test naming convention (test-*, *.test.*, *.spec.*). The latter
+// covers monorepos like frontend/apps/*/scripts/test-*.js where regression tests live beside build
+// scripts. A bare src/ directory is intentionally NOT a test root (its files are product source);
+// only a test-named file under src/ qualifies. repoRelativePath() already blocks traversal/absolute.
+const TEST_PATH = /(?:(?:^|[\\/])(?:tests?|__tests__)[\\/].+|(?:^|[\\/])(?:test-[^\\/]+|[^\\/]+\.(?:test|spec)))\.(?:mjs|js|cjs|ts|tsx|jsx)$/;
 const ALLOWED_PROJECT_TEST_SCRIPTS = Object.freeze([
   'frontend/apps/alipay-miniapp/scripts/test-category-builder-runtime.js',
 ]);
