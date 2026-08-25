@@ -49,9 +49,6 @@ function testArgv(argv) {
   if (subcommand === '--test' && args.length > 0 && args.every((arg) => TEST_PATH.test(repoRelativePath(arg, 'test path')))) {
     return ['node', '--test', ...args.map((arg) => repoRelativePath(arg, 'test path'))];
   }
-  if (args.length === 1 && ALLOWED_PROJECT_TEST_SCRIPTS.includes(repoRelativePath(args[0], 'test script'))) {
-    return ['node', repoRelativePath(args[0], 'test script')];
-  }
   throw new Error('test command is not allowed');
 }
 
@@ -263,6 +260,7 @@ export function createSupervisorExecutor({ repoDir, run = spawnSync } = {}) {
       ? (assertActiveRun(), exec({ operation: 'run-tests', commands: testCommands }))
       : { status: 0, skipped: true, reason: 'no test_commands supplied' };
     if (tests.status !== 0) throw new Error(`scoped tests failed: ${tests.stderr || tests.stdout || 'unknown'}`);
+    assertWorktreeIsolated(plan);
     rejectOutOfScope(stagedNames(), 'pre-existing');
     assertActiveRun();
     const stage = exec({ operation: 'stage-files', files: affectedFiles });

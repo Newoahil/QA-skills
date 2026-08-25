@@ -69,6 +69,8 @@ test('validated test commands allow the project category builder script and reje
     ['node', 'frontend/apps/alipay-miniapp/scripts/../../secret.js'],
     ['node', 'frontend/apps/alipay-miniapp/scripts/test-category-builder-runtime.js', '--network'],
     ['node', 'frontend/apps/alipay-miniapp/scripts/test-category-builder-runtime.js', '&&', 'git', 'push'],
+    ['node', '--require', 'frontend/apps/alipay-miniapp/scripts/test-category-builder-runtime.js'],
+    ['node', '--unknown-flag', 'frontend/apps/alipay-miniapp/scripts/test-category-builder-runtime.js'],
     ['node', 'node_modules/.bin/test-runner.js'],
     ['node', 'powershell-wrapper.js'],
   ]) assert.throws(() => parseValidatedTestPlan([command]), /not allowed|protected|network|wrapper|scoped/i);
@@ -264,6 +266,31 @@ test('finalization refuses to continue before irreversible operations when the a
   assert.equal(calls.some((call) => call.argv[0] === 'add'), false, 'must not stage files after the fence closes');
   assert.equal(calls.some((call) => call.argv[0] === 'commit'), false, 'must not commit after the fence closes');
   assert.equal(calls.some((call) => call.argv[0] === 'push'), false, 'must not push after the fence closes');
+});
+
+test('finalization fails closed when scoped worktree changes after tests before staging', async () => {
+  const calls = [];
+  let worktreeChecks = 0;
+  const run = (file, argv, options) => {
+    calls.push({ file, argv, options });
+    if (argv[0] === 'branch') return { status: 0, stdout: 'fix/issue-211\n', stderr: '' };
+    if (argv[0] === 'status' && argv[1] === '--porcelain=v1') {
+      worktreeChecks += 1;
+      return { status: 0, stdout: worktreeChecks === 1 ? ' M tools/guardian/foo.mjs\0' : ' M tools/guardian/foo.mjs\0 M unrelated/late.mjs\0', stderr: '' };
+    }
+    if (argv[0] === 'diff') return { status: 0, stdout: 'diff\n', stderr: '' };
+    return { status: 0, stdout: '', stderr: '' };
+  };
+  const executor = createSupervisorExecutor({ repoDir: 'D:/repo', run });
+
+  await assert.rejects(
+    () => executor.finalizeFix({ issue: 211, mode: 'enforced', plan: { affected_files: ['tools/guardian/foo.mjs'], test_commands: [['node', '--test', 'tests/guardian/foo.test.mjs']] } }),
+    /worktree|scope/i,
+  );
+
+  assert.equal(calls.some((call) => call.argv[0] === 'add'), false);
+  assert.equal(calls.some((call) => call.argv[0] === 'commit'), false);
+  assert.equal(calls.some((call) => call.argv[0] === 'push'), false);
 });
 
 test('ensure-fix-branch creates only when switching an existing branch fails', () => {
