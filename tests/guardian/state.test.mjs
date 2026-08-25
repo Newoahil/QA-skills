@@ -32,7 +32,7 @@ test('newState has every schema field (§11A.3)', () => {
   const s = newState(42);
   for (const k of [
     'issue', 'state', 'risk', 'branch', 'pr_url', 'fix_rounds', 'updated_at',
-    'stall_retries', 'last_consumed_comment_id', 'last_notified_state', 'handed_back_reason',
+    'stall_retries', 'last_consumed_comment_id', 'last_notified_state', 'gate_1_comment_hash', 'handed_back_reason',
   ]) {
     assert.ok(Object.prototype.hasOwnProperty.call(s, k), `missing field ${k}`);
   }

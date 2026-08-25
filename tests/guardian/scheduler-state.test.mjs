@@ -1,10 +1,15 @@
 import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import test from 'node:test';
 
-import { createLeaseFence, persistCommandlessTransitions } from '../../tools/guardian/scheduler.mjs';
-import { deliverNotifications } from '../../tools/guardian/notify-io.mjs';
+import { hashArtifact, writeArtifact } from '../../tools/guardian/artifacts.mjs';
 import { ACTORS } from '../../tools/guardian/actor-routing.mjs';
-import { newState, STATES } from '../../tools/guardian/state.mjs';
+import { deliverNotifications } from '../../tools/guardian/notify-io.mjs';
+import { buildGate1Comment } from '../../tools/guardian/gate1-comment.mjs';
+import { createLeaseFence, persistCommandlessTransitions, publishWaitingGate1Proposals } from '../../tools/guardian/scheduler.mjs';
+import { newState, readState, STATES, writeState } from '../../tools/guardian/state.mjs';
 
 function fakeStore(initial) {
   const store = { ...initial };
@@ -25,6 +30,33 @@ function spyIo(order) {
   return {
     ghComment: (issue) => order.push(`notify:${issue}`),
     curlPost: () => {},
+  };
+}
+
+function tempGuardianDir() {
+  return path.join(mkdtempSync(path.join(tmpdir(), 'guardian-scheduler-state-')), '.qa', 'guardian');
+}
+
+function gate1Artifacts(investigationId = 'inv-263') {
+  return {
+    plan: {
+      investigation_id: investigationId,
+      spec_goal: 'Repair Gate 1 compensation replay.',
+      implementation_summary: 'Publish the stored Gate 1 plan and dossier exactly once for recovered waiting records.',
+      primary_files: ['tools/guardian/scheduler.mjs'],
+      acceptance_summary: [
+        'Recovered Gate 1 waiting records publish one full proposal.',
+        'Invalid plan or dossier status blocks compensation replay.',
+      ],
+      blocking_questions: [],
+      root_cause: 'Recovery compensation only checked artifact pair completeness.',
+      affected_files: ['tools/guardian/scheduler.mjs', 'tests/guardian/scheduler-state.test.mjs'],
+      test_plan: ['Call publishWaitingGate1Proposals twice against persisted artifacts.'],
+    },
+    dossier: {
+      investigation_id: investigationId,
+      unresolved_facts: ['Issue #263 remained in GATE_1_WAIT with valid persisted artifacts.'],
+    },
   };
 }
 
@@ -120,6 +152,118 @@ test('repeated DONE persistence is idempotent after the first transition', () =>
 
   assert.equal(store.writes.length, 1);
   assert.equal(store.store[211].state, STATES.DONE);
+});
+
+test('publishWaitingGate1Proposals publishes one recovered Gate 1 proposal and persists the marker for the second call skip', () => {
+  const guardianDir = tempGuardianDir();
+  const issue = 263;
+  const artifacts = gate1Artifacts();
+  const comments = [];
+  try {
+    writeState(guardianDir, {
+      ...newState(issue),
+      state: STATES.GATE_1_WAIT,
+      last_notified_state: STATES.GATE_1_WAIT,
+      plan_status: 'valid',
+      dossier_status: 'valid',
+      gate_1_comment_hash: null,
+      last_gate_1_proposal_hash: null,
+    }, { touch: false });
+    writeArtifact(guardianDir, issue, 'plan', artifacts.plan);
+    writeArtifact(guardianDir, issue, 'dossier', artifacts.dossier);
+
+    const decisions = [{ issue, action: 'SKIP', reason: 'gate1-waiting' }];
+    const expectedPlanHash = hashArtifact(artifacts.plan);
+    const expectedBody = buildGate1Comment({
+      issue,
+      plan: artifacts.plan,
+      dossier: artifacts.dossier,
+      planHash: expectedPlanHash,
+      planRevision: artifacts.plan.investigation_id,
+    });
+
+    const first = publishWaitingGate1Proposals({
+      decisions,
+      guardianDir,
+      io: { ghComment: (commentIssue, body) => comments.push({ issue: commentIssue, body }) },
+      actor: ACTORS.SUPERVISOR,
+    });
+
+    assert.equal(first.length, 1);
+    assert.equal(first[0].published, true);
+    assert.equal(first[0].skipped, false);
+    assert.equal(comments.length, 1);
+    assert.deepEqual(comments[0], { issue, body: expectedBody });
+
+    const afterFirst = readState(guardianDir, issue);
+    assert.equal(typeof afterFirst.gate_1_comment_hash, 'string');
+    assert.ok(afterFirst.gate_1_comment_hash.length > 0);
+    assert.equal(afterFirst.last_gate_1_proposal_hash, expectedPlanHash);
+
+    const second = publishWaitingGate1Proposals({
+      decisions,
+      guardianDir,
+      io: { ghComment: (commentIssue, body) => comments.push({ issue: commentIssue, body }) },
+      actor: ACTORS.SUPERVISOR,
+    });
+
+    assert.equal(second.length, 1);
+    assert.equal(second[0].published, false);
+    assert.equal(second[0].skipped, true);
+    assert.equal(comments.length, 1);
+  } finally {
+    rmSync(path.dirname(path.dirname(guardianDir)), { recursive: true, force: true });
+  }
+});
+
+test('publishWaitingGate1Proposals does not republish complete artifacts when plan or dossier status is not valid', () => {
+  const guardianDir = tempGuardianDir();
+  const invalidIssue = 264;
+  const incompleteDossierIssue = 265;
+  const artifacts = gate1Artifacts('inv-invalid-status');
+  const comments = [];
+  try {
+    writeState(guardianDir, {
+      ...newState(invalidIssue),
+      state: STATES.GATE_1_WAIT,
+      last_notified_state: STATES.GATE_1_WAIT,
+      plan_status: 'invalid',
+      dossier_status: 'valid',
+      gate_1_comment_hash: null,
+      last_gate_1_proposal_hash: null,
+    }, { touch: false });
+    writeArtifact(guardianDir, invalidIssue, 'plan', artifacts.plan);
+    writeArtifact(guardianDir, invalidIssue, 'dossier', artifacts.dossier);
+
+    writeState(guardianDir, {
+      ...newState(incompleteDossierIssue),
+      state: STATES.GATE_1_WAIT,
+      last_notified_state: STATES.GATE_1_WAIT,
+      plan_status: 'valid',
+      dossier_status: 'missing',
+      gate_1_comment_hash: null,
+      last_gate_1_proposal_hash: null,
+    }, { touch: false });
+    writeArtifact(guardianDir, incompleteDossierIssue, 'plan', artifacts.plan);
+    writeArtifact(guardianDir, incompleteDossierIssue, 'dossier', artifacts.dossier);
+
+    const results = publishWaitingGate1Proposals({
+      decisions: [
+        { issue: invalidIssue, action: 'SKIP', reason: 'gate1-waiting' },
+        { issue: incompleteDossierIssue, action: 'SKIP', reason: 'gate1-waiting' },
+      ],
+      guardianDir,
+      io: { ghComment: (issue, body) => comments.push({ issue, body }) },
+      actor: ACTORS.SUPERVISOR,
+    });
+
+    assert.deepEqual(results, []);
+    assert.deepEqual(comments, []);
+    assert.equal(readState(guardianDir, invalidIssue).gate_1_comment_hash, null);
+    assert.equal(readState(guardianDir, incompleteDossierIssue).gate_1_comment_hash, null);
+  } finally {
+    rmSync(path.dirname(path.dirname(guardianDir)), { recursive: true, force: true });
+  }
 });
 
 test('lease fence aborts active work when heartbeat renewal loses ownership', () => {

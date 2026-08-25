@@ -21,7 +21,7 @@ import { storageKey as taskRefStorageKey, isNumericStorageKey, makeTaskRef } fro
 import { routeIssue } from './state-router.mjs';
 import { commandlessStateTransition, planTick } from './scheduler-core.mjs';
 import { acquireLock, renewLock, releaseLock } from './lock.mjs';
-import { closeoutTransition, deliverNotifications, defaultGhComment, defaultCurlPost } from './notify-io.mjs';
+import { closeoutTransition, deliverNotifications, defaultGhComment, defaultCurlPost, publishGate1Proposal } from './notify-io.mjs';
 import { createLogger } from './runtime-io.mjs';
 import { projectLabels } from './label-io.mjs';
 import { prepareInvestigation } from './investigation-runtime.mjs';
@@ -43,7 +43,6 @@ import { createGitHubEffectSink } from './github-effect-sink.mjs';
 import { createGitHubTaskSource } from './github-task-source.mjs';
 import { createHttpTaskSource } from './http-task-source.mjs';
 import { loadAgentRegistry } from './agent-registry.mjs';
-import { buildGate1Comment } from './gate1-comment.mjs';
 import { createSupervisorExecutor } from './supervisor-exec.mjs';
 import { ACTORS, assertActorMayPerform, EFFECTS } from './actor-routing.mjs';
 import { atomicWriteJson } from './atomic-io.mjs';
@@ -197,6 +196,39 @@ export function persistCommandlessTransitions({ decisions, guardianDir, deps = {
     if (!changed) continue;
     ws(guardianDir, { ...current, ...patch }, { touch: true, now });
   }
+}
+
+export function publishWaitingGate1Proposals({ decisions, guardianDir, io, actor = ACTORS.SUPERVISOR, deps = {} }) {
+  const rs = deps.readState ?? readState;
+  const results = [];
+  for (const decision of decisions) {
+    if (decision.action !== 'SKIP' || decision.reason !== 'gate1-waiting') continue;
+    if (decision.taskRef?.source && decision.taskRef.source !== 'github') continue;
+    const record = rs(guardianDir, decision.issue);
+    if (!record) continue;
+    if (record.state !== STATES.GATE_1_WAIT) continue;
+    if (record.plan_status !== 'valid' || record.dossier_status !== 'valid') continue;
+    const pair = readArtifactPair(guardianDir, decision.issue);
+    if (!pair.complete) continue;
+    const identity = artifactIdentity(pair);
+    try {
+      results.push({ issue: decision.issue, ...publishGate1Proposal({
+        guardianDir,
+        issue: decision.issue,
+        record,
+        plan: pair.plan,
+        dossier: pair.dossier,
+        planHash: record.plan_hash ?? identity.plan_hash,
+        planRevision: record.plan_revision ?? identity.plan_revision,
+        ghComment: io.ghComment,
+        actor,
+        deps,
+      }) });
+    } catch (error) {
+      results.push({ issue: decision.issue, published: false, error: error instanceof Error ? error.message : 'unknown' });
+    }
+  }
+  return results;
 }
 
 export function listCandidates(repoDir, _config = {}, _now = new Date(), deps = {}) {
@@ -512,6 +544,17 @@ async function tick(repoDir, config, logger, signal = null, runtime = createSche
     now: new Date(now).toISOString(),
   });
 
+  const proposalResults = publishWaitingGate1Proposals({
+    decisions,
+    guardianDir: guardianDirOf(repoDir),
+    actor: ACTORS.SUPERVISOR,
+    io: { ghComment: defaultGhComment(repoDir, ACTORS.SUPERVISOR) },
+  });
+  for (const result of proposalResults) {
+    if (result.error) logger.warn('gate1.proposal_recovery_failed', { issue: result.issue, error_message: result.error });
+    else if (result.published) logger.info('gate1.proposal_recovered', { issue: result.issue });
+  }
+
   // Deliver notifications (FR-21 / §11B.5) for gate-stop/STALLED/HANDED_BACK decisions BEFORE
   // handling the run. Idempotent per last_notified_state; independent of the N=1 run lock, so a
   // stopped issue is announced even while another issue is running. Best-effort per issue.
@@ -740,15 +783,21 @@ async function tick(repoDir, config, logger, signal = null, runtime = createSche
       try {
        closeoutTransition({
          guardianDir,
-         decision: { action: 'GATE_1_WAIT', issue, taskRef: plan.toRun.taskRef },
+         decision: {
+           action: 'GATE_1_WAIT',
+           issue,
+           taskRef: plan.toRun.taskRef,
+           proposal: { plan: planArtifact, dossier, planHash: identity.plan_hash, planRevision: identity.plan_revision },
+         },
          statePatch: gate1StatePatch,
          config,
          actor: ACTORS.SUPERVISOR,
-          io: {
+         io: {
             ghComment: (commentIssue, text) => defaultGhComment(repoDir, ACTORS.SUPERVISOR)(commentIssue, text),
             curlPost: defaultCurlPost(ACTORS.SUPERVISOR),
           },
-          deliver: () => defaultGhComment(repoDir, ACTORS.SUPERVISOR)(issue, buildGate1Comment({ issue, plan: planArtifact, dossier, planHash: identity.plan_hash, planRevision: identity.plan_revision })),
+          deliver: null,
+          isActiveRun,
         });
       } catch (error) {
         logger.warn('gate1.comment_failed', { issue, error_message: error instanceof Error ? error.message : 'unknown' });

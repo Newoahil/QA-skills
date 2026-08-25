@@ -4,7 +4,9 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { existsSync, readFileSync } from 'node:fs';
 
-import { closeoutTransition, deliverNotifications, defaultCurlPost, defaultGhComment, notifyTargetState } from '../../tools/guardian/notify-io.mjs';
+import { hashArtifact } from '../../tools/guardian/artifacts.mjs';
+import { buildGate1Comment } from '../../tools/guardian/gate1-comment.mjs';
+import { closeoutTransition, deliverNotifications, defaultCurlPost, defaultGhComment, notifyTargetState, publishGate1Proposal } from '../../tools/guardian/notify-io.mjs';
 import { newState } from '../../tools/guardian/state.mjs';
 import { ACTORS } from '../../tools/guardian/actor-routing.mjs';
 
@@ -26,6 +28,36 @@ function spyIo() {
     calls,
     ghComment: (issue, text) => calls.comment.push({ issue, text }),
     curlPost: (url, body) => calls.webhook.push({ url, body }),
+  };
+}
+
+function gate1Artifacts(overrides = {}) {
+  const investigationId = overrides.investigation_id ?? 'inv-263';
+  const plan = {
+    investigation_id: investigationId,
+    spec_goal: '修复分类列表空状态文案。',
+    implementation_summary: '恢复正确的分类空状态和有商品状态文案。',
+    primary_files: ['frontend/apps/alipay-miniapp/src/pages/classifyAgain/index.js'],
+    acceptance_summary: [
+      '有商品分类不显示错误引导文案。',
+      '无商品分类显示预期空状态文案。',
+    ],
+    blocking_questions: ['是否只覆盖 classifyAgain 页面？'],
+    root_cause: '分类列表文案预期需要人工确认。',
+    affected_files: ['frontend/apps/alipay-miniapp/src/pages/classifyAgain/index.js'],
+    test_plan: ['覆盖有商品和无商品分类。'],
+    ...overrides.plan,
+  };
+  const dossier = {
+    investigation_id: investigationId,
+    unresolved_facts: ['Issue #263 已被手动恢复到等待确认状态。'],
+    ...overrides.dossier,
+  };
+  return {
+    plan,
+    dossier,
+    planHash: hashArtifact(plan),
+    planRevision: plan.investigation_id,
   };
 }
 
@@ -163,6 +195,174 @@ test('Given custom Gate 1 closeout comment delivery with failing notify_webhook,
   assert.deepEqual(calls, ['state', 'deliver', 'comment', 'webhook']);
   assert.equal(fs.store[46].state, 'GATE_1_WAIT');
   assert.equal(fs.store[46].last_notified_state, null);
+});
+
+test('restored GATE_1_WAIT with valid plan/dossier and no proposal marker republishes exactly one full Gate 1 proposal even when last_notified_state already matches', () => {
+  const issue = 263;
+  const artifacts = gate1Artifacts();
+  const expectedBody = buildGate1Comment({
+    issue,
+    plan: artifacts.plan,
+    dossier: artifacts.dossier,
+    planHash: artifacts.planHash,
+    planRevision: artifacts.planRevision,
+  });
+  const fs = fakeStore({
+    [issue]: {
+      ...newState(issue),
+      state: 'GATE_1_WAIT',
+      plan_hash: artifacts.planHash,
+      plan_revision: artifacts.planRevision,
+      dossier_revision: artifacts.dossier.investigation_id,
+      last_notified_state: 'GATE_1_WAIT',
+      last_gate_1_proposal_hash: null,
+    },
+  });
+  const io = spyIo();
+
+  const result = closeoutTransition({
+    guardianDir: '/g',
+    decision: { issue, action: 'GATE_1_WAIT' },
+    statePatch: { state: 'GATE_1_WAIT', plan_hash: artifacts.planHash, plan_revision: artifacts.planRevision },
+    io,
+    actor: ACTORS.SUPERVISOR,
+    deps: { readState: fs.readState, writeState: fs.writeState },
+    deliver: () => io.ghComment(issue, expectedBody),
+  });
+
+  assert.deepEqual(result, [{ issue, delivered: true }]);
+  assert.deepEqual(io.calls.comment, [{ issue, text: expectedBody }]);
+});
+
+test('successful recovered Gate 1 proposal persists a dedicated proposal hash marker independent from last_notified_state', () => {
+  const issue = 264;
+  const artifacts = gate1Artifacts({ investigation_id: 'inv-264' });
+  const expectedBody = buildGate1Comment({
+    issue,
+    plan: artifacts.plan,
+    dossier: artifacts.dossier,
+    planHash: artifacts.planHash,
+    planRevision: artifacts.planRevision,
+  });
+  const fs = fakeStore({
+    [issue]: {
+      ...newState(issue),
+      state: 'GATE_1_WAIT',
+      plan_hash: artifacts.planHash,
+      plan_revision: artifacts.planRevision,
+      dossier_revision: artifacts.dossier.investigation_id,
+      last_notified_state: 'GATE_1_WAIT',
+      last_gate_1_proposal_hash: null,
+    },
+  });
+  const io = spyIo();
+
+  closeoutTransition({
+    guardianDir: '/g',
+    decision: { issue, action: 'GATE_1_WAIT' },
+    statePatch: { state: 'GATE_1_WAIT' },
+    io,
+    actor: ACTORS.SUPERVISOR,
+    deps: { readState: fs.readState, writeState: fs.writeState },
+    deliver: () => io.ghComment(issue, expectedBody),
+  });
+
+  assert.equal(fs.store[issue].last_notified_state, 'GATE_1_WAIT');
+  assert.equal(fs.store[issue].last_gate_1_proposal_hash, artifacts.planHash);
+});
+
+test('later tick with the same Gate 1 proposal hash marker does not republish the detailed proposal', () => {
+  const issue = 265;
+  const artifacts = gate1Artifacts({ investigation_id: 'inv-265' });
+  const expectedBody = buildGate1Comment({
+    issue,
+    plan: artifacts.plan,
+    dossier: artifacts.dossier,
+    planHash: artifacts.planHash,
+    planRevision: artifacts.planRevision,
+  });
+  const fs = fakeStore({
+    [issue]: {
+      ...newState(issue),
+      state: 'GATE_1_WAIT',
+      plan_hash: artifacts.planHash,
+      plan_revision: artifacts.planRevision,
+      dossier_revision: artifacts.dossier.investigation_id,
+      last_notified_state: null,
+      last_gate_1_proposal_hash: artifacts.planHash,
+    },
+  });
+  const io = spyIo();
+
+  const result = closeoutTransition({
+    guardianDir: '/g',
+    decision: { issue, action: 'GATE_1_WAIT' },
+    statePatch: { state: 'GATE_1_WAIT' },
+    io,
+    actor: ACTORS.SUPERVISOR,
+    deps: { readState: fs.readState, writeState: fs.writeState },
+    deliver: () => io.ghComment(issue, expectedBody),
+  });
+
+  assert.deepEqual(result, [{ issue, delivered: false, skipped: true }]);
+  assert.equal(io.calls.comment.length, 0);
+});
+
+test('publication failure keeps the Gate 1 proposal marker absent so the next tick can retry the same recovered proposal', () => {
+  const issue = 266;
+  const artifacts = gate1Artifacts({ investigation_id: 'inv-266' });
+  const fs = fakeStore({
+    [issue]: {
+      ...newState(issue),
+      state: 'GATE_1_WAIT',
+      plan_hash: artifacts.planHash,
+      plan_revision: artifacts.planRevision,
+      dossier_revision: artifacts.dossier.investigation_id,
+      last_notified_state: 'GATE_1_WAIT',
+      last_gate_1_proposal_hash: null,
+    },
+  });
+  let attempts = 0;
+
+  const runRecoveredPublish = () => closeoutTransition({
+    guardianDir: '/g',
+    decision: { issue, action: 'GATE_1_WAIT' },
+    statePatch: { state: 'GATE_1_WAIT' },
+    io: spyIo(),
+    actor: ACTORS.SUPERVISOR,
+    deps: { readState: fs.readState, writeState: fs.writeState },
+    deliver: () => {
+      attempts += 1;
+      throw new Error('comment unavailable');
+    },
+  });
+
+  assert.deepEqual(runRecoveredPublish(), [{ issue, delivered: false, error: 'comment unavailable' }]);
+  assert.equal(fs.store[issue].last_gate_1_proposal_hash, null);
+  assert.deepEqual(runRecoveredPublish(), [{ issue, delivered: false, error: 'comment unavailable' }]);
+  assert.equal(attempts, 2);
+});
+
+test('Gate 1 proposal publication respects the active-run fence before comment I/O', () => {
+  const issue = 267;
+  const artifacts = gate1Artifacts({ investigation_id: 'inv-267' });
+  const fs = fakeStore({ [issue]: { ...newState(issue), state: 'GATE_1_WAIT' } });
+  const io = spyIo();
+  assert.throws(() => publishGate1Proposal({
+    guardianDir: '/g',
+    issue,
+    record: fs.store[issue],
+    plan: artifacts.plan,
+    dossier: artifacts.dossier,
+    planHash: artifacts.planHash,
+    planRevision: artifacts.planRevision,
+    ghComment: io.ghComment,
+    actor: ACTORS.SUPERVISOR,
+    deps: { writeState: fs.writeState },
+    isActiveRun: () => false,
+  }), /fenced/);
+  assert.equal(io.calls.comment.length, 0);
+  assert.equal(fs.store[issue].gate_1_comment_hash, null);
 });
 
 test('webhook fires when notify_webhook configured (feishu channel wraps a card)', () => {

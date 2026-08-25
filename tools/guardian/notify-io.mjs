@@ -7,14 +7,17 @@
 // orchestration is unit-testable without gh/curl/fs.
 
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 
 import { notify } from './notify.mjs';
 import { readState, writeState } from './state.mjs';
 import { assertActorMayPerform, EFFECTS } from './actor-routing.mjs';
 import { withGithubBodyFile } from './github-body-file.mjs';
+import { buildGate1Comment } from './gate1-comment.mjs';
 
 const claimedTransitions = new Set();
+const claimedGate1Proposals = new Set();
 
 function notificationClaimKey(guardianDir, issue, targetState) {
   return `${guardianDir}:${String(issue)}:${targetState}`;
@@ -30,6 +33,52 @@ function claimNotificationTransition(guardianDir, issue, targetState, record) {
 
 function releaseNotificationClaim(guardianDir, issue, targetState) {
   claimedTransitions.delete(notificationClaimKey(guardianDir, issue, targetState));
+}
+
+function gate1ProposalClaimKey(guardianDir, issue, proposalHash) {
+  return `${guardianDir}:${String(issue)}:${proposalHash}`;
+}
+
+function claimGate1Proposal(guardianDir, issue, proposalHash, record, planHash = null) {
+  if (record.gate_1_comment_hash === proposalHash) return false;
+  if (record.last_gate_1_proposal_hash === proposalHash || (planHash && record.last_gate_1_proposal_hash === planHash)) return false;
+  const key = gate1ProposalClaimKey(guardianDir, issue, proposalHash);
+  if (claimedGate1Proposals.has(key)) return false;
+  claimedGate1Proposals.add(key);
+  return true;
+}
+
+function releaseGate1ProposalClaim(guardianDir, issue, proposalHash) {
+  claimedGate1Proposals.delete(gate1ProposalClaimKey(guardianDir, issue, proposalHash));
+}
+
+export function hashGate1Comment(body) {
+  return `sha256:${createHash('sha256').update(body, 'utf8').digest('hex')}`;
+}
+
+export function publishGate1Proposal({ guardianDir, issue, record, plan, dossier, planHash = null, planRevision = null, ghComment, actor, deps = {}, isActiveRun = () => true }) {
+  const ws = deps.writeState ?? writeState;
+  const body = buildGate1Comment({ issue, plan, dossier, planHash, planRevision });
+  const commentHash = hashGate1Comment(body);
+  if (!claimGate1Proposal(guardianDir, issue, commentHash, record, planHash)) {
+    return { published: false, skipped: true, commentHash, body };
+  }
+  try {
+    if (!isActiveRun()) throw new Error('Gate 1 proposal publication fenced: active run is false');
+    assertActorMayPerform(actor, EFFECTS.FACT_COMMENT);
+    ghComment(issue, body);
+    if (!isActiveRun()) throw new Error('Gate 1 proposal marker fenced: active run is false');
+    ws(guardianDir, {
+      ...record,
+      gate_1_comment_hash: commentHash,
+      last_gate_1_proposal_hash: planHash ?? commentHash,
+    }, { touch: false, ...(deps.now ? { now: deps.now } : {}) });
+    releaseGate1ProposalClaim(guardianDir, issue, commentHash);
+    return { published: true, skipped: false, commentHash, body };
+  } catch (error) {
+    releaseGate1ProposalClaim(guardianDir, issue, commentHash);
+    throw error;
+  }
 }
 
 // Default gh-backed issue-comment channel. Writes the notification text as an issue comment.
@@ -141,7 +190,7 @@ export function deliverNotifications(args) {
   return results;
 }
 
-export function closeoutTransition({ guardianDir, decision, statePatch, config = {}, io, actor, deps = {}, deliver = null }) {
+export function closeoutTransition({ guardianDir, decision, statePatch, config = {}, io, actor, deps = {}, deliver = null, isActiveRun = () => true }) {
   const rs = deps.readState ?? readState;
   const ws = deps.writeState ?? writeState;
   const now = deps.now;
@@ -150,13 +199,45 @@ export function closeoutTransition({ guardianDir, decision, statePatch, config =
   const current = rs(guardianDir, decision.issue);
   if (!current) return [{ issue: decision.issue, delivered: false, skipped: true, error: 'no-state-record' }];
   const targetState = notifyTargetState(decision);
-  if (!claim(guardianDir, decision.issue, targetState, current)) {
+  const proposal = decision.proposal ?? null;
+  const legacyProposalHash = targetState === 'GATE_1_WAIT' && !proposal && typeof deliver === 'function'
+    ? current.plan_hash
+    : null;
+  const proposalAlreadyPublished = legacyProposalHash
+    && (current.last_gate_1_proposal_hash === legacyProposalHash || current.gate_1_comment_hash === legacyProposalHash);
+  if (proposalAlreadyPublished) {
+    return [{ issue: decision.issue, delivered: false, skipped: true }];
+  }
+  if (!proposal && !legacyProposalHash && !claim(guardianDir, decision.issue, targetState, current)) {
     return [{ issue: decision.issue, delivered: false, skipped: true, reasonSkipped: 'transition-claimed' }];
   }
   ws(guardianDir, { ...current, ...statePatch }, { touch: false, ...(deps.now ? { now: deps.now } : {}) });
-  if (typeof deliver === 'function') {
+  if (proposal || typeof deliver === 'function') {
     try {
-      deliver();
+      let proposalPublished = false;
+      if (proposal) {
+        const publication = publishGate1Proposal({
+          guardianDir,
+          issue: decision.issue,
+          record: { ...current, ...statePatch },
+          ...proposal,
+          ghComment: io.ghComment,
+          actor,
+          deps,
+          isActiveRun,
+        });
+        proposalPublished = publication.published;
+      } else {
+        deliver();
+        if (legacyProposalHash) {
+          ws(guardianDir, {
+            ...current,
+            ...statePatch,
+            last_gate_1_proposal_hash: legacyProposalHash,
+          }, { touch: false, ...(now ? { now } : {}) });
+          proposalPublished = true;
+        }
+      }
       const patchedRecord = { ...current, ...statePatch };
       const outcome = notify(
         patchedRecord,
@@ -172,7 +253,7 @@ export function closeoutTransition({ guardianDir, decision, statePatch, config =
       );
       if (outcome.skipped) {
         releaseClaim(guardianDir, decision.issue, targetState);
-        return [{ issue: decision.issue, delivered: false, skipped: true }];
+        return [{ issue: decision.issue, delivered: proposalPublished, ...(proposalPublished ? {} : { skipped: true }) }];
       }
       ws(guardianDir, { ...patchedRecord, last_notified_state: targetState }, { touch: false, ...(now ? { now } : {}) });
       releaseClaim(guardianDir, decision.issue, targetState);
