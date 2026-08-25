@@ -200,6 +200,14 @@ test('MAX_FIX_ROUNDS is exported and sane', () => {
   assert.equal(MAX_FIX_ROUNDS >= 1 && MAX_FIX_ROUNDS <= 2, true);
 });
 
+test('FIXING with missing Supervisor evidence resumes QA instead of creating a fixer residue', () => {
+  const r = rec({ state: STATES.FIXING, last_error_class: 'qa-missing-supervisor-evidence' });
+  const d = route(r, {}, { leaseMs: LEASE, now: NOW });
+  assert.equal(d.action, 'RESUME');
+  assert.equal(d.reason, 'qa-evidence-retry');
+  assert.equal(d.toState, STATES.VERIFYING);
+});
+
 test('GATE_1_WAIT + approve from an UNTRUSTED author → SKIP (authorization boundary)', () => {
   const r = rec({ state: STATES.GATE_1_WAIT });
   const d = route(r, { comments: [comment(1, '/guardian approve', 'attacker')] }, OPTS);

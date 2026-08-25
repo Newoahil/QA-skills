@@ -129,6 +129,11 @@ export async function runFixerStage(context) {
     dossierPath: path.join(context.guardianDir, String(context.issue), 'dossier.json'),
     planPath: path.join(context.guardianDir, String(context.issue), 'plan.json'),
     humanNote,
+    priorQa: currentState.last_error_class?.startsWith('qa-') ? {
+      verdict: currentState.qa_verdict_status ?? null,
+      report: currentState.qa_verdict_report ?? null,
+      supervisorEvidence: currentState.supervisor_test_evidence ?? null,
+    } : null,
     round: currentState.processing_round ?? 1,
     plan: context.readArtifactPair(context.guardianDir, context.issue).plan,
     mode: context.investigationMode,
@@ -212,6 +217,7 @@ export async function runQaStage(context) {
     verified_at: new Date().toISOString(),
     report_hash: `sha256:${createHash('sha256').update(qaRun.report ?? '', 'utf8').digest('hex')}`,
     evidence_summary: qaRun.report ?? null,
+    supervisor_evidence: supervisorEvidence.evidence ?? supervisorEvidence,
     plan_hash: afterFix.plan_hash ?? null,
     plan_revision: afterFix.plan_revision ?? null,
   };
@@ -237,13 +243,82 @@ export async function runQaStage(context) {
       handed_back_reason: null,
       last_phase: 'qa-failed-retry',
       last_error_class: 'qa-failed-retry',
-      qa_verdict_status: qaVerdict.status,
-      qa_verdict_hash: qaVerdict.report_hash,
+       qa_verdict_status: qaVerdict.status,
+       qa_verdict_hash: qaVerdict.report_hash,
+       qa_verdict_report: qaVerdict.evidence_summary,
+       supervisor_test_evidence: qaVerdict.supervisor_evidence,
     }, { touch: false });
     return { stop: false, status: qaRun.status, qaVerdict };
   }
 
+  if (qaRun.verdict === 'BLOCKED') {
+    const blockerClass = blockerClassFromReport(qaRun.report);
+    if (blockerClass === 'missing-supervisor-evidence') {
+      context.writeState(context.guardianDir, {
+        ...qaRun.state,
+        state: STATES.VERIFYING,
+        last_phase: 'qa-evidence-retry',
+        last_error_class: 'qa-missing-supervisor-evidence',
+        qa_verdict_status: qaVerdict.status,
+        qa_verdict_hash: qaVerdict.report_hash,
+        qa_verdict_report: qaVerdict.evidence_summary,
+        supervisor_test_evidence: qaVerdict.supervisor_evidence,
+      }, { touch: false });
+      return { stop: false, status: qaRun.status, qaVerdict };
+    }
+    if (blockerClass === 'code-actionable') {
+      const fixRounds = afterFix.fix_rounds ?? 0;
+      if (fixRounds >= MAX_FIX_ROUNDS) {
+        context.writeState(context.guardianDir, {
+          ...qaRun.state,
+          state: STATES.HANDED_BACK,
+          handed_back_reason: 'fix-rounds-exceeded',
+          last_phase: 'qa-blocked-code-actionable',
+          last_error_class: 'qa-blocked-code-actionable',
+        }, { touch: false });
+        return { stop: true, status: qaRun.status };
+      }
+      context.writeState(context.guardianDir, {
+        ...qaRun.state,
+        state: STATES.FIXING,
+        fix_rounds: fixRounds + 1,
+        handed_back_reason: null,
+        last_phase: 'qa-blocked-code-actionable-retry',
+        last_error_class: 'qa-blocked-code-actionable-retry',
+        qa_verdict_status: qaVerdict.status,
+        qa_verdict_hash: qaVerdict.report_hash,
+        qa_verdict_report: qaVerdict.evidence_summary,
+        supervisor_test_evidence: qaVerdict.supervisor_evidence,
+      }, { touch: false });
+      return { stop: false, status: qaRun.status, qaVerdict };
+    }
+    context.writeState(context.guardianDir, {
+      ...qaRun.state,
+      state: STATES.HANDED_BACK,
+      handed_back_reason: 'environment-blocked',
+      last_phase: 'qa-blocked',
+      last_error_class: 'qa-blocked-environment',
+    }, { touch: false });
+    return { stop: true, status: qaRun.status };
+  }
+
+  if (qaRun.verdict === 'NEEDS_HUMAN_REVIEW') {
+    context.writeState(context.guardianDir, {
+      ...qaRun.state,
+      state: STATES.HANDED_BACK,
+      handed_back_reason: 'needs-clarification',
+      last_phase: 'qa-needs-human-review',
+      last_error_class: 'qa-needs-human-review',
+    }, { touch: false });
+    return { stop: true, status: qaRun.status };
+  }
+
   return { stop: false, status: qaRun.status, qaVerdict };
+}
+
+function blockerClassFromReport(report) {
+  const match = String(report ?? '').match(/blocker_class\s*:\s*([a-z-]+)/i);
+  return match?.[1]?.toLowerCase() ?? 'environment';
 }
 
 export async function runNotifyStage(context) {

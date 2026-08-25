@@ -96,6 +96,14 @@ export function routeIssue(record, gh, opts) {
     };
   }
 
+  if (state === STATES.FIXING && record.last_error_class === 'qa-missing-supervisor-evidence') {
+    return {
+      action: 'RESUME',
+      reason: 'qa-evidence-retry',
+      toState: STATES.VERIFYING,
+    };
+  }
+
   // 4. GATE_1_WAIT (HIGH only) → consume approve/revise/reject; otherwise keep waiting.
   if (state === STATES.GATE_1_WAIT) {
     const cmd = selectControlCommand(controlEvents, STATES.GATE_1_WAIT);

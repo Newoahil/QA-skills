@@ -85,6 +85,19 @@ test('passes dossier/plan paths and human note as untrusted data in the prompt',
   assert.equal(text.includes('Do not create a PR'), true);
 });
 
+test('retry prompt includes the exact prior QA outcome and Supervisor evidence without creating a session', async () => {
+  const { client, calls } = fakeClient();
+  const state = { opencode: { fixer: { session_id: 'ses_fixer', agent: 'qa-guardian', repo_dir: 'D:/repo', issue: 211, role: 'fixer', permission_policy_version: 2 }, qa: null, specialists: {}, inflight: null } };
+  const prior = { verdict: 'FAIL', report: 'Overall Status: FAIL\n## QA 验收结论\n未通过', supervisorEvidence: { status_diff: { exit_code: 0, stdout: 'diff', stderr: '' }, tests: [{ exit_code: 1, stdout: 'failure', stderr: 'stderr' }] } };
+  await runFixerSession({ client, state, issue: 211, repoDir: 'D:/repo', dossierPath: 'dossier.json', planPath: 'plan.json', round: 2, priorQa: prior });
+  assert.equal(calls.create.length, 0);
+  const text = calls.prompt[0].parts[0].text;
+  assert.match(text, /PRIOR_QA_OUTCOME/);
+  assert.match(text, /Overall Status: FAIL/);
+  assert.match(text, /failure/);
+  assert.match(text, /SUPERVISOR_TEST_EVIDENCE/);
+});
+
 test('SDK fixer reports completion without invoking supervisor finalization before QA', async () => {
   const { client } = fakeClient();
   const calls = [];

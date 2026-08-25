@@ -516,6 +516,40 @@ test('runQaStage on FAIL below the round cap persists a bounded fixer retry', as
   assert.equal(state.last_error_class, 'qa-failed-retry');
 });
 
+test('runQaStage routes code-actionable BLOCKED to a bounded fixer retry with a distinct marker', async () => {
+  let state = { issue: 267, state: STATES.VERIFYING, fix_rounds: 0, branch: 'fix/issue-267', opencode: {} };
+  const { runQaStage } = await import('../../tools/guardian/stage-runner.mjs');
+  const result = await runQaStage({
+    client: {}, issue: 267, repoDir: 'D:/repo', guardianDir: 'D:/repo/.qa/guardian', config: {}, fallbackModels: [], signal: null,
+    issueTitle: 'Fix code', logger: { info: () => {}, warn: () => {} }, readState: () => state, writeState: (_dir, next) => { state = next; },
+    readArtifactPair: () => ({ plan: { test_commands: [['node', '--test', 'tests/guardian/fix.test.mjs']] } }),
+    writeArtifact: () => {}, writeMarkdownArtifact: () => {}, pipeline: { completion: { changedFiles: [], summary: null } },
+    supervisor: { preQaEvidence: () => ({ status: 0, evidence: {} }) }, resolveSessionDeadlineMs: () => 100, resolveModelForRole: () => undefined,
+    runQaSession: async (request) => ({ status: 'ok', state: request.state, verdict: 'BLOCKED', report: 'Overall Status: BLOCKED\nblocker_class: code-actionable' }),
+  });
+
+  assert.equal(result.stop, false);
+  assert.equal(state.state, STATES.FIXING);
+  assert.equal(state.last_error_class, 'qa-blocked-code-actionable-retry');
+});
+
+test('runQaStage hands back environment BLOCKED and NEEDS_HUMAN_REVIEW without active residue', async () => {
+  for (const verdict of ['BLOCKED', 'NEEDS_HUMAN_REVIEW']) {
+    let state = { issue: 268, state: STATES.VERIFYING, fix_rounds: 0, branch: 'fix/issue-268', opencode: {} };
+    const { runQaStage } = await import('../../tools/guardian/stage-runner.mjs');
+    await runQaStage({
+      client: {}, issue: 268, repoDir: 'D:/repo', guardianDir: 'D:/repo/.qa/guardian', config: {}, fallbackModels: [], signal: null,
+      issueTitle: 'Needs review', logger: { info: () => {}, warn: () => {} }, readState: () => state, writeState: (_dir, next) => { state = next; },
+      readArtifactPair: () => ({ plan: { test_commands: [['node', '--test', 'tests/guardian/fix.test.mjs']] } }),
+      writeArtifact: () => {}, writeMarkdownArtifact: () => {}, pipeline: { completion: { changedFiles: [], summary: null } },
+      supervisor: { preQaEvidence: () => ({ status: 0, evidence: {} }) }, resolveSessionDeadlineMs: () => 100, resolveModelForRole: () => undefined,
+      runQaSession: async (request) => ({ status: 'ok', state: request.state, verdict, report: `Overall Status: ${verdict}\nblocker_class: environment` }),
+    });
+    assert.equal(state.state, STATES.HANDED_BACK);
+    assert.equal(state.handed_back_reason, verdict === 'BLOCKED' ? 'environment-blocked' : 'needs-clarification');
+  }
+});
+
 // --- B2 (decision-e8c0d364): executionType -> trusted profile selection ---
 
 import { selectPipelineProfile, SUPPORTED_EXECUTION_TYPES } from '../../tools/guardian/stage-runner.mjs';
