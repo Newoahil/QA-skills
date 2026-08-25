@@ -74,15 +74,53 @@ export async function startGuardianRuntime(options = {}) {
   return { repoDir, controller, wsRuntime, schedulerPromise, shutdown };
 }
 
+/**
+ * Build a signal handler that stops the combined runtime PROMPTLY on Ctrl+C.
+ *
+ * The naive handler (`await runtime.shutdown()` then exit) blocks the process until the current
+ * scheduler tick unwinds — and a tick can be mid-investigation for minutes (specialist prompts have
+ * a 30-minute deadline). During that window Ctrl+C appears to do nothing and the log keeps printing.
+ * This stopper fixes that: the FIRST signal aborts cooperatively and races a bounded shutdown, then
+ * exits regardless of whether the in-flight tick has fully unwound; a SECOND signal force-exits.
+ */
+export function createSignalStopper({
+  controller,
+  getRuntime,
+  exit = (code) => process.exit(code),
+  logger = createLogger({ component: 'runtime' }),
+  timeoutMs = 8000,
+  setTimeoutFn = setTimeout,
+  clearTimeoutFn = clearTimeout,
+} = {}) {
+  let stopping = false;
+  return async function handleSignal(signal) {
+    if (stopping) {
+      logger.warn('shutdown.force', { signal: signal ?? null });
+      exit(1);
+      return;
+    }
+    stopping = true;
+    logger.info('shutdown.begin', { signal: signal ?? null, timeout_ms: timeoutMs });
+    controller.abort();
+    const runtime = typeof getRuntime === 'function' ? getRuntime() : undefined;
+    let timer = null;
+    const bounded = new Promise((resolve) => { timer = setTimeoutFn(() => resolve('timeout'), timeoutMs); });
+    if (timer && typeof timer.unref === 'function') timer.unref();
+    const graceful = Promise.resolve()
+      .then(() => runtime?.shutdown?.())
+      .then(() => 'graceful', () => 'graceful');
+    const outcome = await Promise.race([graceful, bounded]);
+    clearTimeoutFn(timer);
+    logger.info('shutdown.done', { outcome });
+    exit(0);
+  };
+}
+
 if (process.argv[1]?.endsWith('guardian-runtime.mjs')) {
   const controller = new AbortController();
   let runtime;
-  const stop = async () => {
-    controller.abort();
-    await runtime?.shutdown?.();
-    process.exit(0);
-  };
-  for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, stop);
+  const stop = createSignalStopper({ controller, getRuntime: () => runtime });
+  for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => { stop(sig); });
   startGuardianRuntime({ controller }).then((started) => { runtime = started; }).catch((error) => {
     const message = error instanceof Error ? error.message : 'startup failed';
     createLogger({ component: 'runtime' }).error('startup.failed', { error_message: message });
