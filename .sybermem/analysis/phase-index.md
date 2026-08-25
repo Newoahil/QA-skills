@@ -2,7 +2,7 @@
 
 ## Analysis Progress
 - status: analyzed
-- last_analysis_at: 2026-08-25T20:48:21+08:00
+- last_analysis_at: 2026-08-25T21:03:17+08:00
 - last_record_boundary: none
 - last_git_boundary: none
 - pending_new_records: none
@@ -217,18 +217,6 @@
   - change-e7c66175f6064aa2af79e23ac1d22ff9
 - confirmed_at: 2026-08-25
 
-### Phase: Phase digests
-- phase_id: phase-011
-- status: confirmed
-- lifecycle: active
-- covered_records:
-  - digest-001
-  - digest-002
-  - digest-003
-  - digest-004
-  - digest-005
-- confirmed_at: 2026-08-25
-
 ## Coverage Map
 - change-559f7f25f2834bb2b50e4b7bcf9a3bfb -> phase-001
 - change-494b8d8a5ef14682bd96aeefdd945693 -> phase-001
@@ -365,8 +353,3 @@
 - decision-f177ceabeded4a5193afa0f2b58b6c13 -> phase-009
 - decision-038091b9b1ca447db6c8a2d2a86719b4 -> phase-010
 - change-e7c66175f6064aa2af79e23ac1d22ff9 -> phase-010
-- digest-001 -> phase-011
-- digest-002 -> phase-011
-- digest-003 -> phase-011
-- digest-004 -> phase-011
-- digest-005 -> phase-011
