@@ -77,13 +77,14 @@ function validateProjectPipelineManifest(manifest) {
   if (!Array.isArray(manifest.stages)) throw new Error('pipeline manifest file stages must be an array');
 }
 
-export async function runPipeline({ stages = loadPipelineManifest(), context, runners = RUNNERS }) {
+export async function runPipeline({ stages, context, runners = RUNNERS }) {
   const profile = selectExecutionProfile(context);
   if (!profile.supported) {
     return Object.freeze({ completion: null, qaVerdict: null, stopped: true, status: profile.reason });
   }
+  const pipelineStages = stages ?? profile.stages;
   const state = { completion: null, qaVerdict: null };
-  for (const stage of stages) {
+  for (const stage of pipelineStages) {
     const runner = runners[stage.runner];
     if (!runner) throw new Error(`unknown stage runner: ${stage.runner}`);
     const result = await runner({ ...context, pipeline: state, stage });
@@ -99,7 +100,7 @@ function selectExecutionProfile(context = {}) {
   if (source !== 'github') {
     return Object.freeze({ supported: false, reason: `unsupported-source:${source}` });
   }
-  return Object.freeze({ supported: true, executionType: 'coding' });
+  return selectPipelineProfile(context.executionSpec?.executionType, { repoDir: context.repoDir });
 }
 
 export async function runFixerStage(context) {

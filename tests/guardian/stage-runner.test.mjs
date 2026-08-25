@@ -104,6 +104,65 @@ test('runPipeline fails closed for a non-GitHub TaskRef before any stage runner 
   assert.equal(runnerCalls, 0);
 });
 
+test('runPipeline blocks a GitHub research TaskRef before any stage runner or effect', async () => {
+  let runnerCalls = 0;
+
+  // Given: an otherwise valid GitHub TaskRef declares a non-coding execution profile.
+  const context = stageRunnerContext({
+    taskRef: { source: 'github', taskId: '42', displayId: '#42' },
+    executionSpec: { executionType: 'research' },
+    repoDir: 'D:/repo',
+  });
+
+  // When: the pipeline runs.
+  const result = await runPipeline({
+    stages: loadPipelineManifest(),
+    context,
+    runners: {
+      runFixerStage: async () => { runnerCalls += 1; return {}; },
+      runQaStage: async () => { runnerCalls += 1; return {}; },
+      runNotifyStage: async () => { runnerCalls += 1; return {}; },
+    },
+  });
+
+  // Then: unsupported research work must fail closed before any runner executes.
+  assert.equal(result.stopped, true);
+  assert.equal(result.status, 'unsupported-execution-type:research');
+  assert.equal(runnerCalls, 0);
+});
+
+test('runPipeline preserves the existing coding pipeline path for nullish and coding executionType', async (t) => {
+  for (const executionType of [null, undefined, 'coding']) {
+    await t.test(`executionType=${String(executionType)}`, async () => {
+      const calls = [];
+      const stages = loadPipelineManifest([{ ...BUILTIN_PIPELINE_MANIFEST[0], id: `custom-${String(executionType)}`, runner: 'runCustomStage' }], {
+        runCustomStage: async ({ stage }) => {
+          calls.push(stage.id);
+          return { stop: false, status: 'ok' };
+        },
+      });
+
+      const result = await runPipeline({
+        stages,
+        context: stageRunnerContext({
+          taskRef: { source: 'github', taskId: '42', displayId: '#42' },
+          executionSpec: { executionType },
+          repoDir: 'D:/repo',
+        }),
+        runners: {
+          runCustomStage: async ({ stage }) => {
+            calls.push(stage.id);
+            return { stop: false, status: 'ok' };
+          },
+        },
+      });
+
+      assert.equal(result.stopped, false);
+      assert.deepEqual(calls, [`custom-${String(executionType)}`]);
+    });
+  }
+});
+
 test('loadPipelineManifest rejects malformed stages', () => {
   const valid = BUILTIN_PIPELINE_MANIFEST[0];
 
