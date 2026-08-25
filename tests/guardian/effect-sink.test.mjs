@@ -87,6 +87,35 @@ test('GitHub sink rejects unauthorized effects before IO', () => {
   assert.deepEqual(calls, []);
 });
 
+test('GitHub sink rejects reserved PM refs before IO dispatch', () => {
+  const calls = [];
+  const sink = createGitHubEffectSink({
+    repoDir: 'D:/repo',
+    io: {
+      ghComment: () => calls.push('comment'),
+      curlPost: () => calls.push('webhook'),
+      projectLabels: () => calls.push('label'),
+      createPullRequest: () => calls.push('pr'),
+    },
+  });
+
+  let thrown = null;
+  try {
+    sink.emit({
+      actor: ACTORS.SUPERVISOR,
+      kind: EFFECTS.FACT_COMMENT,
+      ref: { source: 'pm', taskId: 'result-42', displayId: 'result-42' },
+      idempotencyKey: 'comment:pm:result-42',
+      payload: { issue: 42, text: 'note' },
+    });
+  } catch (error) {
+    thrown = error;
+  }
+
+  assert.deepEqual(calls, []);
+  assert.match(thrown?.message ?? '', /pm-source-reserved/);
+});
+
 test('GitHub sink dispatches allowed effect payloads', () => {
   const calls = [];
   const sink = createGitHubEffectSink({

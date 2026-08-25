@@ -104,6 +104,27 @@ test('runPipeline fails closed for a non-GitHub TaskRef before any stage runner 
   assert.equal(runnerCalls, 0);
 });
 
+test('runPipeline reserves a PM TaskRef before any stage runner or effect', async () => {
+  let runnerCalls = 0;
+  const result = await runPipeline({
+    stages: loadPipelineManifest(),
+    context: stageRunnerContext({
+      taskRef: { source: 'pm', taskId: 'result-42', displayId: 'result-42' },
+      executionSpec: { executionType: 'coding' },
+      repoDir: 'D:/repo',
+    }),
+    runners: {
+      runFixerStage: async () => { runnerCalls += 1; return {}; },
+      runQaStage: async () => { runnerCalls += 1; return {}; },
+      runNotifyStage: async () => { runnerCalls += 1; return {}; },
+    },
+  });
+
+  assert.equal(result.stopped, true);
+  assert.equal(result.status, 'pm-source-reserved');
+  assert.equal(runnerCalls, 0);
+});
+
 test('runPipeline blocks a GitHub research TaskRef before any stage runner or effect', async () => {
   let runnerCalls = 0;
 

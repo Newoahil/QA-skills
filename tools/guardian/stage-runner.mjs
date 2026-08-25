@@ -97,6 +97,9 @@ export async function runPipeline({ stages, context, runners = RUNNERS }) {
 
 function selectExecutionProfile(context = {}) {
   const source = context.taskRef?.source ?? 'github';
+  if (source === 'pm') {
+    return Object.freeze({ supported: false, reason: 'pm-source-reserved' });
+  }
   if (source !== 'github') {
     return Object.freeze({ supported: false, reason: `unsupported-source:${source}` });
   }

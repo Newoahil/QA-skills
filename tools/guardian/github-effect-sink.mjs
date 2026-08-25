@@ -14,8 +14,16 @@ export function createGitHubEffectSink({ repoDir, io = {} }) {
 
   return createEffectSink((descriptor) => {
     assertActorMayPerform(descriptor.actor, descriptor.kind);
+    assertGitHubTaskRef(descriptor.ref);
     return normalizeDispatchResult(dispatchGitHubEffect({ repoDir, descriptor, ghComment, curlPost, labelProjector, prCreator }));
   });
+}
+
+function assertGitHubTaskRef(ref) {
+  const source = ref?.source ?? 'github';
+  if (source === 'github') return;
+  if (source === 'pm') throw new Error('pm-source-reserved');
+  throw new Error(`unsupported-source:${String(source)}`);
 }
 
 function normalizeDispatchResult(result) {
