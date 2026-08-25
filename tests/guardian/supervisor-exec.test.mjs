@@ -229,3 +229,53 @@ test('ensure-fix-branch creates only when switching an existing branch fails', (
     ['switch', '--create', 'fix/issue-211'],
   ]);
 });
+
+test('prepare-fix-branch refreshes a clean stale branch from the latest origin base', () => {
+  const calls = [];
+  const run = (file, argv, options) => {
+    calls.push({ file, argv, options });
+    if (argv[0] === 'status') return { status: 0, stdout: '', stderr: '' };
+    if (argv[0] === 'branch') return { status: 0, stdout: 'dev\n', stderr: '' };
+    if (argv[0] === 'rev-parse' && argv[2] === 'fix/issue-212') return { status: 0, stdout: 'branch-sha\n', stderr: '' };
+    if (argv[0] === 'rev-parse' && argv[2] === 'origin/dev') return { status: 0, stdout: 'base-sha\n', stderr: '' };
+    if (argv[0] === 'merge-base') return { status: 0, stdout: 'old-base-sha\n', stderr: '' };
+    return { status: 0, stdout: '', stderr: '' };
+  };
+  const executor = createSupervisorExecutor({ repoDir: 'D:/repo', run });
+
+  const result = executor.prepareFixBranch(212, { baseBranch: 'dev' });
+
+  assert.equal(result.status, 0);
+  assert.equal(result.code, 'stale-clean-branch-refreshed');
+  assert.deepEqual(calls.map((call) => call.argv), [
+    ['fetch', 'origin', 'dev'],
+    ['status', '--porcelain=v1'],
+    ['branch', '--show-current'],
+    ['rev-parse', '--verify', 'fix/issue-212'],
+    ['rev-parse', '--verify', 'origin/dev'],
+    ['merge-base', 'fix/issue-212', 'origin/dev'],
+    ['switch', 'fix/issue-212'],
+    ['reset', '--hard', 'origin/dev'],
+  ]);
+});
+
+test('prepare-fix-branch fails closed for dirty stale work and performs no branch mutation', () => {
+  const calls = [];
+  const run = (file, argv, options) => {
+    calls.push({ file, argv, options });
+    if (argv[0] === 'status') return { status: 0, stdout: ' M src/fix.mjs\n', stderr: '' };
+    return { status: 0, stdout: 'dev\n', stderr: '' };
+  };
+  const executor = createSupervisorExecutor({ repoDir: 'D:/repo', run });
+
+  const result = executor.prepareFixBranch(213, { baseBranch: 'dev' });
+
+  assert.equal(result.status, 1);
+  assert.equal(result.code, 'stale-dirty-fix-branch');
+  assert.equal(result.recoverable, true);
+  assert.match(result.stderr, /dirty|recover/i);
+  assert.deepEqual(calls.map((call) => call.argv), [
+    ['fetch', 'origin', 'dev'],
+    ['status', '--porcelain=v1'],
+  ]);
+});

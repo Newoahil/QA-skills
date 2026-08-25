@@ -121,8 +121,55 @@ export function createSupervisorExecutor({ repoDir, run = spawnSync } = {}) {
     }
   }
 
-  function prepareFixBranch(issue) {
-    return exec({ operation: 'ensure-fix-branch', issue });
+  function prepareFixBranch(issue, { baseBranch = 'dev' } = {}) {
+    return prepareFixBranchFromBase(issue, baseBranch);
+  }
+
+  function prepareFixBranchFromBase(issue, baseBranch = 'dev') {
+    const branch = branchName(issue);
+    const base = repoRelativePath(baseBranch, 'base branch');
+    const fetched = git(['fetch', 'origin', base]);
+    if (fetched.status !== 0) return { ...fetched, code: 'base-fetch-failed', recoverable: true };
+
+    const status = git(['status', '--porcelain=v1']);
+    if (status.status !== 0) return { ...status, code: 'worktree-status-failed', recoverable: true };
+    if (status.stdout.trim() !== '') {
+      return {
+        status: 1,
+        stdout: status.stdout,
+        stderr: `cannot prepare ${branch}: dirty worktree; recover by cleaning or preserving changes before retry`,
+        code: 'stale-dirty-fix-branch',
+        recoverable: true,
+      };
+    }
+
+    const current = git(['branch', '--show-current']);
+    if (current.status !== 0) return { ...current, code: 'current-branch-failed', recoverable: true };
+    const existing = git(['rev-parse', '--verify', branch]);
+    if (existing.status !== 0) {
+      const created = git(['switch', '--create', branch, `origin/${base}`]);
+      return created.status === 0
+        ? { ...created, code: 'new-fix-branch-created', base_branch: base, branch }
+        : { ...created, code: 'fix-branch-create-failed', recoverable: true };
+    }
+
+    const originBase = git(['rev-parse', '--verify', `origin/${base}`]);
+    if (originBase.status !== 0) return { ...originBase, code: 'base-ref-missing', recoverable: true };
+    const mergeBase = git(['merge-base', branch, `origin/${base}`]);
+    if (mergeBase.status !== 0) return { ...mergeBase, code: 'base-ancestry-check-failed', recoverable: true };
+    if (mergeBase.stdout.trim() === originBase.stdout.trim()) {
+      const switched = current.stdout.trim() === branch ? current : git(['switch', branch]);
+      return switched.status === 0
+        ? { ...switched, code: 'fix-branch-current', base_branch: base, branch }
+        : { ...switched, code: 'fix-branch-switch-failed', recoverable: true };
+    }
+
+    const switched = current.stdout.trim() === branch ? current : git(['switch', branch]);
+    if (switched.status !== 0) return { ...switched, code: 'fix-branch-switch-failed', recoverable: true };
+    const reset = git(['reset', '--hard', `origin/${base}`]);
+    return reset.status === 0
+      ? { ...reset, code: 'stale-clean-branch-refreshed', base_branch: base, branch }
+      : { ...reset, code: 'stale-clean-branch-refresh-failed', recoverable: true };
   }
 
   // Parse `git status --porcelain=v1 -z` into changed paths (both staged and unstaged/untracked).
@@ -201,5 +248,5 @@ export function createSupervisorExecutor({ repoDir, run = spawnSync } = {}) {
     return { branch, evidence, tests, commit, push };
   }
 
-  return Object.freeze({ exec, prepareFixBranch, finalizeFix });
+  return Object.freeze({ exec, prepareFixBranch, prepareFixBranchFromBase, finalizeFix });
 }

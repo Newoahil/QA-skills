@@ -382,6 +382,24 @@ test('runFixerStage hands back an unverified completion instead of leaving a fre
   assert.equal(warnings.at(-1).fields.reason, 'changed-file-not-in-plan');
 });
 
+test('runFixerStage passes configured base branch to Supervisor branch preparation', async () => {
+  const requests = [];
+  let state = { issue: 265, state: STATES.FIXING, opencode: {} };
+  const { runFixerStage } = await import('../../tools/guardian/stage-runner.mjs');
+  const result = await runFixerStage({
+    client: {}, issue: 265, repoDir: 'D:/repo', guardianDir: 'D:/repo/.qa/guardian', command: null,
+    config: { base_branch: 'main' }, investigationMode: 'enforced', fallbackModels: [], signal: null,
+    supervisor: { prepareFixBranch: (issue, options) => { requests.push({ issue, options }); return { status: 0 }; } },
+    logger: { info: () => {}, warn: () => {} }, readState: () => state, writeState: (_dir, next) => { state = next; },
+    readArtifactPair: () => ({ plan: { affected_files: ['src/a.mjs'] } }), writeMarkdownArtifact: () => {},
+    resolveSessionDeadlineMs: () => 100, resolveModelForRole: () => undefined,
+    runFixerSession: async (request) => ({ status: 'ok', state: request.state, completion: { changedFiles: ['src/a.mjs'], summary: 'fixed' } }),
+  });
+
+  assert.equal(result.stop, false);
+  assert.deepEqual(requests, [{ issue: 265, options: { baseBranch: 'main' } }]);
+});
+
 test('runQaStage on FAIL at the round cap hands back explicitly instead of leaving an active state', async () => {
   let state = {
     issue: 264,

@@ -118,7 +118,7 @@ export async function runFixerStage(context) {
         human_note: context.command.data,
       }
     : null;
-  const branchPreparation = context.supervisor.prepareFixBranch(context.issue);
+  const branchPreparation = context.supervisor.prepareFixBranch(context.issue, { baseBranch: context.config?.base_branch ?? 'dev' });
   if (branchPreparation.status !== 0) throw new Error(`prepare fix branch failed: ${branchPreparation.stderr || 'unknown'}`);
   context.logger.info('fixer.begin', { issue: context.issue, round: currentState.processing_round ?? 1 });
   const fixerRun = await context.runFixerSession({
