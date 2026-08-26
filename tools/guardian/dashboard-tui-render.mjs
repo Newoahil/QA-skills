@@ -1,6 +1,7 @@
 import { TUI_TABS } from './dashboard-tui-input.mjs';
 import { stateFilterLabel } from './dashboard-tui-model.mjs';
 import { fitLine } from './dashboard-tui-text.mjs';
+import { nextActionHint } from './state-action-hints.mjs';
 
 const ANSI = Object.freeze({
   reset: '\u001b[0m',
@@ -60,7 +61,7 @@ function renderQueueLines(snapshot) {
   const records = snapshot?.records ?? [];
   if (records.length === 0) return ['暂无 Guardian 议题。'];
   return records.map((record) => {
-    const base = `#${record.issue} ${record.state} ${record.risk ?? '-'} ${record.branch ?? '-'}`;
+    const base = `#${record.issue} ${record.state} 下一步:${nextActionHint(record).headline}`;
     return Number(record.issue) === Number(snapshot.selectedIssue) ? `${ANSI.inverse}${base}${ANSI.reset}` : base;
   });
 }
@@ -77,6 +78,7 @@ function helpLines(ui) {
     '  a 切换自动刷新',
     '  t 切换队列筛选（关注中 / 处理中 / 等待人工 / 全部历史）',
     '  F transcript 完整模式',
+    '  [ / ] 切换实时会话角色（auto/fixer/qa/专家）',
     '  G 跳到日志末尾并 follow',
     '  p 暂停日志 follow',
     '  Tab 循环切焦点，PgUp/PgDn/Home/End 支持滚动',
@@ -84,6 +86,7 @@ function helpLines(ui) {
     `当前自动刷新: ${ui.autoRefresh ? `${ui.refreshSeconds} 秒` : '关闭'}`,
     `当前队列筛选: ${stateFilterLabel(ui.stateFilter)}（默认隐藏 DONE / 交回等历史，可按 t 切到全部历史）`,
     `Transcript 模式: ${ui.transcriptFull ? '完整' : '截断'}`,
+    `实时会话角色: ${ui.liveRole ?? 'auto'}`,
   ];
 }
 
@@ -94,7 +97,7 @@ function renderHeader(snapshot, ui, viewport) {
     .join('  ');
   return [
     fitLine(`${ANSI.bold}QA Guardian 单终端只读 TUI${ANSI.reset}  ${repo}`, viewport.columns),
-    fitLine(`焦点=${ui.focus}  筛选=${stateFilterLabel(ui.stateFilter)}  自动刷新=${ui.autoRefresh ? `${ui.refreshSeconds}s` : 'off'}  选中=#${snapshot.selectedIssue ?? '-'}  标签=${tabs}`, viewport.columns),
+    fitLine(`焦点=${ui.focus}  筛选=${stateFilterLabel(ui.stateFilter)}  自动刷新=${ui.autoRefresh ? `${ui.refreshSeconds}s` : 'off'}  选中=#${snapshot.selectedIssue ?? '-'}  实时=${ui.liveRole ?? 'auto'}  标签=${tabs}`, viewport.columns),
   ];
 }
 

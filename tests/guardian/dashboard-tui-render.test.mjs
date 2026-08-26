@@ -85,6 +85,7 @@ test('dashboard-tui renderer shows three-pane layout with Chinese headers', () =
   assert.match(frame, /QA Guardian 单终端只读 TUI/);
   assert.match(frame, /议题队列/);
   assert.match(frame, /选中议题详情/);
+  assert.match(frame, /下一步:等待 fixer/);
   assert.match(frame, /1 摘要/);
   assertFrameFits(frame, 140);
 });
