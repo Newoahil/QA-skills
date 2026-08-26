@@ -47,6 +47,25 @@ test('fresh active issue suppresses other runnable issues even without a lock fi
   assert.equal(plan.toRun, null);
 });
 
+test('qa-failed-retry is prioritized over approved-pre-fixer-recovery regardless of array position', () => {
+  const decisions = [
+    d(325, 'RESUME', { reason: 'approved-pre-fixer-recovery' }),
+    d(324, 'RESUME', { reason: 'qa-failed-retry' }),
+  ];
+  const plan = planTick({ decisions, lock: null, leaseMs: LEASE, now: NOW });
+
+  assert.equal(plan.toRun.issue, 324);
+  assert.equal(plan.toRun.reason, 'qa-failed-retry');
+});
+
+test('approved-pre-fixer-recovery still runs when no qa-failed-retry is runnable', () => {
+  const decisions = [d(325, 'RESUME', { reason: 'approved-pre-fixer-recovery' })];
+  const plan = planTick({ decisions, lock: null, leaseMs: LEASE, now: NOW });
+
+  assert.equal(plan.toRun.issue, 325);
+  assert.equal(plan.toRun.reason, 'approved-pre-fixer-recovery');
+});
+
 test('expired lock is treated as free → a run may start', () => {
   const decisions = [d(1, 'RESUME')];
   const plan = planTick({ decisions, lock: { pid: 9, acquired_at: NOW - LEASE - 1 }, leaseMs: LEASE, now: NOW });

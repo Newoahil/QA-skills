@@ -100,8 +100,10 @@ export function planTick(args) {
     return { toRun: null, lockBusy: false, activeIssue, notify };
   }
 
-  // N=1: pick the FIRST runnable decision in the given order (caller controls ordering, e.g.
-  // by issue number / updatedAt). Deterministic single selection.
-  const toRun = decisions.find((d) => RUNNABLE_ACTIONS.includes(d.action)) ?? null;
+  // N=1: prefer in-loop QA re-fixes over other runnable work; within the same priority,
+  // pick the first decision in caller-provided order.
+  const toRun = decisions.find((d) => RUNNABLE_ACTIONS.includes(d.action) && d.reason === 'qa-failed-retry')
+    ?? decisions.find((d) => RUNNABLE_ACTIONS.includes(d.action))
+    ?? null;
   return { toRun, lockBusy: false, activeIssue: null, notify };
 }
