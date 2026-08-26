@@ -152,6 +152,17 @@ test('scheduler launcher allows dirty recovery for changed-file-not-in-plan hand
   assert.match(controlFunction, /Select-Object -Unique/);
 });
 
+test('scheduler launcher allows plan-scope recovery after router rewrites state to investigating', () => {
+  const text = readFileSync('tools/guardian/scheduler-start.ps1', 'utf8');
+  const controlFunction = text.slice(text.indexOf('function Ensure-ControlWorktree'), text.indexOf('function Ensure-QaSnapshot'));
+  assert.match(controlFunction, /\$recoverablePlanScopeInvestigation = \[string\]\$state\.state -eq 'INVESTIGATING'/);
+  assert.match(controlFunction, /\[string\]\$state\.last_phase -eq 'plan-scope-recovery'/);
+  assert.match(controlFunction, /\[string\]\$state\.opencode\.fixer\.last_error -eq 'changed-file-not-in-plan'/);
+  assert.match(controlFunction, /\[string\]\$state\.gate_1_approved_plan_hash -eq \[string\]\$state\.plan_hash/);
+  assert.match(controlFunction, /\[string\]\$state\.gate_1_approved_plan_revision -eq \[string\]\$state\.plan_revision/);
+  assert.match(controlFunction, /-and -not \$recoverablePlanScopeInvestigation/);
+});
+
 test('scheduler launcher expands untracked directories before matching dirty recovery paths', () => {
   const text = readFileSync('tools/guardian/scheduler-start.ps1', 'utf8');
   const controlFunction = text.slice(text.indexOf('function Ensure-ControlWorktree'), text.indexOf('function Ensure-QaSnapshot'));

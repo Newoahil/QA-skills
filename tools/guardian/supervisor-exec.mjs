@@ -100,7 +100,7 @@ export function createSupervisorExecutor({ repoDir, run = spawnSync } = {}) {
         return { ...diff, stdout: `${status.stdout}${diff.stdout}` };
       }
       case 'staged-files': return git(['diff', '--cached', '--name-only']);
-      case 'worktree-files': return git(['status', '--porcelain=v1', '-z']);
+      case 'worktree-files': return git(['status', '--porcelain=v1', '-z', '-uall']);
       case 'ensure-fix-branch': {
         const branch = branchName(request.issue);
         const current = git(['branch', '--show-current']);

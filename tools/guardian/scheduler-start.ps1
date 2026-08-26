@@ -397,7 +397,12 @@ function Ensure-ControlWorktree([string]$SourceRepo, [string]$Destination, [stri
   $recoverablePlanScopeHandback = [string]$state.state -eq 'HANDED_BACK' -and
     [string]$state.last_error_class -eq 'fixer-completion-unverified' -and
     [string]$state.opencode.fixer.last_error -eq 'changed-file-not-in-plan'
-  if ((@('GATE_1_WAIT', 'FIXING', 'VERIFYING', 'GATE_2_WAIT') -notcontains [string]$state.state) -and -not $recoverablePlanScopeHandback) {
+  $recoverablePlanScopeInvestigation = [string]$state.state -eq 'INVESTIGATING' -and
+    [string]$state.last_phase -eq 'plan-scope-recovery' -and
+    [string]$state.opencode.fixer.last_error -eq 'changed-file-not-in-plan' -and
+    [string]$state.gate_1_approved_plan_hash -eq [string]$state.plan_hash -and
+    [string]$state.gate_1_approved_plan_revision -eq [string]$state.plan_revision
+  if ((@('GATE_1_WAIT', 'FIXING', 'VERIFYING', 'GATE_2_WAIT') -notcontains [string]$state.state) -and -not $recoverablePlanScopeHandback -and -not $recoverablePlanScopeInvestigation) {
     throw "control worktree 存在计划外工作区修改：issue #$issue 当前状态 $($state.state) 不允许恢复 dirty fixer，已停止：$Destination"
   }
   $plan = Read-JsonUtf8 $planPath

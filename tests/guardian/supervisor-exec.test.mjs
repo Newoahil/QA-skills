@@ -42,6 +42,16 @@ test('current branch and status diff use canonical cwd, shell false, and capture
   assert.deepEqual(calls[2].argv, ['diff', '--']);
 });
 
+test('worktree-files expands untracked directories during finalization isolation checks', () => {
+  const calls = [];
+  const executor = createSupervisorExecutor({ repoDir: 'D:/repo', run: fakeRun(calls, { status: 0, stdout: '', stderr: '' }) });
+
+  const result = executor.exec({ operation: 'worktree-files' });
+
+  assert.equal(result.status, 0);
+  assert.deepEqual(calls[0].argv, ['status', '--porcelain=v1', '-z', '-uall']);
+});
+
 test('validated test commands accept only scoped node test argv and reject wrappers/network/git writes', () => {
   assert.deepEqual(parseValidatedTestPlan([['node', '--test', 'tests/guardian/foo.test.mjs']]), [
     ['node', '--test', 'tests/guardian/foo.test.mjs'],
