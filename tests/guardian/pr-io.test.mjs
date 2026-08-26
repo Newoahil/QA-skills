@@ -6,12 +6,16 @@ import { ACTORS } from '../../tools/guardian/actor-routing.mjs';
 
 test('createPullRequest uses shell-free gh argv and returns URL', () => {
   let captured;
+  const calls = [];
   const url = createPullRequest({ actor: ACTORS.SUPERVISOR, repoDir: 'D:/repo', head: 'fix/issue-1', base: 'dev', title: '修复', body: '正文', run: (_cmd, args, opts) => {
+    calls.push(args);
+    if (args[0] === 'pr' && args[1] === 'list') return { status: 0, stdout: '[]', stderr: '' };
     const bodyFile = args[args.indexOf('--body-file') + 1];
     captured = { args, opts, body: readFileSync(bodyFile, 'utf8'), existsDuringRun: existsSync(bodyFile) };
     return { status: 0, stdout: 'https://github/pr/1\n', stderr: '' };
   } });
   assert.equal(url, 'https://github/pr/1');
+  assert.deepEqual(calls[0], ['pr', 'list', '--head', 'fix/issue-1', '--base', 'dev', '--state', 'open', '--json', 'number,url,headRefName,baseRefName,state,isDraft']);
   assert.equal(captured.opts.shell, false);
   assert.equal(captured.args.includes('fix/issue-1'), true);
   assert.equal(captured.args.includes('--body-file'), true);
@@ -34,7 +38,50 @@ test('currentBranch reads the checked-out branch without a shell', () => {
 });
 
 test('createPullRequest throws on gh failure', () => {
-  assert.throws(() => createPullRequest({ actor: ACTORS.SUPERVISOR, repoDir: 'D:/repo', head: 'fix/x', base: 'dev', title: 'x', body: 'x', run: () => ({ status: 1, stderr: 'forbidden' }) }), /forbidden/);
+  assert.throws(() => createPullRequest({ actor: ACTORS.SUPERVISOR, repoDir: 'D:/repo', head: 'fix/x', base: 'dev', title: 'x', body: 'x', run: (_cmd, args) => args[1] === 'list' ? { status: 0, stdout: '[]', stderr: '' } : { status: 1, stderr: 'forbidden' } }), /forbidden/);
+});
+
+test('createPullRequest reuses an existing matching head/base PR before creating', () => {
+  const calls = [];
+  const url = createPullRequest({
+    actor: ACTORS.SUPERVISOR,
+    repoDir: 'D:/repo',
+    head: 'fix/issue-1',
+    base: 'dev',
+    title: '修复',
+    body: '正文',
+    run: (_cmd, args) => {
+      calls.push(args);
+      return { status: 0, stdout: JSON.stringify([{ number: 5, url: 'https://github/pr/5', headRefName: 'fix/issue-1', baseRefName: 'dev' }]), stderr: '' };
+    },
+  });
+
+  assert.equal(url, 'https://github/pr/5');
+  assert.equal(calls.length, 1);
+});
+
+test('createPullRequest recovers from duplicate create by re-querying the matching PR', () => {
+  let listCalls = 0;
+  const url = createPullRequest({
+    actor: ACTORS.SUPERVISOR,
+    repoDir: 'D:/repo',
+    head: 'fix/issue-1',
+    base: 'dev',
+    title: '修复',
+    body: '正文',
+    run: (_cmd, args) => {
+      if (args[0] === 'pr' && args[1] === 'list') {
+        listCalls += 1;
+        return listCalls === 1
+          ? { status: 0, stdout: '[]', stderr: '' }
+          : { status: 0, stdout: JSON.stringify([{ number: 6, url: 'https://github/pr/6', headRefName: 'fix/issue-1', baseRefName: 'dev' }]), stderr: '' };
+      }
+      return { status: 1, stdout: '', stderr: 'a pull request already exists for fix/issue-1' };
+    },
+  });
+
+  assert.equal(url, 'https://github/pr/6');
+  assert.equal(listCalls, 2);
 });
 
 test('createPullRequest rejects QA, fixer, and unknown actors before gh', () => {

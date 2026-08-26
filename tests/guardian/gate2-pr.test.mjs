@@ -71,3 +71,28 @@ test('openGate2PullRequest falls back to an issue title when the issue has no ti
 
   assert.deepEqual(result, { url: 'https://github.com/o/r/pull/7', title: '修复 issue #7' });
 });
+
+test('openGate2PullRequest accepts a reused PR URL from the PR IO layer', () => {
+  const result = openGate2PullRequest({
+    repoDir: 'D:/repo',
+    guardianDir: 'D:/repo/.qa/guardian',
+    issue: 8,
+    issueTitle: 'Fix duplicate PR',
+    baseBranch: 'dev',
+    currentBranch: 'fix/issue-8',
+    verdict: { status: 'PASS' },
+    actor: ACTORS.SUPERVISOR,
+  }, {
+    readArtifactPair: () => ({ plan: {}, dossier: {} }),
+    readRequiredPrSummary: () => '## PR 概述\n\n中文摘要\n\n## 本次变更内容\n\n中文内容\n\n## SQL / 数据库影响\n\n无\n\n## 关联脚本与配置文件\n\n无\n\n## 测试与验证说明\n\n通过',
+    collectCommitSummaries: () => [],
+    buildGuardianPrBodyFromAgentSummary: () => 'body',
+    createPullRequest: (request) => {
+      assert.equal(request.head, 'fix/issue-8');
+      assert.equal(request.base, 'dev');
+      return 'https://github.com/o/r/pull/8';
+    },
+  });
+
+  assert.deepEqual(result, { url: 'https://github.com/o/r/pull/8', title: 'Fix duplicate PR' });
+});
