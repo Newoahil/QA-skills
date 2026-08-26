@@ -437,7 +437,12 @@ function Ensure-ControlWorktree([string]$SourceRepo, [string]$Destination, [stri
 }
 
 function Normalize-DeclaredPath([string]$Value) {
-  return (($Value -split '（', 2)[0] -split '\(', 2)[0] -split '：', 2)[0] -split ': ', 2)[0].Trim().Replace('\', '/')
+  $normalized = $Value.Trim().Replace('\', '/')
+  foreach ($delimiter in @('（', '(', '：', ': ')) {
+    $index = $normalized.IndexOf($delimiter)
+    if ($index -ge 0) { $normalized = $normalized.Substring(0, $index) }
+  }
+  return $normalized.Trim()
 }
 
 function Ensure-QaSnapshot([string]$SourceRepo, [string]$Destination, [string]$Base) {

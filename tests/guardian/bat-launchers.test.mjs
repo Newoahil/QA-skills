@@ -168,7 +168,8 @@ test('scheduler launcher allows supervisor stage recovery and normalizes annotat
   assert.match(controlFunction, /\[string\]\$state\.qa_verdict_status -eq 'PASS'/);
   assert.match(controlFunction, /-and -not \$recoverableSupervisorStageHandback/);
   assert.match(controlFunction, /function Normalize-DeclaredPath/);
-  assert.match(controlFunction, /-split '：', 2/);
+  assert.match(controlFunction, /foreach \(\$delimiter in @\('（', '\(', '：', ': '\)\)/);
+  assert.match(controlFunction, /\$normalized\.IndexOf\(\$delimiter\)/);
   assert.match(controlFunction, /Normalize-DeclaredPath \$_\.path/);
 });
 
