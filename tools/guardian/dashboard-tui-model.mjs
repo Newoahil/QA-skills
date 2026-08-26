@@ -4,7 +4,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dashboardStats, extractSessionIds, filterByState, formatIssueDetail, guardianDirFor, hasGuardianDir, loadAllIssueStates } from './dashboard-model.mjs';
 import { buildArtifactErrorLines } from './dashboard-tui-artifacts.mjs';
 import { buildProgressLogLines } from './dashboard-tui-progress.mjs';
-import { buildSummaryTabLines, buildTranscriptLines, resolvePreferredSession } from './dashboard-tui-context.mjs';
+import { buildLiveTranscriptLines, buildSummaryTabLines, buildTranscriptLines, liveRoleOptions, resolveLiveSession, resolvePreferredSession } from './dashboard-tui-context.mjs';
 import { resolveViewerRepo } from './worktree-binding.mjs';
 import { fetchTranscript } from './session-transcript.mjs';
 import { TUI_TABS } from './dashboard-tui-input.mjs';
@@ -40,7 +40,7 @@ function splitLines(text) {
   return String(text ?? '').split(/\r?\n/);
 }
 
-export { buildArtifactErrorLines, buildProgressLogLines, buildSummaryTabLines, buildTranscriptLines, resolvePreferredSession };
+export { buildArtifactErrorLines, buildProgressLogLines, buildSummaryTabLines, buildTranscriptLines, liveRoleOptions, resolveLiveSession, resolvePreferredSession };
 
 export function parseRefreshSeconds(value, fallback = DEFAULT_REFRESH_SECONDS) {
   const parsed = Number(value);
@@ -66,6 +66,7 @@ export function createInitialUiState({
     logFollow: true,
     statusMessage: '已进入只读 Guardian TUI。',
     lastRefreshAt: null,
+    liveRole: 'auto',
   };
 }
 
@@ -88,6 +89,7 @@ export async function loadDashboardTuiSnapshot({
   baseUrl,
   transcriptFetcher = fetchTranscript,
   liveLines = null,
+  liveRole = 'auto',
   now = Date.now(),
 } = {}) {
   const repoDir = resolveViewerRepo(path.resolve(requestedRepo), bindingFile);
@@ -111,7 +113,7 @@ export async function loadDashboardTuiSnapshot({
   const stats = dashboardStats(records);
   const selected = selectIssue(records, selectedIssue);
   const record = selected.record;
-  const contextLines = await loadContextLines({ baseUrl, guardianDir, now, record, stats, tab, transcriptFetcher, transcriptFull, liveLines });
+  const contextLines = await loadContextLines({ baseUrl, guardianDir, now, record, stats, tab, transcriptFetcher, transcriptFull, liveLines, liveRole });
 
   return {
     kind: 'ok',
@@ -128,7 +130,7 @@ export async function loadDashboardTuiSnapshot({
   };
 }
 
-async function loadContextLines({ baseUrl, guardianDir, now, record, stats, tab, transcriptFetcher, transcriptFull, liveLines }) {
+async function loadContextLines({ baseUrl, guardianDir, now, record, stats, tab, transcriptFetcher, transcriptFull, liveLines, liveRole }) {
   switch (tab) {
     case TUI_TABS.transcript:
       return buildTranscriptLines(record, { baseUrl, full: transcriptFull, transcriptFetcher });
@@ -137,14 +139,14 @@ async function loadContextLines({ baseUrl, guardianDir, now, record, stats, tab,
     case TUI_TABS.artifacts:
       return buildArtifactErrorLines(guardianDir, record);
     case TUI_TABS.live:
-      return buildLiveEventLines(liveLines, baseUrl, { guardianDir, now, record });
+      return buildLiveEventLines(liveLines, baseUrl, { guardianDir, now, record, transcriptFetcher, transcriptFull, liveRole });
     default:
       return buildSummaryTabLines(record, stats, now);
   }
 }
 
-// Live tab: rendered from the CLI's in-memory SSE event buffer (no polling). When no shared server
-// is configured, explain how to enable native real-time viewing instead of showing an empty pane.
+// Live tab: rendered from the selected OpenCode session transcript plus the CLI's in-memory SSE event
+// buffer. Auto-refresh re-fetches getMessages(sessionId); SSE events provide immediate progress lines.
 function processExists(pid) {
   const n = Number(pid);
   if (!Number.isInteger(n) || n <= 0) return false;
@@ -201,7 +203,7 @@ function recentProgressLines(guardianDir, record) {
   return ['最近进度日志', ...tail.slice(0, 12), ''];
 }
 
-function buildLiveEventLines(liveLines, baseUrl, { guardianDir = null, now = Date.now(), record = null } = {}) {
+async function buildLiveEventLines(liveLines, baseUrl, { guardianDir = null, now = Date.now(), record = null, transcriptFetcher = fetchTranscript, transcriptFull = false, liveRole = 'auto' } = {}) {
   if (!Array.isArray(liveLines)) {
     return [
       '实时事件流未启用。',
@@ -210,12 +212,15 @@ function buildLiveEventLines(liveLines, baseUrl, { guardianDir = null, now = Dat
       '下一步: 用 guardian-start.bat 启动（默认共享 serve），或运行 dashboard-tui.mjs --base-url http://127.0.0.1:4096。',
     ];
   }
+  const transcript = await buildLiveTranscriptLines(record, { baseUrl, full: transcriptFull, liveRole, transcriptFetcher });
   if (liveLines.length === 0) {
     const sessions = recentSessionLines(record);
     const progress = recentProgressLines(guardianDir, record);
     if (sessions.length > 0 || progress.length > 0) {
       return [
         `已连接共享 OpenCode 事件流: ${baseUrl}`,
+        '',
+        ...transcript,
         '',
         '当前没有新的 SSE 事件；下面显示已记录会话和本地进度上下文。',
         '',
@@ -229,6 +234,8 @@ function buildLiveEventLines(liveLines, baseUrl, { guardianDir = null, now = Dat
     return [
       `已连接共享 OpenCode 事件流: ${baseUrl}`,
       '',
+      ...transcript,
+      '',
       '当前没有活跃专员事件。',
       '说明: SSE 连接成功只代表可以接收后续事件；是否正在工作请同时看当前操作、scheduler lock 和状态更新时间。',
       '',
@@ -237,7 +244,7 @@ function buildLiveEventLines(liveLines, baseUrl, { guardianDir = null, now = Dat
       ...schedulerLockLines(guardianDir, now),
     ];
   }
-  return [`实时事件流: ${baseUrl}`, '', ...liveLines];
+  return [`实时事件流: ${baseUrl}`, '', ...transcript, '', 'SSE 事件', ...liveLines];
 }
 
 function maxScroll(lines, visibleHeight) {
@@ -279,6 +286,17 @@ export function reduceUiState(ui, action, snapshot, viewport = { rows: 24 }) {
       if (action.tab !== TUI_TABS.logs) next.logFollow = false;
       next.statusMessage = `已切换到 ${action.tab} 标签。`;
       return next;
+    case 'cycle-live-role': {
+      const options = liveRoleOptions(snapshot?.record);
+      const current = options.includes(next.liveRole) ? next.liveRole : options[0];
+      const currentIndex = options.indexOf(current);
+      const direction = action.direction < 0 ? -1 : 1;
+      next.liveRole = options[(currentIndex + direction + options.length) % options.length];
+      next.tab = TUI_TABS.live;
+      next.contextScroll = 0;
+      next.statusMessage = `实时会话角色已切换到 ${next.liveRole}。`;
+      return next;
+    }
     case 'enter-detail':
       next.focus = 'detail';
       next.statusMessage = '已进入详情滚动模式；Esc 返回队列。';

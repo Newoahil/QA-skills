@@ -12,9 +12,11 @@ import {
   buildTranscriptLines,
   createInitialUiState,
   DEFAULT_STATE_FILTER,
+  liveRoleOptions,
   loadDashboardTuiSnapshot,
   nextStateFilter,
   reduceUiState,
+  resolveLiveSession,
   resolvePreferredSession,
 } from '../../tools/guardian/dashboard-tui-model.mjs';
 import { guardianDirFor } from '../../tools/guardian/dashboard-model.mjs';
@@ -44,6 +46,22 @@ test('resolvePreferredSession prefers inflight then saved sessions', () => {
   });
   const noSessions = { ...newState(13), opencode: { schema_version: 1, fixer: null, qa: null, specialists: {}, inflight: null } };
   assert.equal(resolvePreferredSession(noSessions).kind, 'missing-session');
+});
+
+test('live role helpers enumerate roles and resolve selected QA session', () => {
+  const record = {
+    ...newState(12),
+    opencode: {
+      schema_version: 1,
+      fixer: { session_id: 'ses_fixer', agent: 'qa-guardian' },
+      qa: { session_id: 'ses_qa', agent: 'qa' },
+      specialists: { runtime: { session_id: 'ses_runtime', agent: 'guardian-runtime' } },
+      inflight: null,
+    },
+  };
+
+  assert.deepEqual(liveRoleOptions(record), ['auto', 'fixer', 'qa', 'runtime']);
+  assert.deepEqual(resolveLiveSession(record, 'qa'), { kind: 'ok', role: 'qa', sessionId: 'ses_qa', source: 'record', status: '-' });
 });
 
 test('buildTranscriptLines renders transcript or Chinese guidance', async () => {
@@ -140,6 +158,8 @@ test('summary and logs mark persisted running sessions as non-live without infli
     };
     const summary = buildSummaryTabLines(record, { active: 0, waiting: 0, terminal: 0, total: 1 }, Date.parse('2026-08-20T11:00:00.000Z')).join('\n');
     assert.match(summary, /running，非实时/);
+    assert.match(summary, /下一步/);
+    assert.match(summary, /等待 scheduler 开始调查/);
     const logs = buildProgressLogLines(guardianDir, record).join('\n');
     assert.match(logs, /状态=running，非实时/);
   } finally {
@@ -318,16 +338,62 @@ test('live tab surfaces persisted session context when connected event buffer is
       tab: TUI_TABS.live,
       baseUrl: 'http://127.0.0.1:4096',
       liveLines: [],
+      transcriptFetcher: async (sessionId) => ({ kind: 'ok', messages: [{ role: 'assistant', createdAt: '2026-08-20T10:02:30.000Z', parts: [{ type: 'text', text: `transcript for ${sessionId}` }] }] }),
       now: Date.parse('2026-08-20T10:03:00.000Z'),
     });
     const text = snapshot.contextLines.join('\n');
     assert.match(text, /已连接共享 OpenCode 事件流/);
     assert.match(text, /近期会话/);
     assert.match(text, /guardian-code: ses_code/);
+    assert.match(text, /当前 session: ses_code/);
+    assert.match(text, /transcript for ses_code/);
     assert.match(text, /guardian-business: ses_business/);
     assert.match(text, /最近进度日志/);
     assert.match(text, /tool: grep category empty state/);
     assert.doesNotMatch(text, /当前没有活跃专员事件。\n说明/);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test('live tab renders selected role transcript and role cycling updates state', async () => {
+  const repo = tempRepo();
+  const guardianDir = guardianDirFor(repo);
+  try {
+    mkdirSync(guardianDir, { recursive: true });
+    const record = {
+      ...newState(206, '2026-08-20T10:00:00.000Z'),
+      state: STATES.VERIFYING,
+      opencode: {
+        schema_version: 1,
+        fixer: { session_id: 'ses_fix', agent: 'qa-guardian' },
+        qa: { session_id: 'ses_qa', agent: 'qa', last_status: 'running' },
+        specialists: {},
+        inflight: null,
+      },
+    };
+    writeFileSync(path.join(guardianDir, '206.json'), `${JSON.stringify(record)}\n`, 'utf8');
+
+    const snapshot = await loadDashboardTuiSnapshot({
+      requestedRepo: repo,
+      bindingFile: path.join('tests', 'guardian', 'does-not-exist.json'),
+      selectedIssue: 206,
+      tab: TUI_TABS.live,
+      baseUrl: 'http://127.0.0.1:4096',
+      liveLines: [],
+      liveRole: 'qa',
+      transcriptFetcher: async (sessionId) => ({ kind: 'ok', messages: [{ role: 'assistant', createdAt: '2026-08-20T10:01:00.000Z', text: `message ${sessionId}` }] }),
+    });
+    const text = snapshot.contextLines.join('\n');
+    assert.match(text, /实时会话角色: qa/);
+    assert.match(text, /可选角色: auto \| fixer \| qa/);
+    assert.match(text, /当前 session: ses_qa/);
+    assert.match(text, /message ses_qa/);
+
+    const ui = createInitialUiState({ selectedIssue: 206 });
+    const cycled = reduceUiState(ui, { type: 'cycle-live-role', direction: 1 }, snapshot, { rows: 24 });
+    assert.equal(cycled.tab, TUI_TABS.live);
+    assert.equal(cycled.liveRole, 'fixer');
   } finally {
     rmSync(repo, { recursive: true, force: true });
   }
