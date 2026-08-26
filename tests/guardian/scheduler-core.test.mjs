@@ -69,6 +69,17 @@ test('plan-scope-recovery is prioritized over approved-pre-fixer-recovery regard
   assert.equal(plan.toRun.reason, 'plan-scope-recovery');
 });
 
+test('supervisor-stage-recovery is prioritized over approved-pre-fixer-recovery regardless of array position', () => {
+  const decisions = [
+    d(324, 'RESUME', { reason: 'approved-pre-fixer-recovery' }),
+    d(325, 'RESUME', { reason: 'supervisor-stage-recovery' }),
+  ];
+  const plan = planTick({ decisions, lock: null, leaseMs: LEASE, now: NOW });
+
+  assert.equal(plan.toRun.issue, 325);
+  assert.equal(plan.toRun.reason, 'supervisor-stage-recovery');
+});
+
 test('approved-pre-fixer-recovery still runs when no qa-failed-retry is runnable', () => {
   const decisions = [d(325, 'RESUME', { reason: 'approved-pre-fixer-recovery' })];
   const plan = planTick({ decisions, lock: null, leaseMs: LEASE, now: NOW });
