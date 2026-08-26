@@ -67,6 +67,20 @@ export function routeIssue(record, gh, opts) {
         toState: STATES.FIXING,
       };
     }
+    if (record.last_error_class === 'qa-needs-human-review' && record.branch && (record.evidence_retries ?? 0) === 0) {
+      return {
+        action: 'RESUME',
+        reason: 'qa-human-review-recovery',
+        toState: STATES.FIXING,
+      };
+    }
+    if (record.last_error_class === 'supervisor-run-failed' && isApprovedPreFixer(record)) {
+      return {
+        action: 'RESUME',
+        reason: 'supervisor-run-recovery',
+        toState: STATES.FIXING,
+      };
+    }
     const cmd = selectControlCommand(controlEvents, STATES.HANDED_BACK);
     if (cmd && cmd.verb === 'continue' && record.handed_back_reason === 'fix-rounds-exceeded') {
       return {

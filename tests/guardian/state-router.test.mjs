@@ -306,6 +306,60 @@ test('handed back supervisor stage failure after QA PASS resumes without a fresh
   assert.equal(d.toState, STATES.FIXING);
 });
 
+test('handed back QA human review with a branch resumes once for cleaned supervisor evidence', () => {
+  const r = rec({
+    state: STATES.HANDED_BACK,
+    branch: 'fix/issue-42',
+    last_error_class: 'qa-needs-human-review',
+    handed_back_reason: 'needs-clarification',
+    evidence_retries: 0,
+  });
+
+  const d = route(r, {}, { leaseMs: LEASE, now: NOW });
+
+  assert.equal(d.action, 'RESUME');
+  assert.equal(d.reason, 'qa-human-review-recovery');
+  assert.equal(d.toState, STATES.FIXING);
+});
+
+test('handed back QA human review is terminal after the one cleaned-evidence retry', () => {
+  const r = rec({
+    state: STATES.HANDED_BACK,
+    branch: 'fix/issue-42',
+    last_error_class: 'qa-needs-human-review',
+    handed_back_reason: 'needs-clarification',
+    evidence_retries: 1,
+  });
+
+  const d = route(r, {}, { leaseMs: LEASE, now: NOW });
+
+  assert.equal(d.action, 'SKIP');
+  assert.equal(d.reason, 'handed-back-terminal');
+});
+
+test('handed back supervisor run failure before fixer resumes approved plan once worktree clears', () => {
+  const r = rec({
+    state: STATES.HANDED_BACK,
+    branch: null,
+    gate_1_approved_comment_id: 7,
+    gate_1_approved_plan_hash: 'sha256:plan',
+    gate_1_approved_plan_revision: 'rev-1',
+    plan_hash: 'sha256:plan',
+    plan_revision: 'rev-1',
+    plan_status: 'valid',
+    dossier_status: 'valid',
+    last_error_class: 'supervisor-run-failed',
+    handed_back_reason: 'supervisor-run-failed',
+    opencode: { fixer: null, qa: null, specialists: {}, inflight: { kind: 'fixer-start', role: 'fixer', status: 'starting' } },
+  });
+
+  const d = route(r, {}, { leaseMs: LEASE, now: NOW });
+
+  assert.equal(d.action, 'RESUME');
+  assert.equal(d.reason, 'supervisor-run-recovery');
+  assert.equal(d.toState, STATES.FIXING);
+});
+
 test('HANDED_BACK default → SKIP permanently even with label (acceptance 20)', () => {
   const r = rec({ state: STATES.HANDED_BACK, handed_back_reason: 'reject' });
   const d = route(r, {}, { leaseMs: LEASE, now: NOW });

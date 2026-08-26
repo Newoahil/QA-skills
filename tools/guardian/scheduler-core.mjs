@@ -11,7 +11,7 @@
 
 export const RUNNABLE_ACTIONS = Object.freeze(['START', 'RESUME', 'STALLED']);
 export const NOTIFY_ACTIONS = Object.freeze(['GATE_1_WAIT', 'GATE_2_WAIT', 'STALLED', 'HANDED_BACK', 'DONE']);
-const PRIORITY_RUNNABLE_REASONS = Object.freeze(['qa-failed-retry', 'plan-scope-recovery', 'supervisor-stage-recovery']);
+const PRIORITY_RUNNABLE_REASONS = Object.freeze(['qa-failed-retry', 'plan-scope-recovery', 'supervisor-stage-recovery', 'qa-human-review-recovery', 'supervisor-run-recovery']);
 
 // Project a router decision into the authoritative fields for transitions that do not launch a
 // guardian command. The router remains the owner of whether a transition should happen; this
