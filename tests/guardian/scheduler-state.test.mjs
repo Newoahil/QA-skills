@@ -8,7 +8,7 @@ import { hashArtifact, writeArtifact } from '../../tools/guardian/artifacts.mjs'
 import { ACTORS } from '../../tools/guardian/actor-routing.mjs';
 import { deliverNotifications } from '../../tools/guardian/notify-io.mjs';
 import { buildGate1Comment } from '../../tools/guardian/gate1-comment.mjs';
-import { applyGateCommandState, buildInvestigationFailureState, createLeaseFence, persistCommandlessTransitions, publishWaitingGate1Proposals, summarizeSupervisorEvidence } from '../../tools/guardian/scheduler.mjs';
+import { applyGateCommandState, buildInvestigationFailureState, buildRunFailureState, createLeaseFence, persistCommandlessTransitions, publishWaitingGate1Proposals, summarizeSupervisorEvidence } from '../../tools/guardian/scheduler.mjs';
 import { newState, readState, STATES, writeState } from '../../tools/guardian/state.mjs';
 
 function fakeStore(initial) {
@@ -158,6 +158,27 @@ test('investigation failure becomes explicit handback instead of a fresh active 
   assert.deepEqual(record.specialist_failures, ['guardian-business']);
   assert.deepEqual(record.specialist_durations_ms, { 'guardian-business': 357855, 'guardian-code': 376239 });
   assert.deepEqual(record.plan_validation_errors, [error.message]);
+});
+
+test('post-QA supervisor stage failure becomes explicit handback instead of a fresh active lease', () => {
+  const currentState = {
+    ...newState(325),
+    state: STATES.INVESTIGATING,
+    branch: 'fix/issue-325',
+    qa_verdict_status: 'PASS',
+    qa_verdict_hash: 'sha256:qa',
+    last_phase: 'qa-passed',
+  };
+  const error = new Error("stage failed: fatal: pathspec 'backend/service/Foo.java：说明' did not match any files\n");
+
+  const record = buildRunFailureState({ currentState, error, phase: 'finalization' });
+
+  assert.equal(record.state, STATES.HANDED_BACK);
+  assert.equal(record.handed_back_reason, 'supervisor-run-failed');
+  assert.equal(record.last_error_class, 'supervisor-stage-failed');
+  assert.equal(record.last_phase, 'finalization');
+  assert.equal(record.qa_verdict_status, 'PASS');
+  assert.match(record.run_error_message, /pathspec/);
 });
 
 test('gate waiting SKIP does not rewrite authoritative state', () => {

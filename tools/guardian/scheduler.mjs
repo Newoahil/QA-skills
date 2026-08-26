@@ -48,6 +48,7 @@ export {
 import {
   sessionStatusAction,
   buildInvestigationFailureState,
+  buildRunFailureState,
   applyGateCommandState,
   summarizeSupervisorEvidence,
   writeWatchState,
@@ -58,6 +59,7 @@ import {
 export {
   sessionStatusAction,
   buildInvestigationFailureState,
+  buildRunFailureState,
   applyGateCommandState,
   summarizeSupervisorEvidence,
   writeWatchState,
@@ -710,7 +712,13 @@ async function tick(repoDir, config, logger, signal = null, runtime = createSche
     logger.info('run.exit', { issue, exit_code: code });
   }
   catch (error) {
-    logger.error('run.error', { issue, error_message: error instanceof Error ? error.message : 'unknown' });
+    const errorMessage = error instanceof Error ? error.message : 'unknown';
+    if (isActiveRun()) {
+      const guardianDir = guardianDirOf(repoDir);
+      const current = readState(guardianDir, issue) ?? { issue };
+      writeState(guardianDir, buildRunFailureState({ currentState: current, error }), { touch: false });
+    }
+    logger.error('run.error', { issue, error_message: errorMessage });
     throw error;
   }
   } finally {

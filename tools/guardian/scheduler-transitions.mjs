@@ -53,6 +53,18 @@ export function buildInvestigationFailureState({ failureState, investigationStat
   };
 }
 
+export function buildRunFailureState({ currentState, error, phase = 'run-error' }) {
+  const message = error instanceof Error ? error.message : 'run failed';
+  return {
+    ...currentState,
+    state: STATES.HANDED_BACK,
+    handed_back_reason: 'supervisor-run-failed',
+    last_error_class: message.startsWith('stage failed:') ? 'supervisor-stage-failed' : 'supervisor-run-failed',
+    last_phase: phase,
+    run_error_message: message,
+  };
+}
+
 export function applyGateCommandState({ currentBeforeRun, command, currentIdentity, repoDir, qaRuntimeDir, now = new Date().toISOString() }) {
   const gateApproved = command.verb === 'approve';
   const gateRevision = command.verb === 'revise';
