@@ -278,11 +278,15 @@ test('scheduler keeps investigation state visible to failure handler', () => {
   const tryIndex = text.indexOf('try {', outerDeclaration);
   const catchIndex = text.indexOf('} catch (error) {', tryIndex);
   const helperUse = text.indexOf('buildInvestigationFailureState({ failureState, investigationState, error })', catchIndex);
-  const helperDeclaration = text.indexOf('export function buildInvestigationFailureState');
-  const failureUse = text.indexOf('investigationState.opencode?.specialists', helperDeclaration);
   assert.ok(outerDeclaration > 0);
   assert.ok(outerDeclaration < tryIndex);
   assert.ok(helperUse > catchIndex);
+  // buildInvestigationFailureState was extracted to scheduler-transitions.mjs (P0 refactor);
+  // its declaration must still receive investigationState and read the failed specialists off it.
+  const transitions = readFileSync('tools/guardian/scheduler-transitions.mjs', 'utf8');
+  const helperDeclaration = transitions.indexOf('export function buildInvestigationFailureState');
+  const failureUse = transitions.indexOf('investigationState.opencode?.specialists', helperDeclaration);
+  assert.ok(helperDeclaration > 0);
   assert.ok(failureUse > helperDeclaration);
 });
 

@@ -9,19 +9,66 @@
 // Config: .qa/guardian/config.json { poll_interval_ms?, lease_ms?, base_branch?, notify_webhook?,
 // notify_channel? }.
 
-import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readdirSync, readFileSync } from 'node:fs';
+import { spawn } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { readJsonFile } from './runtime-io.mjs';
 
-import { defaultGhReader, DEFAULT_LEASE_MS, invocationArgvFor } from './poll.mjs';
+import { invocationArgvFor } from './poll.mjs';
+import {
+  DEFAULT_INTERVAL_MS,
+  MAX_FIX_ROUNDS_DEFAULT,
+  validateSchedulerConfig,
+  resolveRepoDir,
+  assertTargetRepoConfigured,
+} from './scheduler-config.mjs';
+// Re-export config/repo helpers so scheduler.mjs stays the stable public surface (batch-1 refactor).
+export {
+  DEFAULT_INTERVAL_MS,
+  MAX_FIX_ROUNDS_DEFAULT,
+  validateSchedulerConfig,
+  resolveRepoDir,
+  assertTargetRepoConfigured,
+};
+import { guardianDirOf } from './guardian-paths.mjs';
+import {
+  listCandidates,
+  listCandidatesFromTaskSource,
+  pollTaskObservation,
+  createSchedulerTaskSource,
+} from './scheduler-discovery.mjs';
+// Re-export discovery helpers so scheduler.mjs stays the stable public surface (batch-2 refactor).
+export {
+  listCandidates,
+  listCandidatesFromTaskSource,
+  pollTaskObservation,
+  createSchedulerTaskSource,
+};
+import {
+  sessionStatusAction,
+  buildInvestigationFailureState,
+  applyGateCommandState,
+  summarizeSupervisorEvidence,
+  writeWatchState,
+  persistCommandlessTransitions,
+  publishWaitingGate1Proposals,
+} from './scheduler-transitions.mjs';
+// Re-export transition helpers so scheduler.mjs stays the stable public surface (batch-3/4 refactor).
+export {
+  sessionStatusAction,
+  buildInvestigationFailureState,
+  applyGateCommandState,
+  summarizeSupervisorEvidence,
+  writeWatchState,
+  persistCommandlessTransitions,
+  publishWaitingGate1Proposals,
+};
 import { readState, startFollowupRound, STATES, writeState } from './state.mjs';
-import { storageKey as taskRefStorageKey, isNumericStorageKey, makeTaskRef } from './task-ref.mjs';
-import { routeIssue } from './state-router.mjs';
-import { commandlessStateTransition, planTick, preRunPersistableDecisions } from './scheduler-core.mjs';
+
+import { planTick, preRunPersistableDecisions } from './scheduler-core.mjs';
 import { acquireLock, renewLock, releaseLock } from './lock.mjs';
-import { closeoutTransition, deliverNotifications, defaultGhComment, defaultCurlPost, publishGate1Proposal } from './notify-io.mjs';
+import { closeoutTransition, deliverNotifications, defaultGhComment, defaultCurlPost } from './notify-io.mjs';
 import { createLogger } from './runtime-io.mjs';
 import { projectLabels } from './label-io.mjs';
 import { prepareInvestigation } from './investigation-runtime.mjs';
@@ -40,21 +87,13 @@ import { resolveOpencodeBin } from './opencode-bin.mjs';
 import { createOpencodeClient } from './opencode-client.mjs';
 import { loadRuntimePipelineManifest, loadRuntimeStageRunners, runPipeline, stageRunnerContext } from './stage-runner.mjs';
 import { createGitHubEffectSink } from './github-effect-sink.mjs';
-import { createGitHubTaskSource } from './github-task-source.mjs';
-import { createHttpTaskSource } from './http-task-source.mjs';
+
 import { loadAgentRegistry } from './agent-registry.mjs';
 import { createSupervisorExecutor } from './supervisor-exec.mjs';
 import { ACTORS, assertActorMayPerform, EFFECTS } from './actor-routing.mjs';
-import { atomicWriteJson } from './atomic-io.mjs';
 import { recallEngineeringMemory, recordEngineeringMemory } from './memory-provider.mjs';
 
 const FIXER_START_KIND = 'fixer-start';
-
-export function sessionStatusAction(status) {
-  if (status === 'ok') return { continue: true, retry: false, failClosed: false };
-  if (status === 'retry') return { continue: false, retry: true, failClosed: false };
-  return { continue: false, retry: false, failClosed: true };
-}
 
 function jsonFailureFields(error) {
   if (!(error instanceof Error) || error.name !== 'InvestigationJsonParseError') return {};
@@ -73,142 +112,12 @@ function jsonFailureFields(error) {
   };
 }
 
-export function buildInvestigationFailureState({ failureState, investigationState, error }) {
-  const failureRoles = Array.isArray(error?.specialist_failures) ? error.specialist_failures : null;
-  const failedSpecialists = failureRoles ?? Object.entries(investigationState.opencode?.specialists ?? {})
-    .filter(([, session]) => session?.last_status === 'failed')
-    .map(([role]) => role);
-  const failureDurations = error?.specialist_durations_ms && typeof error.specialist_durations_ms === 'object' ? error.specialist_durations_ms : null;
-  const failedDurations = failureDurations ?? Object.fromEntries(
-    Object.entries(investigationState.opencode?.specialists ?? {})
-      .filter(([, session]) => typeof session?.duration_ms === 'number')
-      .map(([role, session]) => [role, session.duration_ms]),
-  );
-  return {
-    ...failureState,
-    state: STATES.HANDED_BACK,
-    handed_back_reason: 'investigation-failed',
-    opencode: investigationState.opencode ?? failureState.opencode,
-    specialist_failures: failedSpecialists.length > 0 ? failedSpecialists : failureState.specialist_failures,
-    specialist_durations_ms: Object.keys(failedDurations).length > 0 ? failedDurations : failureState.specialist_durations_ms,
-    dossier_status: 'failed',
-    plan_status: 'failed',
-    investigation_attempts: (failureState.investigation_attempts ?? 0) + 1,
-    last_error_class: 'investigation-failed',
-    last_phase: 'investigation',
-    plan_validation_errors: [error instanceof Error ? error.message : 'investigation failed'],
-  };
-}
-
-export function applyGateCommandState({ currentBeforeRun, command, currentIdentity, repoDir, qaRuntimeDir, now = new Date().toISOString() }) {
-  const gateApproved = command.verb === 'approve';
-  const gateRevision = command.verb === 'revise';
-  const manualFixResume = command.verb === 'continue' && command.manualFixResume === true;
-  return {
-    ...currentBeforeRun,
-    control_repo_dir: repoDir,
-    qa_runtime_dir: qaRuntimeDir,
-    state: gateApproved || manualFixResume ? STATES.FIXING : (gateRevision ? STATES.INVESTIGATING : currentBeforeRun.state),
-    last_consumed_comment_id: command.commentId,
-    last_command_verb: command.verb,
-    last_command_comment_id: command.commentId,
-    gate_1_approved_comment_id: gateApproved ? command.commentId : null,
-    gate_1_approved_plan_hash: gateApproved ? currentIdentity.plan_hash : null,
-    gate_1_approved_plan_revision: gateApproved ? currentIdentity.plan_revision : null,
-    gate_1_revision_data: gateRevision ? command.data : currentBeforeRun.gate_1_revision_data,
-    manual_fix_resume: manualFixResume ? true : currentBeforeRun.manual_fix_resume,
-    manual_fix_resume_comment_id: manualFixResume ? command.commentId : currentBeforeRun.manual_fix_resume_comment_id,
-    manual_fix_resume_data: manualFixResume ? command.data : currentBeforeRun.manual_fix_resume_data,
-    gate_1_comment_hash: gateRevision ? null : currentBeforeRun.gate_1_comment_hash,
-    last_gate_1_proposal_hash: gateRevision ? null : currentBeforeRun.last_gate_1_proposal_hash,
-    last_notified_state: gateRevision ? null : currentBeforeRun.last_notified_state,
-    dossier_status: gateRevision ? 'superseded' : currentBeforeRun.dossier_status,
-    plan_status: gateRevision ? 'superseded' : currentBeforeRun.plan_status,
-    dossier_hash: gateRevision ? null : currentBeforeRun.dossier_hash,
-    dossier_revision: gateRevision ? null : currentBeforeRun.dossier_revision,
-    plan_hash: gateRevision ? null : currentBeforeRun.plan_hash,
-    plan_revision: gateRevision ? null : currentBeforeRun.plan_revision,
-    fix_rounds: command.clearFixRounds ? 0 : currentBeforeRun.fix_rounds,
-    stall_retries: command.nextStallRetries ?? currentBeforeRun.stall_retries,
-    last_phase: gateRevision ? 'gate1-revision' : currentBeforeRun.last_phase,
-    opencode: {
-      ...(currentBeforeRun.opencode ?? { schema_version: 1, fixer: null, qa: null, specialists: {}, inflight: null }),
-      inflight: gateApproved || manualFixResume ? {
-        operation_id: randomUUID(),
-        role: 'fixer',
-        kind: FIXER_START_KIND,
-        round: currentBeforeRun.processing_round ?? 1,
-        started_at: now,
-        status: 'starting',
-      } : null,
-    },
-  };
-}
-
 function writeQaVerdictArtifact(guardianDir, issue, qaVerdict) {
   return writeArtifact(guardianDir, issue, 'qa-verdict', qaVerdict);
 }
 
-// Sanitized supervisor evidence summary for the [QA_VERIFIED] human-readable section. Renders only
-// allow-listed facts (status/diff exit code, test names + exit codes) — never raw command output,
-// secrets, or paths. Returns null when nothing safe is present so the comment can say 未提供.
-export function summarizeSupervisorEvidence(evidence) {
-  if (!evidence || typeof evidence !== 'object') return null;
-  const lines = [];
-  const statusDiff = evidence.status_diff;
-  if (statusDiff && typeof statusDiff === 'object') {
-    lines.push(`- status/diff 退出码: ${Number.isInteger(statusDiff.exit_code) ? statusDiff.exit_code : 'n/a'}`);
-  }
-  const tests = Array.isArray(evidence.tests) ? evidence.tests : [];
-  for (const test of tests) {
-    if (!test || typeof test !== 'object') continue;
-    const argv = Array.isArray(test.command) ? test.command.join(' ') : String(test.command ?? '');
-    lines.push(`- 测试: ${argv || 'n/a'} → 退出码 ${Number.isInteger(test.exit_code) ? test.exit_code : 'n/a'}`);
-  }
-  return lines.length > 0 ? lines.join('\n') : null;
-}
-
-export const DEFAULT_INTERVAL_MS = 10 * 1000;
-// Fix↔QA repair loop default bound. QA FAIL resumes the same fixer session with the previous
-// report until QA passes, up to this cap; beyond it the issue is handed back with a human-review
-// recommendation. Configurable per project via config.max_fix_rounds.
-export const MAX_FIX_ROUNDS_DEFAULT = 5;
 // Heartbeat cadence: renew the lock well within the lease so a live long run never looks stale.
 const HEARTBEAT_MS = 30 * 1000;
-
-function normalizePositiveMs(value, fallback) {
-  const candidate = value ?? fallback;
-  const normalized = Number(candidate);
-  return Number.isFinite(normalized) && normalized > 0 ? normalized : null;
-}
-
-export function validateSchedulerConfig(config = {}) {
-  const pollIntervalMs = normalizePositiveMs(config.poll_interval_ms, DEFAULT_INTERVAL_MS);
-  if (pollIntervalMs === null) {
-    throw new Error('scheduler poll_interval_ms must be a finite positive number');
-  }
-
-  const leaseMs = normalizePositiveMs(config.lease_ms, DEFAULT_LEASE_MS);
-  if (leaseMs === null) {
-    throw new Error('scheduler lease_ms must be a finite positive number');
-  }
-
-  if (leaseMs < pollIntervalMs * 2) {
-    throw new Error('scheduler lease_ms must be at least 2x poll_interval_ms');
-  }
-
-  const maxFixRounds = config.max_fix_rounds ?? MAX_FIX_ROUNDS_DEFAULT;
-  if (!Number.isInteger(maxFixRounds) || maxFixRounds < 1) {
-    throw new Error('scheduler max_fix_rounds must be a positive integer');
-  }
-
-  return Object.freeze({
-    ...config,
-    poll_interval_ms: pollIntervalMs,
-    lease_ms: leaseMs,
-    max_fix_rounds: maxFixRounds,
-  });
-}
 
 export function createLeaseFence({
   lockFile,
@@ -260,284 +169,6 @@ function readConfig(repoDir) {
   return readJsonFile(file);
 }
 
-function ghIssueList(repoDir, args) {
-  const res = spawnSync('gh', ['issue', 'list', ...args], {
-    cwd: repoDir, encoding: 'utf8', shell: false, windowsHide: true,
-  });
-  if (res.status !== 0) throw new Error(`gh issue list failed: ${res.stderr || 'unknown'}`);
-  const arr = JSON.parse(res.stdout || '[]');
-  // Deterministic order: oldest updatedAt first (fairest single pick under N=1).
-  return arr
-    .map((x) => ({ issue: Number(x.number), createdAt: x.createdAt, updatedAt: x.updatedAt, labels: x.labels ?? [] }))
-    .sort((a, b) => String(a.updatedAt).localeCompare(String(b.updatedAt)));
-}
-
-function watchStatePath(repoDir) { return path.join(repoDir, '.qa', 'guardian', 'watch-state.json'); }
-function readWatchState(repoDir) {
-  const file = watchStatePath(repoDir);
-  if (!existsSync(file)) return null;
-  return readJsonFile(file);
-}
-export function writeWatchState(repoDir, state, { fsOps, makeId } = {}) {
-  mkdirSync(path.dirname(watchStatePath(repoDir)), { recursive: true });
-  atomicWriteJson(watchStatePath(repoDir), state, { ...(fsOps ? { fsOps } : {}), ...(makeId ? { makeId } : {}) });
-}
-
-// Persist router transitions that do not have a guardian command to execute before notifications
-// read the record. This keeps the notification stage and authoritative state on the same tick.
-export function persistCommandlessTransitions({ decisions, guardianDir, deps = {} }) {
-  const rs = deps.readState ?? readState;
-  const ws = deps.writeState ?? writeState;
-  const now = deps.now ?? new Date().toISOString();
-
-  for (const decision of decisions) {
-    const current = rs(guardianDir, decision.issue);
-    if (!current) continue;
-    const patch = commandlessStateTransition(current, decision);
-    if (!patch) continue;
-    const changed = Object.keys(patch).some((key) => current[key] !== patch[key]);
-    if (!changed) continue;
-    ws(guardianDir, { ...current, ...patch }, { touch: true, now });
-  }
-}
-
-export function publishWaitingGate1Proposals({ decisions, guardianDir, io, actor = ACTORS.SUPERVISOR, deps = {} }) {
-  const rs = deps.readState ?? readState;
-  const results = [];
-  for (const decision of decisions) {
-    if (decision.action !== 'SKIP' || decision.reason !== 'gate1-waiting') continue;
-    if (decision.taskRef?.source && decision.taskRef.source !== 'github') continue;
-    const record = rs(guardianDir, decision.issue);
-    if (!record) continue;
-    if (record.state !== STATES.GATE_1_WAIT) continue;
-    if (record.plan_status !== 'valid' || record.dossier_status !== 'valid') continue;
-    const pair = readArtifactPair(guardianDir, decision.issue);
-    if (!pair.complete) continue;
-    const identity = artifactIdentity(pair);
-    try {
-      results.push({ issue: decision.issue, ...publishGate1Proposal({
-        guardianDir,
-        issue: decision.issue,
-        record,
-        plan: pair.plan,
-        dossier: pair.dossier,
-        planHash: record.plan_hash ?? identity.plan_hash,
-        planRevision: record.plan_revision ?? identity.plan_revision,
-        ghComment: io.ghComment,
-        actor,
-        deps,
-      }) });
-    } catch (error) {
-      results.push({ issue: decision.issue, published: false, error: error instanceof Error ? error.message : 'unknown' });
-    }
-  }
-  return results;
-}
-
-export function listCandidates(repoDir, _config = {}, _now = new Date(), deps = {}) {
-  const fields = ['number,createdAt,updatedAt,labels'];
-  const issueList = deps.ghIssueList ?? ghIssueList;
-  const stateReader = deps.readState ?? readState;
-  const openIssues = issueList(repoDir, ['--state', 'open', '--limit', '1000', '--json', fields[0]]);
-  const followups = readdirSync(path.join(repoDir, '.qa', 'guardian'), { withFileTypes: true })
-    .filter((entry) => entry.isFile() && /^\d+\.json$/.test(entry.name))
-    .map((entry) => readJsonFile(path.join(repoDir, '.qa', 'guardian', entry.name)))
-    .filter((record) => record.state === 'DONE' || record.state === 'GATE_2_WAIT')
-    .map((record) => ({ issue: Number(record.issue), updatedAt: record.updated_at, claim_source: 'followup' }));
-  const candidates = openIssues.map((issue) => {
-    const record = stateReader(path.join(repoDir, '.qa', 'guardian'), issue.issue);
-    return { ...issue, claim_source: record ? 'existing' : 'discovered' };
-  });
-  const merged = new Map(candidates.concat(followups).map((x) => [x.issue, x]));
-  const ordered = [...merged.values()].sort((a, b) => {
-    const updated = String(a.updatedAt ?? '').localeCompare(String(b.updatedAt ?? ''));
-    return updated || Number(a.issue) - Number(b.issue);
-  });
-  if (deps.logger) {
-    deps.logger.info('discovery.candidates', {
-      count: ordered.length,
-      open: openIssues.length,
-      followups: followups.length,
-      issues: ordered.map((x) => x.issue).join(','),
-    });
-  }
-  return ordered;
-}
-
-export async function listCandidatesFromTaskSource(repoDir, taskSource, deps = {}) {
-  const refs = await taskSource.listTasks();
-  const stateReader = deps.readState ?? readState;
-  const guardianDir = guardianDirOf(repoDir);
-  const source = deps.source ?? refs[0]?.source ?? 'github';
-  const candidates = refs.map((ref) => {
-    const issue = schedulerStateKey(ref);
-    const record = stateReader(guardianDir, issue);
-    return { issue, taskRef: ref, updatedAt: ref.updatedAt ?? ref.updated_at, claim_source: record ? 'existing' : 'discovered' };
-  });
-  // A1 (decision-e8c0d364): the followup scan accepts BOTH legacy numeric `<n>.json` (github) and
-  // source-qualified `<source>__<taskId>.json` files, rebuilding a faithful TaskRef from either.
-  const followups = readdirSync(guardianDir, { withFileTypes: true })
-    .filter((entry) => entry.isFile() && /\.json$/.test(entry.name) && !entry.name.startsWith('.'))
-    .map((entry) => ({ name: entry.name, record: safeReadRecord(path.join(guardianDir, entry.name)) }))
-    .filter(({ record }) => record && (record.state === 'DONE' || record.state === 'GATE_2_WAIT'))
-    .map(({ name, record }) => {
-      const taskRef = followupTaskRef(record, name, source);
-      // The state key is the record's ACTUAL on-disk key (the filename stem), so a legacy
-      // `<n>.json` keeps its numeric key even when rediscovered under a non-github source; a
-      // durable source-qualified record keeps its `<source>__<taskId>` key.
-      const stateKey = String(name).replace(/\.json$/, '');
-      const issue = isNumericStorageKey(stateKey) ? Number(stateKey) : stateKey;
-      return { issue, taskRef, updatedAt: record.updated_at, claim_source: 'followup' };
-    });
-  const merged = new Map(candidates.concat(followups).map((x) => [candidateKey(x), x]));
-  return [...merged.values()].sort((a, b) => {
-    const updated = String(a.updatedAt ?? '').localeCompare(String(b.updatedAt ?? ''));
-    return updated || String(a.issue).localeCompare(String(b.issue), undefined, { numeric: true });
-  });
-}
-
-export async function pollTaskObservation({ repoDir, guardianDir, taskSource, taskRef, leaseMs, now, trustedAuthors }) {
-  const issue = schedulerStateKey(taskRef);
-  const record = readState(guardianDir, issue);
-  const observation = await taskSource.readTask(taskRef);
-  const decision = routeIssue(record, observation, { leaseMs, now, trustedAuthors });
-  return {
-    issue,
-    issueTitle: observation.facts?.title ?? null,
-    issueBody: observation.facts?.body ?? '',
-    taskRef,
-    executionSpec: observation.spec,
-    ...decision,
-    invoke: null,
-    invokeArgv: invocationArgvFor(repoDir, issue, decision),
-  };
-}
-
-// A1 (decision-e8c0d364): the scheduler's per-task key used for state read/write, artifact paths,
-// and lock/candidate identity. For a github ref this is the positive integer issue id (so all
-// existing `<n>.json` / branch / artifact paths stay byte-identical); for any other source it is
-// the source-qualified storageKey string (e.g. "pm__<uuid>"). Replaces the old
-// numericSchedulerIssue(), which hard-rejected non-numeric ids.
-function schedulerStateKey(ref) {
-  if (ref?.source === 'github') {
-    const issue = Number(ref?.taskId);
-    if (!Number.isInteger(issue) || issue <= 0) {
-      throw new Error(`github taskRef requires a positive numeric taskId: ${String(ref?.taskId)}`);
-    }
-    return issue;
-  }
-  return taskRefStorageKey(ref);
-}
-
-function safeReadRecord(file) {
-  try {
-    return readJsonFile(file);
-  } catch {
-    return null;
-  }
-}
-
-// Rebuild the identity of a persisted followup record.
-// Priority: (1) an explicit persisted task_ref (the durable, source-accurate identity for any
-// non-github source); (2) otherwise reconstruct from the numeric issue under the CURRENT source
-// context (`defaultSource`) — a legacy record stored as `<n>.json` carries no source of its own,
-// so the discovering source is authoritative; (3) last resort, derive the taskId from the filename.
-function followupTaskRef(record, fileName, defaultSource) {
-  if (record.task_ref && typeof record.task_ref === 'object') {
-    try {
-      return makeTaskRef(record.task_ref);
-    } catch {
-      // fall through to reconstruction
-    }
-  }
-  const numericIssue = Number(record.issue);
-  if (Number.isInteger(numericIssue) && numericIssue > 0) {
-    const taskId = String(numericIssue);
-    const displayId = defaultSource === 'github' ? `#${taskId}` : taskId;
-    return makeTaskRef({ source: defaultSource, taskId, displayId });
-  }
-  const base = String(fileName).replace(/\.json$/, '');
-  return makeTaskRef({ source: defaultSource, taskId: base, displayId: base });
-}
-
-function candidateKey(candidate) {
-  return `${candidate.taskRef?.source ?? 'github'}:${candidate.taskRef?.taskId ?? String(candidate.issue)}`;
-}
-
-export function createSchedulerTaskSource({ repoDir, config = {}, deps = {} }) {
-  const source = typeof config.task_source === 'string' ? config.task_source : (config.task_source?.type ?? 'github');
-  const trustedAuthors = config.command_authors ?? [];
-  const guardianDir = guardianDirOf(repoDir);
-  if (source === 'github') {
-    return createGitHubTaskSource({
-      repoDir,
-      listIssues: deps.listIssues ?? ((targetRepoDir) => ghIssueList(targetRepoDir, ['--state', 'open', '--limit', '1000', '--json', 'number,createdAt,updatedAt,labels'])),
-      readIssue: deps.readIssue ?? defaultGhReader(repoDir),
-      readState: deps.readStateForSource ?? ((issue) => readState(guardianDir, issue)),
-      trustedAuthors,
-    });
-  }
-  if (source === 'http') {
-    const listDispatches = deps.listDispatches ?? createConfiguredHttpListDispatches(config);
-    const readDispatch = deps.readDispatch ?? createConfiguredHttpReadDispatch(config);
-    if (typeof listDispatches !== 'function' || typeof readDispatch !== 'function') throw new Error('HTTP TaskSource requires listDispatches and readDispatch runtime bindings');
-    return createHttpTaskSource({ listDispatches, readDispatch, trustedAuthors, authenticateEvent: deps.authenticateEvent });
-  }
-  throw new Error(`unknown task source: ${String(source)}`);
-}
-
-function createConfiguredHttpListDispatches(config) {
-  const file = config.task_source?.dispatch_file ?? config.http_task_source?.dispatch_file;
-  const baseUrl = httpTaskSourceBaseUrl(config);
-  if (!file && !baseUrl) return undefined;
-  if (baseUrl) return async () => fetchHttpDispatches(baseUrl, config.task_source?.list_path ?? config.http_task_source?.list_path ?? '/dispatches');
-  return async () => {
-    const parsed = JSON.parse(readFileSync(file, 'utf8'));
-    return Array.isArray(parsed) ? parsed : (parsed.dispatches ?? []);
-  };
-}
-
-function createConfiguredHttpReadDispatch(config) {
-  const file = config.task_source?.dispatch_file ?? config.http_task_source?.dispatch_file;
-  const baseUrl = httpTaskSourceBaseUrl(config);
-  if (!file && !baseUrl) return undefined;
-  if (baseUrl) return async (id) => fetchHttpDispatch(baseUrl, config.task_source?.read_path ?? config.http_task_source?.read_path ?? '/dispatches/{id}', id);
-  return async (id) => {
-    const parsed = JSON.parse(readFileSync(file, 'utf8'));
-    const dispatches = Array.isArray(parsed) ? parsed : (parsed.dispatches ?? []);
-    const dispatch = dispatches.find((item) => String(item?.id) === String(id));
-    if (!dispatch) throw new Error(`HTTP dispatch not found: ${String(id)}`);
-    return dispatch;
-  };
-}
-
-function httpTaskSourceBaseUrl(config) {
-  const value = config.task_source?.base_url ?? config.task_source?.url ?? config.http_task_source?.base_url ?? config.http_task_source?.url;
-  if (typeof value !== 'string' || value.trim() === '') return null;
-  return value.trim().replace(/\/$/, '');
-}
-
-async function fetchHttpDispatches(baseUrl, listPath) {
-  const json = await fetchJson(`${baseUrl}${pathWithLeadingSlash(listPath)}`);
-  return Array.isArray(json) ? json : (json.dispatches ?? []);
-}
-
-async function fetchHttpDispatch(baseUrl, readPath, id) {
-  return fetchJson(`${baseUrl}${pathWithLeadingSlash(readPath).replace('{id}', encodeURIComponent(String(id)))}`);
-}
-
-function pathWithLeadingSlash(value) {
-  const text = String(value ?? '').trim();
-  if (!text) return '/';
-  return text.startsWith('/') ? text : `/${text}`;
-}
-
-async function fetchJson(url) {
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`HTTP TaskSource request failed: ${response.status}`);
-  return response.json();
-}
-
 export function createSchedulerRuntime({ repoDir, config = {} }) {
   const taskSource = createSchedulerTaskSource({ repoDir, config });
   const agentRegistry = loadAgentRegistry(undefined, { repoDir });
@@ -548,10 +179,6 @@ export function createSchedulerRuntime({ repoDir, config = {} }) {
 
 function lockPath(repoDir) {
   return path.join(repoDir, '.qa', 'guardian', '.scheduler.lock');
-}
-
-function guardianDirOf(repoDir) {
-  return path.join(repoDir, '.qa', 'guardian');
 }
 
 // Run one issue's guardian invocation to completion, holding + heartbeating the N=1 lock for
@@ -1146,23 +773,6 @@ export function writeVerdictComment(guardianDir, issue, params, deps) {
 //   2. env: QA_GUARDIAN_REPO
 //   3. current working directory
 // Exported + pure (argv/env injected) so it is unit-testable.
-export function resolveRepoDir(argv = process.argv, env = process.env) {
-  const i = argv.indexOf('--repo');
-  if (i >= 0 && argv[i + 1]) return argv[i + 1];
-  if (typeof env.QA_GUARDIAN_REPO === 'string' && env.QA_GUARDIAN_REPO.length > 0) {
-    return env.QA_GUARDIAN_REPO;
-  }
-  return process.cwd();
-}
-
-export function assertTargetRepoConfigured(repoDir) {
-  const configPath = path.join(repoDir, '.qa', 'guardian', 'config.json');
-  if (!existsSync(configPath)) {
-    throw new Error(`目标项目未配置 Guardian: ${configPath}；请使用 --repo <项目目录> 或设置 QA_GUARDIAN_REPO`);
-  }
-  return repoDir;
-}
-
 export async function runScheduler({ repoDir, config = readConfig(repoDir), signal } = {}) {
   if (!repoDir) throw new Error('scheduler requires repoDir');
   if (!config.qa_runtime_dir && process.env.QA_GUARDIAN_QA_RUNTIME_DIR) {
