@@ -61,5 +61,7 @@ desktop.ini
 /.sybermem/.record-intent.json
 /.sybermem/.auto-change-state.json
 /.sybermem/.codex-compact-marker.json
+/.sybermem/.memory-usage.jsonl
+/.sybermem/templates/digest-template.md.bak
 /.claude/settings.json
 # <<< SyberMem <<<
