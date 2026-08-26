@@ -29,6 +29,38 @@ const GUARDIAN_ALLOWLIST = Object.freeze([
   /^watch-state\.json$/,
 ]);
 
+function isGuardianOwnedPath(path) {
+  return GUARDIAN_ALLOWLIST.some((re) => re.test(path));
+}
+
+function porcelainStatusPath(line) {
+  if (line.length < 4 || line.startsWith('diff --git ')) return null;
+  return line.slice(3).trim().replace(/ -> .*$/u, '').replace(/^"|"$/gu, '').replaceAll('\\', '/');
+}
+
+function diffHeaderPath(line) {
+  const match = line.match(/^diff --git a\/(.*?) b\/(.*)$/u);
+  return match ? match[2].trim().replaceAll('\\', '/') : null;
+}
+
+function filterGuardianOwnedStatusDiff(output) {
+  const kept = [];
+  let skippingDiff = false;
+  for (const line of String(output ?? '').split(/\r?\n/)) {
+    const diffPath = diffHeaderPath(line);
+    if (diffPath) {
+      skippingDiff = isGuardianOwnedPath(diffPath);
+      if (!skippingDiff) kept.push(line);
+      continue;
+    }
+    if (skippingDiff) continue;
+    const statusPath = porcelainStatusPath(line);
+    if (statusPath && isGuardianOwnedPath(statusPath)) continue;
+    kept.push(line);
+  }
+  return kept.join('\n');
+}
+
 function canonicalRepoDir(repoDir) {
   if (typeof repoDir !== 'string' || repoDir.trim() === '') throw new TypeError('repoDir is required');
   return path.resolve(repoDir);
@@ -125,7 +157,7 @@ export function createSupervisorExecutor({ repoDir, run = spawnSync } = {}) {
           status_diff: {
             command: ['git', 'status', '--short', '&&', 'git', 'diff', '--'],
             exit_code: status.status === 0 ? diff.status : status.status,
-            stdout: `${status.stdout}${diff.stdout}`,
+            stdout: filterGuardianOwnedStatusDiff(`${status.stdout}${diff.stdout}`),
             stderr: status.status === 0 ? diff.stderr : status.stderr,
           },
           tests: tests.map(({ argv, result }) => ({
@@ -178,13 +210,12 @@ export function createSupervisorExecutor({ repoDir, run = spawnSync } = {}) {
         path: line.slice(3).trim().replace(/ -> .*$/u, '').replace(/^"|"$/gu, '').replaceAll('\\', '/'),
       }))
       .filter((entry) => entry.path !== '');
-    const isGuardianOwned = (path) => GUARDIAN_ALLOWLIST.some((re) => re.test(path));
-    const dirtyPaths = statusEntries.filter((entry) => !isGuardianOwned(entry.path)).map((entry) => entry.path);
+    const dirtyPaths = statusEntries.filter((entry) => !isGuardianOwnedPath(entry.path)).map((entry) => entry.path);
     // Guardian-owned TRACKED dirty files (e.g. SyberMem hooks continuously rewrite
     // .sybermem/.auto-trail.jsonl / .recall-debug.jsonl). Untracked (`??`) entries have no HEAD
     // version to restore and never block a checkout the way tracked local changes do, so skip them.
     const guardianOwnedTrackedDirty = statusEntries
-      .filter((entry) => isGuardianOwned(entry.path) && entry.xy !== '??')
+      .filter((entry) => isGuardianOwnedPath(entry.path) && entry.xy !== '??')
       .map((entry) => entry.path);
     if (dirtyPaths.length > 0) {
       const current = git(['branch', '--show-current']);
@@ -261,7 +292,7 @@ export function createSupervisorExecutor({ repoDir, run = spawnSync } = {}) {
   function assertWorktreeIsolated(plan) {
     const affected = new Set(declaredPathList(plan?.affected_files).map((file) => repoRelativePath(file, 'affected file')));
     const changed = worktreeChangedPaths();
-    const outOfScope = changed.filter((path) => !affected.has(path) && !GUARDIAN_ALLOWLIST.some((re) => re.test(path)));
+    const outOfScope = changed.filter((path) => !affected.has(path) && !isGuardianOwnedPath(path));
     if (outOfScope.length > 0) {
       throw new Error(`worktree has changes outside plan scope: ${outOfScope.join(', ')}`);
     }

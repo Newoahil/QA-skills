@@ -119,6 +119,53 @@ test('pre-QA evidence returns actual status/diff and scoped test command evidenc
   assert.equal(calls.some((call) => call.argv[0] === 'add' || call.argv[0] === 'commit' || call.argv[0] === 'push'), false);
 });
 
+test('pre-QA evidence omits Guardian-owned status and diff noise', () => {
+  const calls = [];
+  const run = (file, argv, options) => {
+    calls.push({ file, argv, options });
+    if (argv[0] === 'status' && argv[1] === '--short') {
+      return {
+        status: 0,
+        stdout: ' M .qa/guardian/config.json\n M src/fix.mjs\n?? .qa/guardian/325/\n',
+        stderr: '',
+      };
+    }
+    if (argv[0] === 'diff') {
+      return {
+        status: 0,
+        stdout: [
+          'diff --git a/.qa/guardian/config.json b/.qa/guardian/config.json',
+          '--- a/.qa/guardian/config.json',
+          '+++ b/.qa/guardian/config.json',
+          '@@ -1 +1 @@',
+          '-old',
+          '+new',
+          'diff --git a/src/fix.mjs b/src/fix.mjs',
+          '--- a/src/fix.mjs',
+          '+++ b/src/fix.mjs',
+          '@@ -1 +1 @@',
+          '-bug',
+          '+fix',
+          '',
+        ].join('\n'),
+        stderr: '',
+      };
+    }
+    if (file === 'node') return { status: 0, stdout: 'focused pass\n', stderr: '' };
+    return { status: 0, stdout: '', stderr: '' };
+  };
+  const executor = createSupervisorExecutor({ repoDir: 'D:/repo', run });
+
+  const result = executor.preQaEvidence({
+    plan: { affected_files: ['src/fix.mjs'], test_commands: [['node', '--test', 'tests/guardian/fix.test.mjs']] },
+  });
+
+  assert.doesNotMatch(result.evidence.status_diff.stdout, /\.qa\/guardian/);
+  assert.match(result.evidence.status_diff.stdout, / M src\/fix\.mjs/);
+  assert.match(result.evidence.status_diff.stdout, /diff --git a\/src\/fix\.mjs b\/src\/fix\.mjs/);
+  assert.equal(result.status, 0);
+});
+
 test('finalization reuses the same validated test command plan after QA evidence', async () => {
   const calls = [];
   const run = (file, argv, options) => {
