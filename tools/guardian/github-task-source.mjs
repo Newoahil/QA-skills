@@ -12,7 +12,7 @@ export function defaultGhReader(repoDir, deps = {}) {
   return function readGithubIssue(issueNumber) {
     const args = [
       'issue', 'view', String(issueNumber),
-      '--json', 'state,comments,title,body,labels,pullRequests',
+      '--json', 'state,comments,title,body,labels,closedByPullRequestsReferences',
     ];
     const res = spawnSync('gh', args, {
       cwd: repoDir,
@@ -33,7 +33,7 @@ export function legacyGithubFacts(data) {
     title: data.title ?? null,
     body: data.body ?? '',
     closed: String(data.state).toUpperCase() === 'CLOSED',
-    pullRequests: Array.isArray(data.pullRequests) ? data.pullRequests.map(normalizePullRequestFact) : [],
+    pullRequests: pullRequestFactsFromIssue(data).map(normalizePullRequestFact),
     comments: (data.comments ?? []).map((c) => ({
       id: c.id ?? c.url ?? c.createdAt,
       body: c.body ?? '',
@@ -61,6 +61,12 @@ export function buildGitHubTaskObservation({ issueNumber, record = null, githubI
       lastConsumedSequence: sequenceForCommentId(comments, lastConsumedId),
     },
   });
+}
+
+function pullRequestFactsFromIssue(data) {
+  if (Array.isArray(data.pullRequests)) return data.pullRequests;
+  if (Array.isArray(data.closedByPullRequestsReferences)) return data.closedByPullRequestsReferences;
+  return [];
 }
 
 function normalizePullRequestFact(pr) {

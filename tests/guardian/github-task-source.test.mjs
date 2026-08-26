@@ -108,7 +108,7 @@ test('createGitHubTaskSource lists refs and reads observations through injected 
 test('defaultGhReader maps gh issue JSON to the legacy GitHub fact shape', () => {
   const reader = defaultGhReader('D:/repo', {
     spawnSync: (_cmd, args, opts) => {
-      assert.deepEqual(args, ['issue', 'view', '42', '--json', 'state,comments,title,body,labels,pullRequests']);
+      assert.deepEqual(args, ['issue', 'view', '42', '--json', 'state,comments,title,body,labels,closedByPullRequestsReferences']);
       assert.equal(opts.cwd, 'D:/repo');
       return {
         status: 0,
@@ -117,7 +117,7 @@ test('defaultGhReader maps gh issue JSON to the legacy GitHub fact shape', () =>
           body: null,
           state: 'CLOSED',
           comments: [{ id: 7, body: '/guardian retry', createdAt: '2026-08-24T03:00:00Z', author: { login: 'alice' } }],
-          pullRequests: [{ number: 9, url: 'https://github.com/o/r/pull/9', headRefName: 'fix/issue-42', baseRefName: 'dev', merged: true }],
+          closedByPullRequestsReferences: [{ number: 9, url: 'https://github.com/o/r/pull/9', headRefName: 'fix/issue-42', baseRefName: 'dev', merged: true }],
         }),
       };
     },
