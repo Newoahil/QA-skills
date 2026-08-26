@@ -104,6 +104,26 @@ test('QA_FAILED: posts [QA_FAILED] with reason and no PR link', () => {
   } finally { cleanup(dir); }
 });
 
+test('QA_FAILED comment carries the QA-authored failure markdown', () => {
+  const dir = tempGuardianDir();
+  try {
+    writeState(dir, { ...newState(324), branch: 'fix/issue-324' }, { touch: false });
+    const io = spy();
+    writeVerdictComment(dir, 324, {
+      approved: false,
+      status: 'FAIL',
+      branch: 'fix/issue-324',
+      reason: 'qa-status-FAIL',
+      qaAcceptanceMarkdown: '## QA 验收结论\n\nUNIQUE_QA_FAILED_ACCEPTANCE_324\n\n## 验收依据\n\n测试路径错误。\n\n## 风险与未覆盖项\n\n未覆盖。\n\n## 下一步\n\n修复测试路径。',
+      supervisorEvidenceSummary: '- 测试: node --test send-sms-controller-simple-send.test.js → 退出码 1',
+    }, { actor: ACTORS.SUPERVISOR, ghComment: io.ghComment });
+
+    assert.equal(io.calls.length, 1);
+    assert.match(io.calls[0].body, /UNIQUE_QA_FAILED_ACCEPTANCE_324/);
+    assert.match(io.calls[0].body, /## Supervisor 验证证据/);
+  } finally { cleanup(dir); }
+});
+
 test('a QA_VERIFIED then a distinct QA_FAILED both post (different hashes)', () => {
   const dir = tempGuardianDir();
   try {

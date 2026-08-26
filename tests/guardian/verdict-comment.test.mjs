@@ -102,6 +102,25 @@ test('QA_FAILED comment: marker QA_FAILED, reason keyword, null pr_url', () => {
   assert.match(body, /未开 PR，原因：qa-status-FAIL/);
 });
 
+test('QA_FAILED comment carries the QA failure report when provided', () => {
+  const body = buildVerdictComment({
+    marker: MARKERS.QA_FAILED,
+    issue: 324,
+    status: 'FAIL',
+    branch: 'fix/issue-324',
+    reason: 'qa-status-FAIL',
+    qaAcceptanceMarkdown: '## QA 验收结论\n\nUNIQUE_QA_FAILURE_REASON_324\n\n## 验收依据\n\n测试路径错误。\n\n## 风险与未覆盖项\n\n未覆盖。\n\n## 下一步\n\n修复测试路径。',
+    supervisorEvidenceSummary: '- 测试: node --test send-sms-controller-simple-send.test.js → 退出码 1',
+  });
+
+  assert.match(body, /UNIQUE_QA_FAILURE_REASON_324/);
+  assert.match(body, /## Supervisor 验证证据/);
+  assert.match(body, /退出码 1/);
+  const meta = extractMeta(body);
+  assert.equal('qaAcceptanceMarkdown' in meta, false);
+  assert.equal('supervisorEvidenceSummary' in meta, false);
+});
+
 test('BLOCKED / NEEDS_HUMAN_REVIEW status still produce a valid QA_FAILED comment', () => {
   for (const status of ['BLOCKED', 'NEEDS_HUMAN_REVIEW']) {
     const body = buildVerdictComment({ marker: MARKERS.QA_FAILED, issue: 7, status, reason: `qa-status-${status}` });

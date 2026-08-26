@@ -1002,11 +1002,19 @@ async function tick(repoDir, config, logger, signal = null, runtime = createSche
     // mid-pipeline (e.g. at a gate) and is NOT a QA failure — do not post then. Enforced mode only.
     if (investigationMode === 'enforced' && qaVerdict && !qaAudit.approved) {
       if (!isActiveRun()) return;
+      let qaAcceptance = null;
+      try {
+        qaAcceptance = readRequiredQaAcceptance(guardianDir, issue);
+      } catch (error) {
+        logger.warn('qa.acceptance_read_failed', { issue, error_message: error instanceof Error ? error.message : 'unknown' });
+      }
       writeVerdictComment(guardianDir, issue, {
         approved: false,
         status: qaVerdict?.status ?? null,
         branch: afterRun.branch ?? null,
         reason: qaAudit.reason,
+        qaAcceptanceMarkdown: qaAcceptance,
+        supervisorEvidenceSummary: summarizeSupervisorEvidence(qaVerdict?.supervisor_evidence),
         reportHash: qaVerdict?.report_hash ?? null,
         attempt: afterRun.fix_rounds ?? 1,
       }, { actor: ACTORS.SUPERVISOR, isActiveRun, ghComment: defaultGhComment(repoDir, ACTORS.SUPERVISOR), logger });
