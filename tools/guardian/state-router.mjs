@@ -105,7 +105,7 @@ export function routeIssue(record, gh, opts) {
   // A failed QA pass below the cap is persisted as a bounded fixer retry. Keep it observable to
   // the scheduler so the next run re-enters the fixer, rather than looking like a fresh VERIFYING
   // lease that can be skipped or accidentally finalized.
-  if (state === STATES.FIXING && record.last_error_class === 'qa-failed-retry') {
+  if (state === STATES.FIXING && isQaFailedRetry(record)) {
     return {
       action: 'RESUME',
       reason: 'qa-failed-retry',
@@ -194,6 +194,11 @@ export function routeIssue(record, gh, opts) {
 
   // Any unexpected state → do not act blindly; treat as needing human attention.
   return { action: 'SKIP', reason: `unhandled-state:${state}` };
+}
+
+function isQaFailedRetry(record) {
+  return record.last_error_class === 'qa-failed-retry'
+    || record.last_phase === 'qa-failed-retry';
 }
 
 function normalizeRouteInput(input, record, trustedAuthors) {

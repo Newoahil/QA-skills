@@ -256,6 +256,26 @@ test('active FIXING with a fixer session still skips on a fresh lease', () => {
   assert.equal(d.reason, 'in-progress-fresh-lease');
 });
 
+test('FIXING qa-failed-retry resumes even when legacy state has blank error class', () => {
+  const r = rec({
+    state: STATES.FIXING,
+    updated_at: new Date(NOW - 60 * 1000).toISOString(),
+    last_phase: 'qa-failed-retry',
+    last_error_class: '',
+    branch: 'fix/issue-42',
+    fix_rounds: 1,
+    qa_verdict_status: 'FAIL',
+    opencode: { fixer: { session_id: 'ses_fixer' }, qa: { session_id: 'ses_qa' }, specialists: {}, inflight: null },
+  });
+
+  const d = route(r, {}, { leaseMs: LEASE, now: NOW });
+
+  assert.equal(d.action, 'RESUME');
+  assert.equal(d.reason, 'qa-failed-retry');
+  assert.equal(d.toState, STATES.FIXING);
+  assert.equal(d.fixRounds, 1);
+});
+
 test('handed back changed-file-not-in-plan from old incomplete scope resumes investigation without reset', () => {
   const r = rec({
     state: STATES.HANDED_BACK,
