@@ -103,11 +103,12 @@ export function buildInvestigationFailureState({ failureState, investigationStat
 export function applyGateCommandState({ currentBeforeRun, command, currentIdentity, repoDir, qaRuntimeDir, now = new Date().toISOString() }) {
   const gateApproved = command.verb === 'approve';
   const gateRevision = command.verb === 'revise';
+  const manualFixResume = command.verb === 'continue' && command.manualFixResume === true;
   return {
     ...currentBeforeRun,
     control_repo_dir: repoDir,
     qa_runtime_dir: qaRuntimeDir,
-    state: gateApproved ? STATES.FIXING : (gateRevision ? STATES.INVESTIGATING : currentBeforeRun.state),
+    state: gateApproved || manualFixResume ? STATES.FIXING : (gateRevision ? STATES.INVESTIGATING : currentBeforeRun.state),
     last_consumed_comment_id: command.commentId,
     last_command_verb: command.verb,
     last_command_comment_id: command.commentId,
@@ -115,6 +116,9 @@ export function applyGateCommandState({ currentBeforeRun, command, currentIdenti
     gate_1_approved_plan_hash: gateApproved ? currentIdentity.plan_hash : null,
     gate_1_approved_plan_revision: gateApproved ? currentIdentity.plan_revision : null,
     gate_1_revision_data: gateRevision ? command.data : currentBeforeRun.gate_1_revision_data,
+    manual_fix_resume: manualFixResume ? true : currentBeforeRun.manual_fix_resume,
+    manual_fix_resume_comment_id: manualFixResume ? command.commentId : currentBeforeRun.manual_fix_resume_comment_id,
+    manual_fix_resume_data: manualFixResume ? command.data : currentBeforeRun.manual_fix_resume_data,
     gate_1_comment_hash: gateRevision ? null : currentBeforeRun.gate_1_comment_hash,
     last_gate_1_proposal_hash: gateRevision ? null : currentBeforeRun.last_gate_1_proposal_hash,
     last_notified_state: gateRevision ? null : currentBeforeRun.last_notified_state,
@@ -129,7 +133,7 @@ export function applyGateCommandState({ currentBeforeRun, command, currentIdenti
     last_phase: gateRevision ? 'gate1-revision' : currentBeforeRun.last_phase,
     opencode: {
       ...(currentBeforeRun.opencode ?? { schema_version: 1, fixer: null, qa: null, specialists: {}, inflight: null }),
-      inflight: gateApproved ? {
+      inflight: gateApproved || manualFixResume ? {
         operation_id: randomUUID(),
         role: 'fixer',
         kind: FIXER_START_KIND,
@@ -722,7 +726,12 @@ async function tick(repoDir, config, logger, signal = null, runtime = createSche
     const currentIdentity = artifactIdentity(currentPair);
     const commandState = applyGateCommandState({
       currentBeforeRun,
-      command: { ...plan.toRun.command, clearFixRounds: plan.toRun.clearFixRounds, nextStallRetries: plan.toRun.nextStallRetries },
+      command: {
+        ...plan.toRun.command,
+        clearFixRounds: plan.toRun.clearFixRounds,
+        nextStallRetries: plan.toRun.nextStallRetries,
+        manualFixResume: plan.toRun.manualFixResume,
+      },
       currentIdentity,
       repoDir,
       qaRuntimeDir,

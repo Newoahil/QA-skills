@@ -186,6 +186,47 @@ test('repeated DONE persistence is idempotent after the first transition', () =>
   assert.equal(store.store[211].state, STATES.DONE);
 });
 
+test('applyGateCommandState records manual fixer continuation without clearing QA context', () => {
+  const current = {
+    ...newState(324),
+    state: STATES.HANDED_BACK,
+    fix_rounds: 5,
+    handed_back_reason: 'fix-rounds-exceeded',
+    last_error_class: 'fix-rounds-exceeded-human-review',
+    qa_verdict_path: '324/qa-verdict.json',
+    qa_verdict_status: 'FAIL',
+    qa_verdict_hash: 'sha256:qa',
+    qa_verdict_report: 'Overall Status: FAIL\nStill broken',
+    supervisor_test_evidence: { tests: [{ command: ['node', '--test'], exit_code: 1 }] },
+    opencode: {
+      schema_version: 1,
+      fixer: { session_id: 'ses_fixer', last_status: 'ok' },
+      qa: { session_id: 'ses_qa', last_status: 'ok' },
+      specialists: {},
+      inflight: null,
+    },
+  };
+
+  const next = applyGateCommandState({
+    currentBeforeRun: current,
+    command: { verb: 'continue', commentId: 99, data: 'continue with QA report', manualFixResume: true },
+    currentIdentity: { plan_hash: 'sha256:plan', plan_revision: 'rev-1' },
+    repoDir: 'D:/repo',
+    qaRuntimeDir: 'D:/repo.qa',
+    now: '2026-08-26T01:00:00.000Z',
+  });
+
+  assert.equal(next.state, STATES.FIXING);
+  assert.equal(next.fix_rounds, 5);
+  assert.equal(next.manual_fix_resume, true);
+  assert.equal(next.manual_fix_resume_comment_id, 99);
+  assert.equal(next.manual_fix_resume_data, 'continue with QA report');
+  assert.equal(next.qa_verdict_status, 'FAIL');
+  assert.equal(next.opencode.fixer.session_id, 'ses_fixer');
+  assert.equal(next.opencode.qa.session_id, 'ses_qa');
+  assert.equal(next.last_consumed_comment_id, 99);
+});
+
 test('publishWaitingGate1Proposals publishes one recovered Gate 1 proposal and persists the marker for the second call skip', () => {
   const guardianDir = tempGuardianDir();
   const issue = 263;

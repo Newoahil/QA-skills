@@ -130,6 +130,10 @@ export function newState(issueNumber, now = new Date().toISOString()) {
     gate_1_revision_data: null, // opaque DATA tail from /guardian revise
     last_command_verb: null, // audit: last applied gate command verb (approve|revise|rework|retry|followup)
     last_command_comment_id: null, // audit: last applied gate command comment id
+    manual_fix_resume: false, // one-shot human authorization to continue after fix-rounds-exceeded
+    manual_fix_resume_comment_id: null,
+    manual_fix_resume_consumed_comment_id: null,
+    manual_fix_resume_data: null, // opaque DATA tail from /guardian continue
     handed_back_reason: null, // one of HANDED_BACK_REASONS
     issue_class: null, // bug | request
     processing_round: 1,
