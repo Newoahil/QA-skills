@@ -114,6 +114,28 @@ test('valid plan normalizes primary and declared test command files into affecte
   assert.deepEqual(result.plan.affected_files, ['src/config.mjs', 'tests/guardian/new-regression.test.mjs']);
 });
 
+test('primary_files display suffix is stripped before validation and scope merge', () => {
+  const result = validatePlan(plan({
+    affected_files: ['src/config.mjs'],
+    primary_files: ['src/display.mjs：中文说明', { path: 'src/other.mjs：另一处说明' }],
+  }), dossier);
+
+  assert.equal(result.valid, true);
+  assert.deepEqual(result.plan.affected_files, [
+    'src/config.mjs',
+    'src/display.mjs',
+    'src/other.mjs',
+    'tests/guardian/plan-validator.test.mjs',
+  ]);
+});
+
+test('primary_files display suffix cannot hide an unsafe path prefix', () => {
+  const result = validatePlan(plan({ primary_files: ['../outside.test.mjs：说明'] }), dossier);
+
+  assert.equal(result.valid, false);
+  assert.ok(result.errors.includes('plan:unsafe-primary_files:../outside.test.mjs'));
+});
+
 test('plan validation rejects unsafe declared primary files', () => {
   const result = validatePlan(plan({ primary_files: ['../outside.test.mjs'] }), dossier);
 

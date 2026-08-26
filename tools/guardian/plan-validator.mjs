@@ -55,15 +55,16 @@ export function validatePlan(plan, dossier) {
 
   let normalizedTestCommands = p.test_commands;
   let normalizedScope = null;
+  const primaryFiles = primaryPathList(p.primary_files);
   if (p.test_commands !== undefined) {
     try {
       normalizedTestCommands = parseValidatedTestPlan(p.test_commands);
-      normalizedScope = normalizePlanScope(p, normalizedTestCommands);
+      normalizedScope = normalizePlanScope(p, normalizedTestCommands, primaryFiles);
     } catch (error) {
       errors.push(`plan:test_commands:${error instanceof Error ? error.message : 'invalid'}`);
     }
   }
-  for (const error of validateDeclaredFiles('primary_files', p.primary_files)) errors.push(error);
+  for (const error of validateDeclaredFiles('primary_files', primaryFiles)) errors.push(error);
   for (const error of validateDeclaredFiles('affected_files', p.affected_files)) errors.push(error);
 
   const readiness = isDecisionReady(d);
@@ -83,12 +84,16 @@ export function validatePlan(plan, dossier) {
   };
 }
 
-function normalizePlanScope(plan, testCommands) {
+function normalizePlanScope(plan, testCommands, primaryFiles = pathList(plan.primary_files)) {
   const files = [];
-  for (const value of [...pathList(plan.affected_files), ...pathList(plan.primary_files), ...testFilesFromCommands(testCommands)]) {
+  for (const value of [...pathList(plan.affected_files), ...primaryFiles, ...testFilesFromCommands(testCommands)]) {
     if (!files.includes(value)) files.push(value);
   }
   return files;
+}
+
+function primaryPathList(value) {
+  return pathList(value).map((item) => item.split('：', 1)[0].trim()).filter(Boolean);
 }
 
 function pathList(value) {
