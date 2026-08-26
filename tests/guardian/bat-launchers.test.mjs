@@ -308,6 +308,19 @@ test('scheduler captures snapshot git diff and apply exit codes under Continue',
   assert.match(snapshotBlock, /\$applyExitCode = \$LASTEXITCODE/);
 });
 
+test('scheduler filters Guardian-owned canonical diffs before applying them to QA snapshot', () => {
+  const text = readFileSync('tools/guardian/scheduler-start.ps1', 'utf8');
+  const snapshotBlock = text.slice(text.indexOf('$patchFile ='), text.lastIndexOf('Copy-SelectedRuntimeInput'));
+  assert.match(snapshotBlock, /\$canonicalPatchArgs = @\(/);
+  assert.match(snapshotBlock, /'diff', 'HEAD', '--binary', "--output=\$patchFile", '--'/);
+  assert.match(snapshotBlock, /':\(exclude\)\.qa\/guardian\/\*'/);
+  assert.match(snapshotBlock, /':\(exclude\)\.sybermem\/\*'/);
+  assert.match(snapshotBlock, /':\(exclude\)\.scheduler\.lock'/);
+  assert.match(snapshotBlock, /':\(exclude\)watch-state\.json'/);
+  assert.match(snapshotBlock, /& git -C \$TargetRepo @canonicalPatchArgs/);
+  assert.doesNotMatch(snapshotBlock, /git -C \$TargetRepo diff HEAD --binary --output=/);
+});
+
 test('scheduler parenthesizes PowerShell cmdlets before boolean operators', () => {
   const text = readFileSync('tools/guardian/scheduler-start.ps1', 'utf8');
   assert.doesNotMatch(text, /if \(Test-Path -LiteralPath [^)]* -and/);

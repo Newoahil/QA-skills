@@ -652,7 +652,14 @@ if ($bindingMode -eq 'strict') {
       $previousErrorActionPreference = $ErrorActionPreference
       $ErrorActionPreference = "Continue"
       try {
-        & git -C $TargetRepo diff HEAD --binary --output="$patchFile" 2>$null
+        $canonicalPatchArgs = @(
+          'diff', 'HEAD', '--binary', "--output=$patchFile", '--',
+          ':(exclude).qa/guardian/*',
+          ':(exclude).sybermem/*',
+          ':(exclude).scheduler.lock',
+          ':(exclude)watch-state.json'
+        )
+        & git -C $TargetRepo @canonicalPatchArgs 2>$null
         $diffExitCode = $LASTEXITCODE
       } finally { $ErrorActionPreference = $previousErrorActionPreference }
       if ($diffExitCode -ne 0) { throw "无法读取 canonical target 的 tracked diff；已停止。" }

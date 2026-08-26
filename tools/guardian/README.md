@@ -218,11 +218,12 @@ Strict mode blocks startup unless both repositories are safe:
 - `gh auth status` succeeds and `gh repo view <github_repo>` is accessible.
 
 Worktree mode uses a persistent clean control worktree for authoritative `.qa/guardian` state and a
-separate clean QA snapshot. The snapshot receives `git diff HEAD --binary` plus only explicitly selected
-repository-relative runtime input files. It never copies `.git`, `.qa/guardian`, `node_modules`, or
-arbitrary untracked/ignored files; differing destination files fail closed. Fixer, Supervisor, state,
-PR, GitHub comments, and dashboard/session resolution use control; read-only investigation specialists
-use the QA snapshot. The canonical target checkout is never modified.
+separate clean QA snapshot. The snapshot receives the canonical target's tracked product diff, excluding
+Guardian-owned churn such as `.qa/guardian/**`, `.sybermem/**`, `.scheduler.lock`, and `watch-state.json`,
+plus only explicitly selected repository-relative runtime input files. It never copies `.git`,
+`node_modules`, or arbitrary untracked/ignored files; differing destination files fail closed. Fixer,
+Supervisor, state, PR, GitHub comments, and dashboard/session resolution use control; read-only
+investigation specialists use the QA snapshot. The canonical target checkout is never modified.
 
 `-DryRun` prints the resolved launch plan and current dirty status without creating worktrees/snapshots
 or running `git fetch`; it reads existing local refs only.
