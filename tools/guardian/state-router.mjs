@@ -61,6 +61,15 @@ export function routeIssue(record, gh, opts) {
       };
     }
     const cmd = selectControlCommand(controlEvents, STATES.HANDED_BACK);
+    if (cmd && cmd.verb === 'continue' && record.handed_back_reason === 'fix-rounds-exceeded') {
+      return {
+        action: 'RESUME',
+        reason: 'manual-fix-resume',
+        toState: STATES.FIXING,
+        command: cmd,
+        manualFixResume: true,
+      };
+    }
     if (cmd && cmd.verb === 'retry') {
       return {
         action: 'RESUME',

@@ -285,6 +285,32 @@ test('HANDED_BACK + /guardian retry → RESUME INVESTIGATING, clears fix_rounds 
   assert.equal(d.clearFixRounds, true);
 });
 
+test('HANDED_BACK fix-rounds-exceeded + /guardian continue → RESUME FIXING without clearing fix_rounds', () => {
+  const r = rec({
+    state: STATES.HANDED_BACK,
+    handed_back_reason: 'fix-rounds-exceeded',
+    last_error_class: 'fix-rounds-exceeded-human-review',
+    fix_rounds: MAX_FIX_ROUNDS,
+  });
+
+  const d = route(r, { comments: [comment(2, '/guardian continue use the QA failure report')] }, OPTS);
+
+  assert.equal(d.action, 'RESUME');
+  assert.equal(d.reason, 'manual-fix-resume');
+  assert.equal(d.toState, STATES.FIXING);
+  assert.equal(d.manualFixResume, true);
+  assert.equal(d.clearFixRounds, undefined);
+  assert.equal(d.command.data, 'use the QA failure report');
+});
+
+test('HANDED_BACK non-fix-cap + /guardian continue remains terminal', () => {
+  const r = rec({ state: STATES.HANDED_BACK, handed_back_reason: 'reject', last_error_class: 'reject' });
+  const d = route(r, { comments: [comment(3, '/guardian continue')] }, OPTS);
+
+  assert.equal(d.action, 'SKIP');
+  assert.equal(d.reason, 'handed-back-terminal');
+});
+
 test('GATE_2_WAIT + issue closed (human merged) → DONE (acceptance 9)', () => {
   const r = rec({ state: STATES.GATE_2_WAIT });
   const d = route(r, { closed: true }, { leaseMs: LEASE, now: NOW });

@@ -17,6 +17,7 @@ export const COMMANDS = Object.freeze({
   reject: { validIn: [STATES.GATE_1_WAIT], target: STATES.HANDED_BACK },
   rework: { validIn: [STATES.GATE_2_WAIT], target: STATES.FIXING },
   retry: { validIn: [STATES.HANDED_BACK], target: STATES.INVESTIGATING },
+  continue: { validIn: [STATES.HANDED_BACK], target: STATES.FIXING },
   followup: { validIn: [STATES.DONE, STATES.GATE_2_WAIT], target: STATES.INVESTIGATING },
 });
 

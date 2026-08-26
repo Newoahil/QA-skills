@@ -90,7 +90,17 @@ test('COMMANDS table state-guards every verb per §11.2', () => {
   assert.equal(COMMANDS.revise.target, STATES.INVESTIGATING);
   assert.deepEqual(COMMANDS.rework.validIn, [STATES.GATE_2_WAIT]);
   assert.deepEqual(COMMANDS.retry.validIn, [STATES.HANDED_BACK]);
+  assert.deepEqual(COMMANDS.continue.validIn, [STATES.HANDED_BACK]);
+  assert.equal(COMMANDS.continue.target, STATES.FIXING);
   assert.equal(COMMANDS.reject.target, STATES.HANDED_BACK);
+});
+
+test('continue parses as an explicit handed-back fixer resume command', () => {
+  assert.deepEqual(parseCommand('/guardian continue'), { verb: 'continue', data: '' });
+  const chosen = selectCommand([comment(1, '/guardian continue keep fixing with the QA report')], STATES.HANDED_BACK, null, TRUSTED);
+  assert.equal(chosen.verb, 'continue');
+  assert.equal(chosen.target, STATES.FIXING);
+  assert.equal(chosen.data, 'keep fixing with the QA report');
 });
 
 // --- idempotency robustness (regression: consumed id absent / reordered / numeric) --------
