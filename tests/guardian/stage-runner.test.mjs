@@ -455,7 +455,47 @@ test('runFixerStage passes configured base branch to Supervisor branch preparati
   });
 
   assert.equal(result.stop, false);
-  assert.deepEqual(requests, [{ issue: 265, options: { baseBranch: 'main' } }]);
+  assert.deepEqual(requests, [{ issue: 265, options: { baseBranch: 'main', plan: { affected_files: ['src/a.mjs'] } } }]);
+});
+
+test('runFixerStage passes normalized plan scope to Supervisor branch preparation', async () => {
+  const requests = [];
+  let state = { issue: 324, state: STATES.FIXING, opencode: {} };
+  const dossier = {
+    issue: 324,
+    issue_class: 'bug',
+    hypotheses: [{ id: 'H1', statement: 'root cause' }],
+    evidence: [{ id: 'E1', kind: 'runtime_reproduction', source: 'test', observation: 'reproduced', supports: ['H1'], contradicts: [] }],
+    unresolved_facts: [],
+    acceptance_criteria: [],
+    selected_hypothesis: 'H1',
+  };
+  const plan = {
+    root_cause: 'controller returns fixed success',
+    affected_files: ['src/controller.mjs'],
+    primary_files: [{ path: 'tests/controller.test.mjs' }],
+    non_goals: ['do not change unrelated routes'],
+    test_plan: ['run scoped test'],
+    test_commands: [['node', '--test', 'tests/controller.test.mjs']],
+    acceptance_criteria: ['controller no longer returns fixed success'],
+    rollback_plan: 'revert one commit',
+    evidence_ids: ['E1'],
+    risk: 'HIGH',
+    risk_assessment: { certain: false, lowDangerSurfaceOnly: false },
+  };
+  const { runFixerStage } = await import('../../tools/guardian/stage-runner.mjs');
+  const result = await runFixerStage({
+    client: {}, issue: 324, repoDir: 'D:/repo', guardianDir: 'D:/repo/.qa/guardian', command: null,
+    config: { base_branch: 'dev' }, investigationMode: 'enforced', fallbackModels: [], signal: null,
+    supervisor: { prepareFixBranch: (issue, options) => { requests.push({ issue, options }); return { status: 0 }; } },
+    logger: { info: () => {}, warn: () => {} }, readState: () => state, writeState: (_dir, next) => { state = next; },
+    readArtifactPair: () => ({ complete: true, dossier, plan }), writeMarkdownArtifact: () => {},
+    resolveSessionDeadlineMs: () => 100, resolveModelForRole: () => undefined,
+    runFixerSession: async (request) => ({ status: 'ok', state: request.state, completion: { changedFiles: request.plan.affected_files, summary: 'fixed' } }),
+  });
+
+  assert.equal(result.stop, false);
+  assert.deepEqual(requests[0].options.plan.affected_files, ['src/controller.mjs', 'tests/controller.test.mjs']);
 });
 
 test('runQaStage on FAIL at the round cap hands back explicitly instead of leaving an active state', async () => {

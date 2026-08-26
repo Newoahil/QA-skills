@@ -156,17 +156,17 @@ export function createSupervisorExecutor({ repoDir, run = spawnSync } = {}) {
     }
   }
 
-  function prepareFixBranch(issue, { baseBranch = 'dev' } = {}) {
-    return prepareFixBranchFromBase(issue, baseBranch);
+  function prepareFixBranch(issue, { baseBranch = 'dev', plan = null } = {}) {
+    return prepareFixBranchFromBase(issue, { baseBranch, plan });
   }
 
-  function prepareFixBranchFromBase(issue, baseBranch = 'dev') {
+  function prepareFixBranchFromBase(issue, { baseBranch = 'dev', plan = null } = {}) {
     const branch = branchName(issue);
     const base = repoRelativePath(baseBranch, 'base branch');
     const fetched = git(['fetch', 'origin', base]);
     if (fetched.status !== 0) return { ...fetched, code: 'base-fetch-failed', recoverable: true };
 
-    const status = git(['status', '--porcelain=v1']);
+    const status = git(['status', '--porcelain=v1', '-uall']);
     if (status.status !== 0) return { ...status, code: 'worktree-status-failed', recoverable: true };
     const dirtyPaths = status.stdout
       .split(/\r?\n/)
@@ -174,6 +174,13 @@ export function createSupervisorExecutor({ repoDir, run = spawnSync } = {}) {
       .map((line) => line.slice(3).trim().replace(/ -> .*$/u, '').replace(/^"|"$/gu, '').replaceAll('\\', '/'))
       .filter((path) => path !== '' && !GUARDIAN_ALLOWLIST.some((re) => re.test(path)));
     if (dirtyPaths.length > 0) {
+      const current = git(['branch', '--show-current']);
+      if (current.status !== 0) return { ...current, code: 'current-branch-failed', recoverable: true };
+      const planned = new Set(Array.isArray(plan?.affected_files) ? plan.affected_files.map((file) => repoRelativePath(file, 'affected file')) : []);
+      const outOfPlan = dirtyPaths.filter((path) => !planned.has(path));
+      if (current.stdout.trim() === branch && outOfPlan.length === 0) {
+        return { status: 0, stdout: status.stdout, stderr: '', code: 'planned-dirty-fix-branch-current', base_branch: base, branch };
+      }
       return {
         status: 1,
         stdout: status.stdout,

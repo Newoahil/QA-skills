@@ -126,6 +126,68 @@ test('finalization reuses the same validated test command plan after QA evidence
   assert.deepEqual(calls.find((call) => call.file === 'node').argv, ['--test', 'tests/guardian/fix.test.mjs']);
 });
 
+test('prepareFixBranch expands untracked directories before dirty branch checks', () => {
+  const calls = [];
+  const run = (file, argv, options) => {
+    calls.push({ file, argv, options });
+    if (argv[0] === 'fetch') return { status: 0, stdout: '', stderr: '' };
+    if (argv[0] === 'status') return { status: 0, stdout: '?? backend/services/components-center/src/test/node/send-sms-controller-simple-send.test.js\n', stderr: '' };
+    return { status: 0, stdout: '', stderr: '' };
+  };
+  const executor = createSupervisorExecutor({ repoDir: 'D:/repo', run });
+
+  const result = executor.prepareFixBranch(324, { baseBranch: 'dev' });
+
+  assert.equal(result.code, 'stale-dirty-fix-branch');
+  assert.deepEqual(calls.find((call) => call.argv[0] === 'status').argv, ['status', '--porcelain=v1', '-uall']);
+  assert.match(result.stderr, /send-sms-controller-simple-send\.test\.js/);
+  assert.doesNotMatch(result.stderr, /src\/test\/node\)/);
+});
+
+test('prepareFixBranch resumes planned dirty files only on the current issue branch', () => {
+  const calls = [];
+  const run = (file, argv, options) => {
+    calls.push({ file, argv, options });
+    if (argv[0] === 'fetch') return { status: 0, stdout: '', stderr: '' };
+    if (argv[0] === 'status') return { status: 0, stdout: ' M src/fix.mjs\n?? tests/fix.test.mjs\n', stderr: '' };
+    if (argv[0] === 'branch') return { status: 0, stdout: 'fix/issue-324\n', stderr: '' };
+    return { status: 1, stdout: '', stderr: 'must not mutate branch' };
+  };
+  const executor = createSupervisorExecutor({ repoDir: 'D:/repo', run });
+
+  const result = executor.prepareFixBranch(324, { baseBranch: 'dev', plan: { affected_files: ['src/fix.mjs', 'tests/fix.test.mjs'] } });
+
+  assert.equal(result.status, 0);
+  assert.equal(result.code, 'planned-dirty-fix-branch-current');
+  assert.deepEqual(calls.map((call) => call.argv), [
+    ['fetch', 'origin', 'dev'],
+    ['status', '--porcelain=v1', '-uall'],
+    ['branch', '--show-current'],
+  ]);
+});
+
+test('prepareFixBranch rejects planned dirty files when not on the current issue branch', () => {
+  const calls = [];
+  const run = (file, argv, options) => {
+    calls.push({ file, argv, options });
+    if (argv[0] === 'fetch') return { status: 0, stdout: '', stderr: '' };
+    if (argv[0] === 'status') return { status: 0, stdout: ' M src/fix.mjs\n', stderr: '' };
+    if (argv[0] === 'branch') return { status: 0, stdout: 'dev\n', stderr: '' };
+    return { status: 0, stdout: '', stderr: '' };
+  };
+  const executor = createSupervisorExecutor({ repoDir: 'D:/repo', run });
+
+  const result = executor.prepareFixBranch(324, { baseBranch: 'dev', plan: { affected_files: ['src/fix.mjs'] } });
+
+  assert.equal(result.status, 1);
+  assert.equal(result.code, 'stale-dirty-fix-branch');
+  assert.deepEqual(calls.map((call) => call.argv), [
+    ['fetch', 'origin', 'dev'],
+    ['status', '--porcelain=v1', '-uall'],
+    ['branch', '--show-current'],
+  ]);
+});
+
 test('supervisor denies arbitrary operation names and constructs exact finalization argv', () => {
   const calls = [];
   const run = (file, argv, options) => {
@@ -339,7 +401,7 @@ test('prepare-fix-branch refreshes a clean stale branch from the latest origin b
   assert.equal(result.code, 'stale-clean-branch-refreshed');
   assert.deepEqual(calls.map((call) => call.argv), [
     ['fetch', 'origin', 'dev'],
-    ['status', '--porcelain=v1'],
+    ['status', '--porcelain=v1', '-uall'],
     ['branch', '--show-current'],
     ['rev-parse', '--verify', 'fix/issue-212'],
     ['rev-parse', '--verify', 'origin/dev'],
@@ -366,7 +428,8 @@ test('prepare-fix-branch fails closed for dirty stale work and performs no branc
   assert.match(result.stderr, /dirty|recover|outside Guardian-owned/i);
   assert.deepEqual(calls.map((call) => call.argv), [
     ['fetch', 'origin', 'dev'],
-    ['status', '--porcelain=v1'],
+    ['status', '--porcelain=v1', '-uall'],
+    ['branch', '--show-current'],
   ]);
 });
 
@@ -389,7 +452,7 @@ test('prepare-fix-branch ignores Guardian-owned dirty state before branch prep',
   assert.equal(result.code, 'stale-clean-branch-refreshed');
   assert.deepEqual(calls.map((call) => call.argv), [
     ['fetch', 'origin', 'dev'],
-    ['status', '--porcelain=v1'],
+    ['status', '--porcelain=v1', '-uall'],
     ['branch', '--show-current'],
     ['rev-parse', '--verify', 'fix/issue-214'],
     ['rev-parse', '--verify', 'origin/dev'],
