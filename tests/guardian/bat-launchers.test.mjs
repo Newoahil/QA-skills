@@ -173,6 +173,17 @@ test('scheduler launcher allows supervisor stage recovery and normalizes annotat
   assert.match(controlFunction, /Normalize-DeclaredPath \$_\.path/);
 });
 
+test('scheduler launcher allows one-shot QA human-review dirty recovery', () => {
+  const text = readFileSync('tools/guardian/scheduler-start.ps1', 'utf8');
+  const controlFunction = text.slice(text.indexOf('function Ensure-ControlWorktree'), text.indexOf('function Ensure-QaSnapshot'));
+  assert.match(controlFunction, /recoverableQaHumanReviewHandback = \[string\]\$state\.state -eq 'HANDED_BACK'/);
+  assert.match(controlFunction, /\[string\]\$state\.last_error_class -eq 'qa-needs-human-review'/);
+  assert.match(controlFunction, /\$evidenceRetries -eq 0/);
+  assert.match(controlFunction, /\[string\]\$state\.branch -eq "fix\/issue-\$issue"/);
+  assert.match(controlFunction, /-and -not \$recoverableQaHumanReviewHandback/);
+  assert.doesNotMatch(controlFunction, /\?\?/);
+});
+
 test('scheduler launcher allows plan-scope recovery after router rewrites state to investigating', () => {
   const text = readFileSync('tools/guardian/scheduler-start.ps1', 'utf8');
   const controlFunction = text.slice(text.indexOf('function Ensure-ControlWorktree'), text.indexOf('function Ensure-QaSnapshot'));
