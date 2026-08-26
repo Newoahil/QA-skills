@@ -451,7 +451,9 @@ async function tick(repoDir, config, logger, signal = null, runtime = createSche
         // same specialist sessions. The state must stop being active immediately; otherwise a failed
         // investigation looks like a fresh in-progress lease until timeout.
         writeState(guardianDir, buildInvestigationFailureState({ failureState, investigationState, error }), { touch: false });
-        releaseLock(lockFile, handle);
+        // Lock cleanup is owned SOLELY by the inner finally (runFence.stop() then releaseLock, once).
+        // Releasing here while the heartbeat fence is still active would double-release and leave a
+        // live heartbeat briefly running against a released lock (Oracle review: line-454 lifecycle bug).
         logger.error('investigation.failed', { issue, error_message: error instanceof Error ? error.message : 'unknown', ...jsonFailureFields(error) });
         return;
       }
@@ -515,7 +517,8 @@ async function tick(repoDir, config, logger, signal = null, runtime = createSche
       } catch (error) {
         logger.warn('gate1.comment_failed', { issue, error_message: error instanceof Error ? error.message : 'unknown' });
       }
-      releaseLock(lockFile, handle);
+      // Lock cleanup is owned SOLELY by the inner finally (runFence.stop() then releaseLock, once);
+      // same lifecycle fix as the investigation-failure branch — no explicit release inside the fence.
       logger.warn('run.blocked_plan_gate', { issue, mode: investigationMode, reason: gate.reason ?? 'shadow-mode' });
       return;
     }
