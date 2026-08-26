@@ -129,6 +129,32 @@ test('primary_files display suffix is stripped before validation and scope merge
   ]);
 });
 
+test('declared plan file annotations are stripped before validation and scope merge', () => {
+  const result = validatePlan(plan({
+    primary_files: [
+      'backend/services/components-center/src/main/java/com/hzsx/rent/components/center/controller/SendSmsController.java（实现 `simpleSend` 的非假成功返回与兼容标识）',
+    ],
+    affected_files: [
+      'backend/services/components-center/src/main/java/com/hzsx/rent/components/center/controller/SendSmsController.java（本次修改）',
+      'backend/services/components-center/src/test/java/com/hzsx/rent/components/center/controller/SendSmsControllerTest.java（新增/改造控制器行为测试）',
+    ],
+  }), dossier);
+
+  assert.equal(result.valid, true);
+  assert.deepEqual(result.plan.affected_files, [
+    'backend/services/components-center/src/main/java/com/hzsx/rent/components/center/controller/SendSmsController.java',
+    'backend/services/components-center/src/test/java/com/hzsx/rent/components/center/controller/SendSmsControllerTest.java',
+    'tests/guardian/plan-validator.test.mjs',
+  ]);
+});
+
+test('declared plan file annotation stripping does not allow unsafe prose', () => {
+  const result = validatePlan(plan({ affected_files: ['这不是一个路径（说明）'] }), dossier);
+
+  assert.equal(result.valid, false);
+  assert.ok(result.errors.includes('plan:unsafe-affected_files:这不是一个路径'));
+});
+
 test('primary_files display suffix cannot hide an unsafe path prefix', () => {
   const result = validatePlan(plan({ primary_files: ['../outside.test.mjs：说明'] }), dossier);
 

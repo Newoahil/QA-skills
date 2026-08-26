@@ -55,7 +55,7 @@ export function validatePlan(plan, dossier) {
 
   let normalizedTestCommands = p.test_commands;
   let normalizedScope = null;
-  const primaryFiles = primaryPathList(p.primary_files);
+  const primaryFiles = declaredPathList(p.primary_files);
   if (p.test_commands !== undefined) {
     try {
       normalizedTestCommands = parseValidatedTestPlan(p.test_commands);
@@ -65,7 +65,8 @@ export function validatePlan(plan, dossier) {
     }
   }
   for (const error of validateDeclaredFiles('primary_files', primaryFiles)) errors.push(error);
-  for (const error of validateDeclaredFiles('affected_files', p.affected_files)) errors.push(error);
+  const affectedFiles = declaredPathList(p.affected_files);
+  for (const error of validateDeclaredFiles('affected_files', affectedFiles)) errors.push(error);
 
   const readiness = isDecisionReady(d);
   const mechanicalRisk = gradeRisk(p.risk_assessment);
@@ -84,16 +85,25 @@ export function validatePlan(plan, dossier) {
   };
 }
 
-function normalizePlanScope(plan, testCommands, primaryFiles = pathList(plan.primary_files)) {
+function normalizePlanScope(plan, testCommands, primaryFiles = declaredPathList(plan.primary_files)) {
   const files = [];
-  for (const value of [...pathList(plan.affected_files), ...primaryFiles, ...testFilesFromCommands(testCommands)]) {
+  for (const value of [...declaredPathList(plan.affected_files), ...primaryFiles, ...testFilesFromCommands(testCommands)]) {
     if (!files.includes(value)) files.push(value);
   }
   return files;
 }
 
-function primaryPathList(value) {
-  return pathList(value).map((item) => item.split('：', 1)[0].trim()).filter(Boolean);
+function declaredPathList(value) {
+  return pathList(value).map(normalizeDeclaredPath).filter(Boolean);
+}
+
+function normalizeDeclaredPath(value) {
+  return value
+    .split('（', 1)[0]
+    .split('(', 1)[0]
+    .split('：', 1)[0]
+    .split(': ', 1)[0]
+    .trim();
 }
 
 function pathList(value) {
