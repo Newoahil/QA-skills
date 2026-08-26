@@ -109,6 +109,8 @@ export function applyGateCommandState({ currentBeforeRun, command, currentIdenti
     qa_runtime_dir: qaRuntimeDir,
     state: gateApproved ? STATES.FIXING : (gateRevision ? STATES.INVESTIGATING : currentBeforeRun.state),
     last_consumed_comment_id: command.commentId,
+    last_command_verb: command.verb,
+    last_command_comment_id: command.commentId,
     gate_1_approved_comment_id: gateApproved ? command.commentId : null,
     gate_1_approved_plan_hash: gateApproved ? currentIdentity.plan_hash : null,
     gate_1_approved_plan_revision: gateApproved ? currentIdentity.plan_revision : null,
@@ -143,7 +145,30 @@ function writeQaVerdictArtifact(guardianDir, issue, qaVerdict) {
   return writeArtifact(guardianDir, issue, 'qa-verdict', qaVerdict);
 }
 
+// Sanitized supervisor evidence summary for the [QA_VERIFIED] human-readable section. Renders only
+// allow-listed facts (status/diff exit code, test names + exit codes) — never raw command output,
+// secrets, or paths. Returns null when nothing safe is present so the comment can say 未提供.
+export function summarizeSupervisorEvidence(evidence) {
+  if (!evidence || typeof evidence !== 'object') return null;
+  const lines = [];
+  const statusDiff = evidence.status_diff;
+  if (statusDiff && typeof statusDiff === 'object') {
+    lines.push(`- status/diff 退出码: ${Number.isInteger(statusDiff.exit_code) ? statusDiff.exit_code : 'n/a'}`);
+  }
+  const tests = Array.isArray(evidence.tests) ? evidence.tests : [];
+  for (const test of tests) {
+    if (!test || typeof test !== 'object') continue;
+    const argv = Array.isArray(test.command) ? test.command.join(' ') : String(test.command ?? '');
+    lines.push(`- 测试: ${argv || 'n/a'} → 退出码 ${Number.isInteger(test.exit_code) ? test.exit_code : 'n/a'}`);
+  }
+  return lines.length > 0 ? lines.join('\n') : null;
+}
+
 export const DEFAULT_INTERVAL_MS = 10 * 1000;
+// Fix↔QA repair loop default bound. QA FAIL resumes the same fixer session with the previous
+// report until QA passes, up to this cap; beyond it the issue is handed back with a human-review
+// recommendation. Configurable per project via config.max_fix_rounds.
+export const MAX_FIX_ROUNDS_DEFAULT = 5;
 // Heartbeat cadence: renew the lock well within the lease so a live long run never looks stale.
 const HEARTBEAT_MS = 30 * 1000;
 
@@ -168,10 +193,16 @@ export function validateSchedulerConfig(config = {}) {
     throw new Error('scheduler lease_ms must be at least 2x poll_interval_ms');
   }
 
+  const maxFixRounds = config.max_fix_rounds ?? MAX_FIX_ROUNDS_DEFAULT;
+  if (!Number.isInteger(maxFixRounds) || maxFixRounds < 1) {
+    throw new Error('scheduler max_fix_rounds must be a positive integer');
+  }
+
   return Object.freeze({
     ...config,
     poll_interval_ms: pollIntervalMs,
     lease_ms: leaseMs,
+    max_fix_rounds: maxFixRounds,
   });
 }
 
@@ -820,8 +851,10 @@ async function tick(repoDir, config, logger, signal = null, runtime = createSche
         gate_1_approved_comment_id: null,
         gate_1_approved_plan_hash: null,
         gate_1_approved_plan_revision: null,
-        gate_1_revision_data: null,
-        last_phase: 'gate1-wait',
+        // Keep last applied command audit; do NOT roll back last_consumed_comment_id (would hot-loop
+        // the same approve). The plan must be revised/regenerated, then explicitly re-approved.
+        last_error_class: 'plan-gate-rejected',
+        last_phase: 'gate1-wait-rejected',
         plan_validation_errors: gate.plan_result?.errors ?? [],
       };
       try {
@@ -1021,6 +1054,7 @@ async function tick(repoDir, config, logger, signal = null, runtime = createSche
           prUrl: pr.url,
           prTitle: pr.title,
           qaAcceptanceMarkdown: qaAcceptance,
+          supervisorEvidenceSummary: summarizeSupervisorEvidence(qaVerdict?.supervisor_evidence),
           reportHash: qaVerdict?.report_hash ?? null,
           attempt: afterRun.fix_rounds ?? 1,
         }, { actor: ACTORS.SUPERVISOR, isActiveRun, ghComment: defaultGhComment(repoDir, ACTORS.SUPERVISOR), logger });
@@ -1063,6 +1097,7 @@ export function writeVerdictComment(guardianDir, issue, params, deps) {
     prUrl: params.prUrl ?? null,
     prTitle: params.prTitle ?? null,
     qaAcceptanceMarkdown: params.qaAcceptanceMarkdown ?? null,
+    supervisorEvidenceSummary: params.supervisorEvidenceSummary ?? null,
     runId: params.runId ?? null,
     attempt: Number.isInteger(params.attempt) ? params.attempt : 1,
     reportHash: params.reportHash ?? null,

@@ -323,7 +323,7 @@ test('wrong-state command is ignored (gate-2 rework offered while in gate-1)', (
 });
 
 test('MAX_FIX_ROUNDS is exported and sane', () => {
-  assert.equal(MAX_FIX_ROUNDS >= 1 && MAX_FIX_ROUNDS <= 2, true);
+  assert.equal(MAX_FIX_ROUNDS >= 1, true);
 });
 
 test('FIXING with missing Supervisor evidence resumes QA instead of creating a fixer residue', () => {

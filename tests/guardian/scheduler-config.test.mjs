@@ -58,3 +58,16 @@ test('validateSchedulerConfig rejects leases shorter than double the poll interv
     /lease.*poll|poll.*lease|2/i,
   );
 });
+
+test('validateSchedulerConfig defaults max_fix_rounds to 5 and accepts positive override', () => {
+  const { MAX_FIX_ROUNDS_DEFAULT } = scheduler;
+  assert.equal(MAX_FIX_ROUNDS_DEFAULT, 5);
+  assert.equal(validateSchedulerConfig({}).max_fix_rounds, 5);
+  assert.equal(validateSchedulerConfig({ max_fix_rounds: 8 }).max_fix_rounds, 8);
+});
+
+test('validateSchedulerConfig rejects invalid max_fix_rounds', () => {
+  for (const max_fix_rounds of [0, -1, 'abc', 1.5, Number.NaN]) {
+    assertRejectsInvalidSchedulerConfig({ max_fix_rounds }, /max_fix_rounds/);
+  }
+});

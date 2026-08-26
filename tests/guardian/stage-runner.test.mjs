@@ -547,8 +547,12 @@ test('runQaStage on FAIL at the round cap hands back explicitly instead of leavi
   assert.equal(result.stop, true);
   assert.equal(state.state, STATES.HANDED_BACK);
   assert.equal(state.handed_back_reason, 'fix-rounds-exceeded');
+  assert.equal(state.last_error_class, 'fix-rounds-exceeded-human-review');
+  assert.equal(state.qa_verdict_status, 'FAIL');
   assert.equal(artifacts.at(0)?.name, 'qa-verdict');
-  assert.equal(result.qaVerdict, undefined);
+  // On cap exhaustion the final QA verdict/report/evidence is retained for human triage.
+  assert.equal(result.qaVerdict.status, 'FAIL');
+  assert.equal(result.qaVerdict.evidence_summary, 'Overall Status: FAIL\nRegression still reproduces');
 });
 
 test('runQaStage on FAIL below the round cap persists a bounded fixer retry', async () => {
@@ -609,6 +613,25 @@ test('runQaStage routes code-actionable BLOCKED to a bounded fixer retry with a 
   assert.equal(result.stop, false);
   assert.equal(state.state, STATES.FIXING);
   assert.equal(state.last_error_class, 'qa-blocked-code-actionable-retry');
+});
+
+test('runQaStage bounds missing-supervisor-evidence retries and hands back when exhausted', async () => {
+  let state = { issue: 269, state: STATES.VERIFYING, fix_rounds: 0, branch: 'fix/issue-269', evidence_retries: 3, opencode: {} };
+  const { runQaStage } = await import('../../tools/guardian/stage-runner.mjs');
+  const result = await runQaStage({
+    client: {}, issue: 269, repoDir: 'D:/repo', guardianDir: 'D:/repo/.qa/guardian', config: { max_evidence_retries: 3 }, fallbackModels: [], signal: null,
+    issueTitle: 'Evidence retry', logger: { info: () => {}, warn: () => {} }, readState: () => state, writeState: (_dir, next) => { state = next; },
+    readArtifactPair: () => ({ plan: { test_commands: [['node', '--test', 'tests/guardian/fix.test.mjs']] } }),
+    writeArtifact: () => {}, writeMarkdownArtifact: () => {}, pipeline: { completion: { changedFiles: [], summary: null } },
+    supervisor: { preQaEvidence: () => ({ status: 0, evidence: {} }) }, resolveSessionDeadlineMs: () => 100, resolveModelForRole: () => undefined,
+    runQaSession: async (request) => ({ status: 'ok', state: request.state, verdict: 'BLOCKED', report: 'Overall Status: BLOCKED\nblocker_class: missing-supervisor-evidence' }),
+  });
+
+  // The independent evidence-retry bound hands back instead of looping forever.
+  assert.equal(result.stop, true);
+  assert.equal(state.state, STATES.HANDED_BACK);
+  assert.equal(state.handed_back_reason, 'evidence-retry-exceeded');
+  assert.equal(state.last_error_class, 'qa-missing-supervisor-evidence-exhausted');
 });
 
 test('runQaStage hands back environment BLOCKED and NEEDS_HUMAN_REVIEW without active residue', async () => {

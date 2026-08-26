@@ -20,8 +20,10 @@ import { COMMANDS } from './commands.mjs';
 
 // STALLED auto-rerun cap (§11B.4): after this many auto-retries still stalled → HANDED_BACK.
 export const MAX_STALL_RETRIES = 1;
-// Fix↔verify loop cap (§11 / using-qa.md): rounds beyond this → HANDED_BACK.
-export const MAX_FIX_ROUNDS = 2;
+// Fix↔verify loop cap (§11 / using-qa.md): rounds beyond this → HANDED_BACK with human-review
+// recommendation. Default is the same as scheduler.mjs MAX_FIX_ROUNDS_DEFAULT; per-project config
+// max_fix_rounds can override at the stage-runner level.
+export const MAX_FIX_ROUNDS = 5;
 
 /**
  * @param {object|null} record  state record from readState(), or null if none on disk

@@ -59,6 +59,32 @@ test('QA_VERIFIED comment: marker on line 1, sentence, fenced json with pr_url',
   assert.match(body, /QA 报告指纹：sha256:deadbeef/);
 });
 
+test('QA_VERIFIED renders full QA report plus sanitized supervisor evidence summary', () => {
+  const body = buildVerdictComment({
+    marker: MARKERS.QA_VERIFIED,
+    issue: 191,
+    status: 'PASS',
+    branch: 'fix/issue-191',
+    prUrl: 'https://github.com/x/y/pull/5',
+    prTitle: 'Fix issue 191',
+    qaAcceptanceMarkdown: '## QA 验收结论\nOverall Status: PASS\n验收依据：全部回归测试通过，证据如下。',
+    supervisorEvidenceSummary: '- status/diff 退出码: 0\n- 测试: node --test tests/guardian/foo.test.mjs → 退出码 0',
+    reportHash: 'sha256:deadbeef',
+    attempt: 3,
+  });
+  // Full QA report (why passed + evidence) is embedded verbatim.
+  assert.match(body, /## QA 验收结论/);
+  assert.match(body, /验收依据：全部回归测试通过/);
+  // Sanitized supervisor evidence is rendered in its own section.
+  assert.match(body, /## Supervisor 验证证据/);
+  assert.match(body, /status\/diff 退出码: 0/);
+  assert.match(body, /foo\.test\.mjs → 退出码 0/);
+  // Supervisor evidence must NOT leak into the metadata JSON envelope.
+  const meta = extractMeta(body);
+  assert.equal('supervisorEvidenceSummary' in meta, false);
+  assert.equal('diff' in meta, false);
+});
+
 test('QA_FAILED comment: marker QA_FAILED, reason keyword, null pr_url', () => {
   const body = buildVerdictComment({
     marker: MARKERS.QA_FAILED,

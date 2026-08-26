@@ -14,6 +14,10 @@ import { githubIssueToTaskRef } from './task-ref.mjs';
 import { MAX_FIX_ROUNDS } from './state-router.mjs';
 import { validatePlan } from './plan-validator.mjs';
 
+// Independent bound for BLOCKED/missing-supervisor-evidence retry (it never consumes fix_rounds,
+// so without its own cap it could loop forever). Configurable per project via max_evidence_retries.
+const MAX_EVIDENCE_RETRIES = 3;
+
 const STAGE_KEYS = Object.freeze(['id', 'agent', 'runner', 'inputArtifacts', 'outputArtifacts', 'stateTransition', 'retryPolicy', 'producesEffects', 'extensionPoint']);
 const PIPELINE_MANIFEST_KEYS = Object.freeze(['stages']);
 const EXTENSION_POINTS = Object.freeze(['before-fixer', 'after-qa']);
@@ -174,6 +178,17 @@ export async function runFixerStage(context) {
 export async function runQaStage(context) {
   const isActiveRun = context.isActiveRun ?? (() => true);
   const afterFix = context.readState(context.guardianDir, context.issue) ?? { issue: context.issue };
+  // QA FAIL keeps resuming the same fixer session with the previous report until QA passes, up to
+  // maxFixRounds; beyond it the issue is handed back with a human-review recommendation. Default is
+  // the shared MAX_FIX_ROUNDS; per-project config.max_fix_rounds overrides.
+  const maxFixRounds = Number.isInteger(context.config?.max_fix_rounds) && context.config.max_fix_rounds >= 1
+    ? context.config.max_fix_rounds
+    : MAX_FIX_ROUNDS;
+  // Independent bound for the BLOCKED/missing-supervisor-evidence retry (it never consumes
+  // fix_rounds, so without its own cap it could loop forever).
+  const maxEvidenceRetries = Number.isInteger(context.config?.max_evidence_retries) && context.config.max_evidence_retries >= 1
+    ? context.config.max_evidence_retries
+    : MAX_EVIDENCE_RETRIES;
   const plan = context.readArtifactPair?.(context.guardianDir, context.issue)?.plan ?? null;
   const supervisorEvidence = typeof context.supervisor?.preQaEvidence === 'function'
     ? context.supervisor.preQaEvidence({ plan })
@@ -235,15 +250,20 @@ export async function runQaStage(context) {
 
   if (qaRun.verdict === 'FAIL') {
     const fixRounds = afterFix.fix_rounds ?? 0;
-    if (fixRounds >= MAX_FIX_ROUNDS) {
+    if (fixRounds >= maxFixRounds) {
       context.writeState(context.guardianDir, {
         ...qaRun.state,
         state: STATES.HANDED_BACK,
         handed_back_reason: 'fix-rounds-exceeded',
         last_phase: 'qa-failed',
-        last_error_class: 'qa-failed',
+        last_error_class: 'fix-rounds-exceeded-human-review',
+        qa_verdict_status: qaVerdict.status,
+        qa_verdict_hash: qaVerdict.report_hash,
+        qa_verdict_report: qaVerdict.evidence_summary,
+        supervisor_test_evidence: qaVerdict.supervisor_evidence,
       }, { touch: false });
-      return { stop: true, status: qaRun.status };
+      context.logger.warn('qa.fix_rounds_exceeded', { issue: context.issue, rounds: fixRounds, recommendation: 'human-review' });
+      return { stop: true, status: qaRun.status, qaVerdict };
     }
 
     context.writeState(context.guardianDir, {
@@ -264,9 +284,25 @@ export async function runQaStage(context) {
   if (qaRun.verdict === 'BLOCKED') {
     const blockerClass = blockerClassFromReport(qaRun.report);
     if (blockerClass === 'missing-supervisor-evidence') {
+      const evidenceRetries = afterFix.evidence_retries ?? 0;
+      if (evidenceRetries >= maxEvidenceRetries) {
+        context.writeState(context.guardianDir, {
+          ...qaRun.state,
+          state: STATES.HANDED_BACK,
+          handed_back_reason: 'evidence-retry-exceeded',
+          last_phase: 'qa-evidence-retry-exhausted',
+          last_error_class: 'qa-missing-supervisor-evidence-exhausted',
+          qa_verdict_status: qaVerdict.status,
+          qa_verdict_hash: qaVerdict.report_hash,
+          qa_verdict_report: qaVerdict.evidence_summary,
+          supervisor_test_evidence: qaVerdict.supervisor_evidence,
+        }, { touch: false });
+        return { stop: true, status: qaRun.status, qaVerdict };
+      }
       context.writeState(context.guardianDir, {
         ...qaRun.state,
         state: STATES.FIXING,
+        evidence_retries: evidenceRetries + 1,
         last_phase: 'qa-evidence-retry',
         last_error_class: 'qa-missing-supervisor-evidence',
         qa_verdict_status: qaVerdict.status,
@@ -278,15 +314,19 @@ export async function runQaStage(context) {
     }
     if (blockerClass === 'code-actionable') {
       const fixRounds = afterFix.fix_rounds ?? 0;
-      if (fixRounds >= MAX_FIX_ROUNDS) {
+      if (fixRounds >= maxFixRounds) {
         context.writeState(context.guardianDir, {
           ...qaRun.state,
           state: STATES.HANDED_BACK,
           handed_back_reason: 'fix-rounds-exceeded',
           last_phase: 'qa-blocked-code-actionable',
-          last_error_class: 'qa-blocked-code-actionable',
+          last_error_class: 'fix-rounds-exceeded-human-review',
+          qa_verdict_status: qaVerdict.status,
+          qa_verdict_hash: qaVerdict.report_hash,
+          qa_verdict_report: qaVerdict.evidence_summary,
+          supervisor_test_evidence: qaVerdict.supervisor_evidence,
         }, { touch: false });
-        return { stop: true, status: qaRun.status };
+        return { stop: true, status: qaRun.status, qaVerdict };
       }
       context.writeState(context.guardianDir, {
         ...qaRun.state,

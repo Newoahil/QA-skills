@@ -128,6 +128,8 @@ export function newState(issueNumber, now = new Date().toISOString()) {
     gate_1_approved_plan_hash: null,
     gate_1_approved_plan_revision: null,
     gate_1_revision_data: null, // opaque DATA tail from /guardian revise
+    last_command_verb: null, // audit: last applied gate command verb (approve|revise|rework|retry|followup)
+    last_command_comment_id: null, // audit: last applied gate command comment id
     handed_back_reason: null, // one of HANDED_BACK_REASONS
     issue_class: null, // bug | request
     processing_round: 1,
@@ -171,6 +173,7 @@ export function newState(issueNumber, now = new Date().toISOString()) {
     qa_verdict_status: null,
     qa_verdict_hash: null,
     last_verdict_comment_hash: null, // idempotent Supervisor verdict-comment (§3A.4)
+    evidence_retries: 0, // bounded retry counter for BLOCKED/missing-supervisor-evidence (§11B.4)
     // OpenCode session continuity (Oracle design): one fixer + one qa session per issue, reused
     // across gates/rework/followup; per-round specialist sessions. Never cleared by followup.
     opencode: {

@@ -8,7 +8,7 @@ import { hashArtifact, writeArtifact } from '../../tools/guardian/artifacts.mjs'
 import { ACTORS } from '../../tools/guardian/actor-routing.mjs';
 import { deliverNotifications } from '../../tools/guardian/notify-io.mjs';
 import { buildGate1Comment } from '../../tools/guardian/gate1-comment.mjs';
-import { applyGateCommandState, buildInvestigationFailureState, createLeaseFence, persistCommandlessTransitions, publishWaitingGate1Proposals } from '../../tools/guardian/scheduler.mjs';
+import { applyGateCommandState, buildInvestigationFailureState, createLeaseFence, persistCommandlessTransitions, publishWaitingGate1Proposals, summarizeSupervisorEvidence } from '../../tools/guardian/scheduler.mjs';
 import { newState, readState, STATES, writeState } from '../../tools/guardian/state.mjs';
 
 function fakeStore(initial) {
@@ -337,6 +337,10 @@ test('approve persists a pre-fixer inflight marker for crash-window recovery', (
 
   assert.equal(record.state, STATES.FIXING);
   assert.equal(record.gate_1_approved_comment_id, 'comment-approve');
+  assert.equal(record.gate_1_approved_plan_hash, 'sha256:plan');
+  assert.equal(record.gate_1_approved_plan_revision, 'rev-1');
+  assert.equal(record.last_command_verb, 'approve');
+  assert.equal(record.last_command_comment_id, 'comment-approve');
   assert.equal(record.opencode.inflight.kind, 'fixer-start');
   assert.equal(record.opencode.inflight.status, 'starting');
 });
@@ -372,6 +376,8 @@ test('revise clears approval/proposal markers and routes back to investigation',
   assert.equal(record.gate_1_approved_comment_id, null);
   assert.equal(record.gate_1_approved_plan_hash, null);
   assert.equal(record.gate_1_approved_plan_revision, null);
+  assert.equal(record.last_command_verb, 'revise');
+  assert.equal(record.last_command_comment_id, 'comment-revise');
   assert.equal(record.gate_1_comment_hash, null);
   assert.equal(record.last_gate_1_proposal_hash, null);
   assert.equal(record.last_notified_state, null);
@@ -382,4 +388,17 @@ test('revise clears approval/proposal markers and routes back to investigation',
   assert.equal(record.plan_hash, null);
   assert.equal(record.plan_revision, null);
   assert.equal(record.opencode.inflight, null);
+});
+
+test('summarizeSupervisorEvidence renders only allow-listed facts, never raw output', () => {
+  const summary = summarizeSupervisorEvidence({
+    status_diff: { exit_code: 0 },
+    tests: [{ command: ['node', '--test', 'tests/guardian/foo.test.mjs'], exit_code: 0 }],
+  });
+  assert.match(summary, /status\/diff 退出码: 0/);
+  assert.match(summary, /foo\.test\.mjs/);
+  assert.doesNotMatch(summary, /secret|token|password/i);
+  // Non-object / empty returns null.
+  assert.equal(summarizeSupervisorEvidence(null), null);
+  assert.equal(summarizeSupervisorEvidence({}), null);
 });

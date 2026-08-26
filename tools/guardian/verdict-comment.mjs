@@ -36,7 +36,12 @@ const HUMAN_LINE = Object.freeze({
 
 function detailLines(marker, args) {
   if (typeof args.qaAcceptanceMarkdown === 'string' && args.qaAcceptanceMarkdown.trim().length > 0) {
-    return ['', args.qaAcceptanceMarkdown.trim()];
+    const lines = ['', args.qaAcceptanceMarkdown.trim()];
+    const supervisorEvidence = args.supervisorEvidenceSummary;
+    if (typeof supervisorEvidence === 'string' && supervisorEvidence.trim().length > 0) {
+      lines.push('', '## Supervisor 验证证据', '', supervisorEvidence.trim());
+    }
+    return lines;
   }
   const status = args.status ?? 'UNKNOWN';
   const branch = args.branch ?? 'unknown';
