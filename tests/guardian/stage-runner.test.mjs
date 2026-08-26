@@ -695,6 +695,11 @@ test('runQaStage hands back environment BLOCKED and NEEDS_HUMAN_REVIEW without a
     });
     assert.equal(state.state, STATES.HANDED_BACK);
     assert.equal(state.handed_back_reason, verdict === 'BLOCKED' ? 'environment-blocked' : 'needs-clarification');
+    if (verdict === 'NEEDS_HUMAN_REVIEW') {
+      assert.equal(state.evidence_retries, 1);
+      assert.equal(state.qa_verdict_status, 'NEEDS_HUMAN_REVIEW');
+      assert.equal(state.last_error_class, 'qa-needs-human-review');
+    }
   }
 });
 

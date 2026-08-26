@@ -366,6 +366,11 @@ export async function runQaStage(context) {
       handed_back_reason: 'needs-clarification',
       last_phase: 'qa-needs-human-review',
       last_error_class: 'qa-needs-human-review',
+      evidence_retries: (afterFix.evidence_retries ?? 0) + 1,
+      qa_verdict_status: qaVerdict.status,
+      qa_verdict_hash: qaVerdict.report_hash,
+      qa_verdict_report: qaVerdict.evidence_summary,
+      supervisor_test_evidence: qaVerdict.supervisor_evidence,
     }, { touch: false });
     return { stop: true, status: qaRun.status };
   }
