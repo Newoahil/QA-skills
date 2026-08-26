@@ -160,6 +160,18 @@ test('scheduler launcher allows terminal handed-back dirty plan without blocking
   assert.match(controlFunction, /-and -not \$terminalHandedBackDirty/);
 });
 
+test('scheduler launcher allows supervisor stage recovery and normalizes annotated plan paths', () => {
+  const text = readFileSync('tools/guardian/scheduler-start.ps1', 'utf8');
+  const controlFunction = text.slice(text.indexOf('function Ensure-ControlWorktree'), text.indexOf('function Ensure-QaSnapshot'));
+  assert.match(controlFunction, /recoverableSupervisorStageHandback = \[string\]\$state\.state -eq 'HANDED_BACK'/);
+  assert.match(controlFunction, /\[string\]\$state\.last_error_class -eq 'supervisor-stage-failed'/);
+  assert.match(controlFunction, /\[string\]\$state\.qa_verdict_status -eq 'PASS'/);
+  assert.match(controlFunction, /-and -not \$recoverableSupervisorStageHandback/);
+  assert.match(controlFunction, /function Normalize-DeclaredPath/);
+  assert.match(controlFunction, /-split '：', 2/);
+  assert.match(controlFunction, /Normalize-DeclaredPath \$_\.path/);
+});
+
 test('scheduler launcher allows plan-scope recovery after router rewrites state to investigating', () => {
   const text = readFileSync('tools/guardian/scheduler-start.ps1', 'utf8');
   const controlFunction = text.slice(text.indexOf('function Ensure-ControlWorktree'), text.indexOf('function Ensure-QaSnapshot'));

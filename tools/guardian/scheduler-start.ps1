@@ -402,26 +402,30 @@ function Ensure-ControlWorktree([string]$SourceRepo, [string]$Destination, [stri
     [string]$state.opencode.fixer.last_error -eq 'changed-file-not-in-plan' -and
     [string]$state.gate_1_approved_plan_hash -eq [string]$state.plan_hash -and
     [string]$state.gate_1_approved_plan_revision -eq [string]$state.plan_revision
+  $recoverableSupervisorStageHandback = [string]$state.state -eq 'HANDED_BACK' -and
+    [string]$state.last_error_class -eq 'supervisor-stage-failed' -and
+    [string]$state.qa_verdict_status -eq 'PASS' -and
+    [string]$state.branch -eq "fix/issue-$issue"
   # A terminal HANDED_BACK (e.g. fix-rounds-exceeded / reject / stalled) leaves stale planned fixer
   # files behind, but the scheduler never auto-resumes it. Its residual dirt must not block startup;
   # the unplannedDirty check below still fails closed for anything outside the active plan scope.
   $terminalHandedBackDirty = [string]$state.state -eq 'HANDED_BACK' -and
     [string]$state.handed_back_reason -in @('fix-rounds-exceeded', 'reject', 'stalled')
-  if ((@('GATE_1_WAIT', 'FIXING', 'VERIFYING', 'GATE_2_WAIT') -notcontains [string]$state.state) -and -not $recoverablePlanScopeHandback -and -not $recoverablePlanScopeInvestigation -and -not $terminalHandedBackDirty) {
+  if ((@('GATE_1_WAIT', 'FIXING', 'VERIFYING', 'GATE_2_WAIT') -notcontains [string]$state.state) -and -not $recoverablePlanScopeHandback -and -not $recoverablePlanScopeInvestigation -and -not $recoverableSupervisorStageHandback -and -not $terminalHandedBackDirty) {
     throw "control worktree 存在计划外工作区修改：issue #$issue 当前状态 $($state.state) 不允许恢复 dirty fixer，已停止：$Destination"
   }
   $plan = Read-JsonUtf8 $planPath
   $activePlanPaths = @(
-    $plan.affected_files | ForEach-Object { if ($_ -is [string]) { $_.Trim().Replace('\', '/') } }
+    $plan.affected_files | ForEach-Object { if ($_ -is [string]) { Normalize-DeclaredPath $_ } }
     $plan.primary_files | ForEach-Object {
-      if ($_ -is [string]) { $_.Trim().Replace('\', '/') }
-      elseif ($_.path -is [string]) { $_.path.Trim().Replace('\', '/') }
-      elseif ($_.file -is [string]) { $_.file.Trim().Replace('\', '/') }
-      elseif ($_.file_path -is [string]) { $_.file_path.Trim().Replace('\', '/') }
+      if ($_ -is [string]) { Normalize-DeclaredPath $_ }
+      elseif ($_.path -is [string]) { Normalize-DeclaredPath $_.path }
+      elseif ($_.file -is [string]) { Normalize-DeclaredPath $_.file }
+      elseif ($_.file_path -is [string]) { Normalize-DeclaredPath $_.file_path }
     }
     $plan.test_commands | ForEach-Object {
       foreach ($arg in @($_)) {
-        if ($arg -is [string] -and ($arg.EndsWith('.test.mjs') -or $arg.EndsWith('.test.js') -or $arg.EndsWith('.js'))) { $arg.Trim().Replace('\', '/') }
+        if ($arg -is [string] -and ($arg.EndsWith('.test.mjs') -or $arg.EndsWith('.test.js') -or $arg.EndsWith('.js'))) { Normalize-DeclaredPath $arg }
       }
     }
   ) | Where-Object { $_ } | Select-Object -Unique
@@ -430,6 +434,10 @@ function Ensure-ControlWorktree([string]$SourceRepo, [string]$Destination, [stri
     throw "control worktree 存在计划外工作区修改：$($unplannedDirty -join ', ')。已停止以避免覆盖现有修改：$Destination"
   }
   Write-Host "    [resume] 恢复活动 issue #$issue 的计划内 fixer 修改：$($unownedDirty -join ', ')" -ForegroundColor Yellow
+}
+
+function Normalize-DeclaredPath([string]$Value) {
+  return (($Value -split '（', 2)[0] -split '\(', 2)[0] -split '：', 2)[0] -split ': ', 2)[0].Trim().Replace('\', '/')
 }
 
 function Ensure-QaSnapshot([string]$SourceRepo, [string]$Destination, [string]$Base) {
