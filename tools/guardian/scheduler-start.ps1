@@ -402,7 +402,12 @@ function Ensure-ControlWorktree([string]$SourceRepo, [string]$Destination, [stri
     [string]$state.opencode.fixer.last_error -eq 'changed-file-not-in-plan' -and
     [string]$state.gate_1_approved_plan_hash -eq [string]$state.plan_hash -and
     [string]$state.gate_1_approved_plan_revision -eq [string]$state.plan_revision
-  if ((@('GATE_1_WAIT', 'FIXING', 'VERIFYING', 'GATE_2_WAIT') -notcontains [string]$state.state) -and -not $recoverablePlanScopeHandback -and -not $recoverablePlanScopeInvestigation) {
+  # A terminal HANDED_BACK (e.g. fix-rounds-exceeded / reject / stalled) leaves stale planned fixer
+  # files behind, but the scheduler never auto-resumes it. Its residual dirt must not block startup;
+  # the unplannedDirty check below still fails closed for anything outside the active plan scope.
+  $terminalHandedBackDirty = [string]$state.state -eq 'HANDED_BACK' -and
+    [string]$state.handed_back_reason -in @('fix-rounds-exceeded', 'reject', 'stalled')
+  if ((@('GATE_1_WAIT', 'FIXING', 'VERIFYING', 'GATE_2_WAIT') -notcontains [string]$state.state) -and -not $recoverablePlanScopeHandback -and -not $recoverablePlanScopeInvestigation -and -not $terminalHandedBackDirty) {
     throw "control worktree 存在计划外工作区修改：issue #$issue 当前状态 $($state.state) 不允许恢复 dirty fixer，已停止：$Destination"
   }
   $plan = Read-JsonUtf8 $planPath

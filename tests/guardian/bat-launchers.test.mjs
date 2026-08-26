@@ -152,6 +152,14 @@ test('scheduler launcher allows dirty recovery for changed-file-not-in-plan hand
   assert.match(controlFunction, /Select-Object -Unique/);
 });
 
+test('scheduler launcher allows terminal handed-back dirty plan without blocking startup', () => {
+  const text = readFileSync('tools/guardian/scheduler-start.ps1', 'utf8');
+  const controlFunction = text.slice(text.indexOf('function Ensure-ControlWorktree'), text.indexOf('function Ensure-QaSnapshot'));
+  assert.match(controlFunction, /terminalHandedBackDirty = \[string\]\$state\.state -eq 'HANDED_BACK' -and\s+\[string\]\$state\.handed_back_reason -in @\('fix-rounds-exceeded', 'reject', 'stalled'\)/);
+  assert.match(controlFunction, /-and -not \$recoverablePlanScopeHandback/);
+  assert.match(controlFunction, /-and -not \$terminalHandedBackDirty/);
+});
+
 test('scheduler launcher allows plan-scope recovery after router rewrites state to investigating', () => {
   const text = readFileSync('tools/guardian/scheduler-start.ps1', 'utf8');
   const controlFunction = text.slice(text.indexOf('function Ensure-ControlWorktree'), text.indexOf('function Ensure-QaSnapshot'));
