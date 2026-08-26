@@ -8,20 +8,59 @@ import {
 } from '../../tools/guardian/github-task-source.mjs';
 import { STATES } from '../../tools/guardian/state.mjs';
 
-test('buildGitHubTaskObservation maps closed GitHub issue to terminal fact', () => {
+test('buildGitHubTaskObservation maps closed issue with matching merged PR to terminal fact', () => {
   const observation = buildGitHubTaskObservation({
     issueNumber: 42,
-    record: { state: STATES.GATE_2_WAIT, last_consumed_comment_id: null },
-    githubIssue: { title: 'Done', body: 'Merged by human.', closed: true, comments: [] },
+    record: { state: STATES.GATE_2_WAIT, last_consumed_comment_id: null, pr_url: 'https://github.com/o/r/pull/7' },
+    githubIssue: {
+      title: 'Done',
+      body: 'Merged by human.',
+      closed: true,
+      comments: [],
+      pullRequests: [{ number: 7, url: 'https://github.com/o/r/pull/7', headRefName: 'fix/issue-42', baseRefName: 'dev', merged: true }],
+    },
   });
 
   assert.deepEqual(observation.identity, { source: 'github', taskId: '42', displayId: '#42' });
   assert.deepEqual(observation.terminal, {
     status: 'completed',
     reason: 'merged-closed',
-    sourceEvidence: { closed: true },
+    sourceEvidence: {
+      issue_closed: true,
+      matching_pr_merged: true,
+      pr_number: 7,
+      pr_url: 'https://github.com/o/r/pull/7',
+      head: 'fix/issue-42',
+      base: 'dev',
+    },
   });
   assert.deepEqual(observation.facts, { title: 'Done', body: 'Merged by human.' });
+});
+
+test('buildGitHubTaskObservation does not treat issue closure alone as terminal', () => {
+  const observation = buildGitHubTaskObservation({
+    issueNumber: 42,
+    record: { state: STATES.GATE_2_WAIT, last_consumed_comment_id: null },
+    githubIssue: { title: 'Closed manually', body: '', closed: true, comments: [], pullRequests: [] },
+  });
+
+  assert.equal(observation.terminal, null);
+});
+
+test('buildGitHubTaskObservation ignores unrelated merged PRs when closing an issue', () => {
+  const observation = buildGitHubTaskObservation({
+    issueNumber: 42,
+    record: { state: STATES.GATE_2_WAIT, last_consumed_comment_id: null, pr_url: 'https://github.com/o/r/pull/7' },
+    githubIssue: {
+      title: 'Closed',
+      body: '',
+      closed: true,
+      comments: [],
+      pullRequests: [{ number: 8, url: 'https://github.com/o/r/pull/8', headRefName: 'fix/issue-99', baseRefName: 'dev', merged: true }],
+    },
+  });
+
+  assert.equal(observation.terminal, null);
 });
 
 test('buildGitHubTaskObservation exposes the trusted command as a control event', () => {
@@ -69,7 +108,7 @@ test('createGitHubTaskSource lists refs and reads observations through injected 
 test('defaultGhReader maps gh issue JSON to the legacy GitHub fact shape', () => {
   const reader = defaultGhReader('D:/repo', {
     spawnSync: (_cmd, args, opts) => {
-      assert.deepEqual(args, ['issue', 'view', '42', '--json', 'state,comments,title,body,labels']);
+      assert.deepEqual(args, ['issue', 'view', '42', '--json', 'state,comments,title,body,labels,pullRequests']);
       assert.equal(opts.cwd, 'D:/repo');
       return {
         status: 0,
@@ -78,6 +117,7 @@ test('defaultGhReader maps gh issue JSON to the legacy GitHub fact shape', () =>
           body: null,
           state: 'CLOSED',
           comments: [{ id: 7, body: '/guardian retry', createdAt: '2026-08-24T03:00:00Z', author: { login: 'alice' } }],
+          pullRequests: [{ number: 9, url: 'https://github.com/o/r/pull/9', headRefName: 'fix/issue-42', baseRefName: 'dev', merged: true }],
         }),
       };
     },
@@ -88,5 +128,6 @@ test('defaultGhReader maps gh issue JSON to the legacy GitHub fact shape', () =>
     body: '',
     closed: true,
     comments: [{ id: 7, body: '/guardian retry', createdAt: '2026-08-24T03:00:00Z', author: 'alice' }],
+    pullRequests: [{ number: 9, url: 'https://github.com/o/r/pull/9', headRefName: 'fix/issue-42', baseRefName: 'dev', merged: true }],
   });
 });

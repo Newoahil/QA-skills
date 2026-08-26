@@ -199,7 +199,7 @@ export function routeIssue(record, gh, opts) {
 function normalizeRouteInput(input, record, trustedAuthors) {
   if (input && Array.isArray(input.controlEvents)) return input;
   return {
-    terminal: input?.closed ? { status: 'completed', reason: 'merged-closed', sourceEvidence: { closed: true } } : null,
+    terminal: null,
     controlEvents: [],
   };
 }

@@ -311,11 +311,22 @@ test('HANDED_BACK non-fix-cap + /guardian continue remains terminal', () => {
   assert.equal(d.reason, 'handed-back-terminal');
 });
 
-test('GATE_2_WAIT + issue closed (human merged) → DONE (acceptance 9)', () => {
+test('GATE_2_WAIT + typed closed-and-merged terminal fact → DONE (acceptance 9)', () => {
   const r = rec({ state: STATES.GATE_2_WAIT });
-  const d = route(r, { closed: true }, { leaseMs: LEASE, now: NOW });
+  const d = routeIssue(r, {
+    terminal: { status: 'completed', reason: 'merged-closed', sourceEvidence: { issue_closed: true, matching_pr_merged: true } },
+    controlEvents: [],
+  }, { leaseMs: LEASE, now: NOW });
   assert.equal(d.action, 'DONE');
   assert.equal(d.reason, 'merged-closed');
+});
+
+test('GATE_2_WAIT + legacy issue closed without matching PR evidence does not reach DONE', () => {
+  const r = rec({ state: STATES.GATE_2_WAIT });
+  const d = routeIssue(r, { closed: true, comments: [] }, { leaseMs: LEASE, now: NOW });
+
+  assert.equal(d.action, 'SKIP');
+  assert.equal(d.reason, 'gate2-waiting');
 });
 
 test('GATE_2_WAIT + /guardian rework → RESUME FIXING (acceptance 22)', () => {
@@ -396,7 +407,10 @@ test('DONE + trusted /guardian followup → RESUME new INVESTIGATING round', () 
 
 test('closed GATE_2_WAIT + followup wins over DONE transition', () => {
   const r = rec({ state: STATES.GATE_2_WAIT });
-  const d = route(r, { closed: true, comments: [comment(10, '/guardian followup post-merge issue')] }, OPTS);
+  const d = routeIssue(r, {
+    terminal: { status: 'completed', reason: 'merged-closed', sourceEvidence: { issue_closed: true, matching_pr_merged: true } },
+    controlEvents: [{ id: '10', kind: 'command', verb: 'followup', data: 'post-merge issue', author: 'maintainer', occurredAt: '2026-08-18T11:10:00Z', sequence: 0 }],
+  }, OPTS);
   assert.equal(d.action, 'RESUME');
   assert.equal(d.reason, 'followup');
   assert.equal(d.newRound, true);
