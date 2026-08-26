@@ -114,15 +114,22 @@ function selectExecutionProfile(context = {}) {
 export async function runFixerStage(context) {
   const isActiveRun = context.isActiveRun ?? (() => true);
   const currentState = context.readState(context.guardianDir, context.issue) ?? { issue: context.issue };
-  const humanNote = context.command?.data
+  const manualResume = currentState.manual_fix_resume === true;
+  const humanNote = context.command?.data || manualResume
     ? {
-        command_kind: context.command.verb,
-        command_comment_id: context.command.commentId,
+        command_kind: context.command?.verb ?? 'continue',
+        command_comment_id: context.command?.commentId ?? currentState.manual_fix_resume_comment_id,
         trusted_author_id: null,
         round: currentState.processing_round ?? 1,
-        human_note: context.command.data,
+        human_note: context.command?.data ?? currentState.manual_fix_resume_data ?? '',
       }
     : null;
+  const fixerState = manualResume ? {
+    ...currentState,
+    manual_fix_resume: false,
+    manual_fix_resume_consumed_comment_id: currentState.manual_fix_resume_comment_id ?? null,
+  } : currentState;
+  if (manualResume) context.writeState(context.guardianDir, fixerState, { touch: false });
   const artifactPair = context.readArtifactPair(context.guardianDir, context.issue);
   const planResult = validatePlan(artifactPair.plan, artifactPair.dossier);
   const plan = planResult.plan ?? artifactPair.plan;
@@ -131,13 +138,13 @@ export async function runFixerStage(context) {
   context.logger.info('fixer.begin', { issue: context.issue, round: currentState.processing_round ?? 1 });
   const fixerRun = await context.runFixerSession({
     client: context.client,
-    state: currentState,
+    state: fixerState,
     issue: context.issue,
     repoDir: context.repoDir,
     dossierPath: path.join(context.guardianDir, String(context.issue), 'dossier.json'),
     planPath: path.join(context.guardianDir, String(context.issue), 'plan.json'),
     humanNote,
-    priorQa: currentState.last_error_class?.startsWith('qa-') ? {
+    priorQa: currentState.last_error_class?.startsWith('qa-') || manualResume ? {
       verdict: currentState.qa_verdict_status ?? null,
       report: currentState.qa_verdict_report ?? null,
       supervisorEvidence: currentState.supervisor_test_evidence ?? null,

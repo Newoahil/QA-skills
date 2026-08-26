@@ -498,6 +498,53 @@ test('runFixerStage passes normalized plan scope to Supervisor branch preparatio
   assert.deepEqual(requests[0].options.plan.affected_files, ['src/controller.mjs', 'tests/controller.test.mjs']);
 });
 
+test('runFixerStage manual continuation passes prior QA and consumes the one-shot marker', async () => {
+  let state = {
+    issue: 324,
+    state: STATES.FIXING,
+    branch: 'fix/issue-324',
+    fix_rounds: MAX_FIX_ROUNDS,
+    manual_fix_resume: true,
+    manual_fix_resume_comment_id: 77,
+    manual_fix_resume_data: 'continue with the QA report',
+    last_error_class: 'fix-rounds-exceeded-human-review',
+    qa_verdict_status: 'FAIL',
+    qa_verdict_report: 'Overall Status: FAIL\nController still returns fixed success',
+    supervisor_test_evidence: { tests: [{ command: ['node', '--test', 'tests/fix.test.mjs'], exit_code: 1 }] },
+    opencode: { fixer: { session_id: 'ses_fixer' }, qa: { session_id: 'ses_qa' }, specialists: {}, inflight: null },
+  };
+  let received = null;
+  const writes = [];
+  const { runFixerStage } = await import('../../tools/guardian/stage-runner.mjs');
+
+  const result = await runFixerStage({
+    client: {}, issue: 324, repoDir: 'D:/repo', guardianDir: 'D:/repo/.qa/guardian', command: null,
+    config: { base_branch: 'dev' }, investigationMode: 'enforced', fallbackModels: [], signal: null,
+    supervisor: { prepareFixBranch: () => ({ status: 0, stdout: '', stderr: '' }) },
+    logger: { info: () => {}, warn: () => {} },
+    readState: () => state,
+    writeState: (_dir, next) => { state = next; writes.push(next); },
+    readArtifactPair: () => ({ complete: true, dossier: {}, plan: { affected_files: ['src/controller.mjs'] } }),
+    writeMarkdownArtifact: () => {},
+    resolveSessionDeadlineMs: () => 100,
+    resolveModelForRole: () => undefined,
+    runFixerSession: async (request) => {
+      received = request;
+      return { status: 'ok', state: { ...request.state, opencode: request.state.opencode }, completion: { changedFiles: ['src/controller.mjs'], summary: 'fixed again' } };
+    },
+  });
+
+  assert.equal(result.stop, false);
+  assert.equal(received.priorQa.verdict, 'FAIL');
+  assert.match(received.priorQa.report, /Controller still returns/);
+  assert.deepEqual(received.priorQa.supervisorEvidence, { tests: [{ command: ['node', '--test', 'tests/fix.test.mjs'], exit_code: 1 }] });
+  assert.equal(received.humanNote.command_kind, 'continue');
+  assert.equal(received.humanNote.human_note, 'continue with the QA report');
+  assert.equal(writes[0].manual_fix_resume, false);
+  assert.equal(writes[0].manual_fix_resume_consumed_comment_id, 77);
+  assert.equal(state.fix_rounds, MAX_FIX_ROUNDS);
+});
+
 test('runQaStage on FAIL at the round cap hands back explicitly instead of leaving an active state', async () => {
   let state = {
     issue: 264,
