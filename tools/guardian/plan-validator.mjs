@@ -100,7 +100,7 @@ function normalizePlanScope(plan, testCommands, primaryFiles = declaredPathList(
   return files;
 }
 
-function declaredPathList(value) {
+export function declaredPathList(value) {
   return pathList(value).map(normalizeDeclaredPath).filter(Boolean);
 }
 

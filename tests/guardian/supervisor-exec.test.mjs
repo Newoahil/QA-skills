@@ -318,6 +318,27 @@ test('clean scoped finalization stages only the affected files and excludes code
   assert.equal(calls.some((call) => call.argv.includes('.codegraph')), false);
 });
 
+test('finalization normalizes annotated affected file paths before isolation and staging', async () => {
+  const calls = [];
+  const annotated = 'backend/services/order-center/src/main/java/com/hzsx/rent/order/center/service/impl/OrderContractServiceImpl.java：统一 getExistingEvidence 返回 Map 的存证 key，并抽取字段常量。';
+  const normalized = 'backend/services/order-center/src/main/java/com/hzsx/rent/order/center/service/impl/OrderContractServiceImpl.java';
+  const run = (file, argv, options) => {
+    calls.push({ file, argv, options });
+    if (argv[0] === 'branch') return { status: 0, stdout: 'fix/issue-325\n', stderr: '' };
+    if (argv[0] === 'status' && argv[1] === '--porcelain=v1') return { status: 0, stdout: ` M ${normalized}\0`, stderr: '' };
+    if (argv[0] === 'diff' && argv[1] === '--cached') return { status: 0, stdout: calls.some((call) => call.argv[0] === 'add') ? `${normalized}\n` : '', stderr: '' };
+    if (argv[0] === 'diff') return { status: 0, stdout: 'diff\n', stderr: '' };
+    if (argv[0] === 'add') return { status: 0, stdout: '', stderr: '' };
+    return { status: 0, stdout: '', stderr: '' };
+  };
+  const executor = createSupervisorExecutor({ repoDir: 'D:/repo', run });
+
+  await executor.finalizeFix({ issue: 325, mode: 'enforced', plan: { affected_files: [annotated], test_commands: [['node', '--test', 'tests/guardian/foo.test.mjs']] } });
+
+  assert.deepEqual(calls.find((call) => call.argv[0] === 'add').argv, ['add', '--', normalized]);
+  assert.equal(calls.some((call) => call.argv.some((arg) => typeof arg === 'string' && arg.includes('：统一'))), false);
+});
+
 test('finalization refuses to continue before irreversible operations when the active-run fence is already false', async () => {
   const calls = [];
   const run = (file, argv, options) => {

@@ -4,6 +4,8 @@
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 
+import { declaredPathList } from './plan-validator.mjs';
+
 export const SUPERVISOR_OPERATIONS = Object.freeze([
   'current-branch', 'status-diff', 'staged-files', 'worktree-files', 'ensure-fix-branch', 'run-tests', 'pre-qa-evidence', 'stage-files', 'commit', 'push',
 ]);
@@ -187,7 +189,7 @@ export function createSupervisorExecutor({ repoDir, run = spawnSync } = {}) {
     if (dirtyPaths.length > 0) {
       const current = git(['branch', '--show-current']);
       if (current.status !== 0) return { ...current, code: 'current-branch-failed', recoverable: true };
-      const planned = new Set(Array.isArray(plan?.affected_files) ? plan.affected_files.map((file) => repoRelativePath(file, 'affected file')) : []);
+      const planned = new Set(declaredPathList(plan?.affected_files).map((file) => repoRelativePath(file, 'affected file')));
       const outOfPlan = dirtyPaths.filter((path) => !planned.has(path));
       if (current.stdout.trim() === branch && outOfPlan.length === 0) {
         return { status: 0, stdout: status.stdout, stderr: '', code: 'planned-dirty-fix-branch-current', base_branch: base, branch };
@@ -257,7 +259,7 @@ export function createSupervisorExecutor({ repoDir, run = spawnSync } = {}) {
   }
 
   function assertWorktreeIsolated(plan) {
-    const affected = new Set(Array.isArray(plan?.affected_files) ? plan.affected_files.map((f) => f.replaceAll('\\', '/')) : []);
+    const affected = new Set(declaredPathList(plan?.affected_files).map((file) => repoRelativePath(file, 'affected file')));
     const changed = worktreeChangedPaths();
     const outOfScope = changed.filter((path) => !affected.has(path) && !GUARDIAN_ALLOWLIST.some((re) => re.test(path)));
     if (outOfScope.length > 0) {
@@ -269,7 +271,7 @@ export function createSupervisorExecutor({ repoDir, run = spawnSync } = {}) {
     const assertActiveRun = () => {
       if (!isActiveRun()) throw new Error('finalization fenced: active run is false');
     };
-    const affectedFiles = Array.isArray(plan?.affected_files) ? plan.affected_files.map((file) => repoRelativePath(file, 'affected file')) : [];
+    const affectedFiles = declaredPathList(plan?.affected_files).map((file) => repoRelativePath(file, 'affected file'));
     if (affectedFiles.length === 0) throw new Error('affected files are required');
     const expected = new Set(affectedFiles);
     const stagedNames = () => {
