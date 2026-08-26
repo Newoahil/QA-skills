@@ -60,6 +60,13 @@ export function routeIssue(record, gh, opts) {
         toState: STATES.INVESTIGATING,
       };
     }
+    if (record.last_error_class === 'supervisor-stage-failed' && record.qa_verdict_status === 'PASS' && record.branch) {
+      return {
+        action: 'RESUME',
+        reason: 'supervisor-stage-recovery',
+        toState: STATES.FIXING,
+      };
+    }
     const cmd = selectControlCommand(controlEvents, STATES.HANDED_BACK);
     if (cmd && cmd.verb === 'continue' && record.handed_back_reason === 'fix-rounds-exceeded') {
       return {

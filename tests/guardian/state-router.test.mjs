@@ -290,6 +290,22 @@ test('handed back changed-file-not-in-plan from old incomplete scope resumes inv
   assert.equal(d.toState, STATES.INVESTIGATING);
 });
 
+test('handed back supervisor stage failure after QA PASS resumes without a fresh active lease', () => {
+  const r = rec({
+    state: STATES.HANDED_BACK,
+    branch: 'fix/issue-42',
+    qa_verdict_status: 'PASS',
+    last_error_class: 'supervisor-stage-failed',
+    handed_back_reason: 'supervisor-run-failed',
+  });
+
+  const d = route(r, {}, { leaseMs: LEASE, now: NOW });
+
+  assert.equal(d.action, 'RESUME');
+  assert.equal(d.reason, 'supervisor-stage-recovery');
+  assert.equal(d.toState, STATES.FIXING);
+});
+
 test('HANDED_BACK default → SKIP permanently even with label (acceptance 20)', () => {
   const r = rec({ state: STATES.HANDED_BACK, handed_back_reason: 'reject' });
   const d = route(r, {}, { leaseMs: LEASE, now: NOW });
