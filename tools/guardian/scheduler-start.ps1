@@ -406,11 +406,12 @@ function Ensure-ControlWorktree([string]$SourceRepo, [string]$Destination, [stri
     [string]$state.last_error_class -eq 'supervisor-stage-failed' -and
     [string]$state.qa_verdict_status -eq 'PASS' -and
     [string]$state.branch -eq "fix/issue-$issue"
-  # A terminal HANDED_BACK (e.g. fix-rounds-exceeded / reject / stalled) leaves stale planned fixer
+  # A terminal HANDED_BACK (e.g. fix-rounds-exceeded / reject / stalled / supervisor-run-failed)
+  # leaves stale planned fixer
   # files behind, but the scheduler never auto-resumes it. Its residual dirt must not block startup;
   # the unplannedDirty check below still fails closed for anything outside the active plan scope.
   $terminalHandedBackDirty = [string]$state.state -eq 'HANDED_BACK' -and
-    [string]$state.handed_back_reason -in @('fix-rounds-exceeded', 'reject', 'stalled')
+    [string]$state.handed_back_reason -in @('fix-rounds-exceeded', 'reject', 'stalled', 'supervisor-run-failed')
   if ((@('GATE_1_WAIT', 'FIXING', 'VERIFYING', 'GATE_2_WAIT') -notcontains [string]$state.state) -and -not $recoverablePlanScopeHandback -and -not $recoverablePlanScopeInvestigation -and -not $recoverableSupervisorStageHandback -and -not $terminalHandedBackDirty) {
     throw "control worktree 存在计划外工作区修改：issue #$issue 当前状态 $($state.state) 不允许恢复 dirty fixer，已停止：$Destination"
   }
