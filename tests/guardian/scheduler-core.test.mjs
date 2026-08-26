@@ -35,6 +35,18 @@ test('live lock: starts nothing new (N=1), but still returns notify list', () =>
   assert.equal(plan.notify[0].issue, 2);
 });
 
+test('fresh active issue suppresses other runnable issues even without a lock file', () => {
+  const decisions = [
+    d(325, 'RESUME', { reason: 'approved-pre-fixer-recovery' }),
+    d(324, 'SKIP', { reason: 'in-progress-fresh-lease' }),
+  ];
+  const plan = planTick({ decisions, lock: null, leaseMs: LEASE, now: NOW });
+
+  assert.equal(plan.lockBusy, false);
+  assert.equal(plan.activeIssue, 324);
+  assert.equal(plan.toRun, null);
+});
+
 test('expired lock is treated as free → a run may start', () => {
   const decisions = [d(1, 'RESUME')];
   const plan = planTick({ decisions, lock: { pid: 9, acquired_at: NOW - LEASE - 1 }, leaseMs: LEASE, now: NOW });

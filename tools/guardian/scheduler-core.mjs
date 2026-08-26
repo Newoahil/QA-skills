@@ -95,8 +95,13 @@ export function planTick(args) {
     return { toRun: null, lockBusy: true, notify };
   }
 
+  const activeIssue = decisions.find((d) => d.reason === 'in-progress-fresh-lease')?.issue ?? null;
+  if (activeIssue !== null) {
+    return { toRun: null, lockBusy: false, activeIssue, notify };
+  }
+
   // N=1: pick the FIRST runnable decision in the given order (caller controls ordering, e.g.
   // by issue number / updatedAt). Deterministic single selection.
   const toRun = decisions.find((d) => RUNNABLE_ACTIONS.includes(d.action)) ?? null;
-  return { toRun, lockBusy: false, notify };
+  return { toRun, lockBusy: false, activeIssue: null, notify };
 }
