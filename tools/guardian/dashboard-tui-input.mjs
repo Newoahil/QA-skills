@@ -44,6 +44,8 @@ export function parseKeypress(input) {
   if (text === 'g' || text === 'G') return { type: 'logs-follow-end' };
   if (text === 'p' || text === 'P') return { type: 'logs-pause-follow' };
   if (text === 't' || text === 'T') return { type: 'cycle-state-filter' };
+  if (text === '[') return { type: 'cycle-live-role', direction: -1 };
+  if (text === ']') return { type: 'cycle-live-role', direction: 1 };
   if (text in TAB_KEYS) return { type: 'switch-tab', tab: TAB_KEYS[text] };
   if (text === '\r' || text === '\n') return { type: 'enter-detail' };
   if (text === '\t') return { type: 'cycle-focus' };

@@ -18,6 +18,7 @@ test('dashboard-tui input maps tabs and refresh helpers', () => {
   assert.deepEqual(parseKeypress('2'), { type: 'switch-tab', tab: TUI_TABS.transcript });
   assert.deepEqual(parseKeypress('3'), { type: 'switch-tab', tab: TUI_TABS.logs });
   assert.deepEqual(parseKeypress('4'), { type: 'switch-tab', tab: TUI_TABS.artifacts });
+  assert.deepEqual(parseKeypress('5'), { type: 'switch-tab', tab: TUI_TABS.live });
   assert.deepEqual(parseKeypress('r'), { type: 'refresh' });
   assert.deepEqual(parseKeypress('a'), { type: 'toggle-auto-refresh' });
   assert.deepEqual(parseKeypress('F'), { type: 'toggle-transcript-full' });
@@ -25,6 +26,8 @@ test('dashboard-tui input maps tabs and refresh helpers', () => {
   assert.deepEqual(parseKeypress('p'), { type: 'logs-pause-follow' });
   assert.deepEqual(parseKeypress('t'), { type: 'cycle-state-filter' });
   assert.deepEqual(parseKeypress('T'), { type: 'cycle-state-filter' });
+  assert.deepEqual(parseKeypress('['), { type: 'cycle-live-role', direction: -1 });
+  assert.deepEqual(parseKeypress(']'), { type: 'cycle-live-role', direction: 1 });
 });
 
 test('dashboard-tui input buffers split escape sequences until complete', () => {

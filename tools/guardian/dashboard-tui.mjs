@@ -33,7 +33,7 @@ export function tuiUsage() {
 键位:
   q 退出 | ↑/↓ 或 j/k 导航 | Enter 进入详情滚动 | Esc 返回队列
   1 摘要 | 2 transcript | 3 logs | 4 产物/错误 | 5 实时(需 --base-url 共享 serve)
-  r 手动刷新 | a 自动刷新开关 | t 切换队列筛选 | ? 帮助 | F transcript 完整模式 | G/p logs follow
+  r 手动刷新 | a 自动刷新开关 | t 切换队列筛选 | ? 帮助 | F transcript 完整模式 | [/] 切换实时会话 | G/p logs follow
 
 安全说明:
   - 只读查看 .qa/guardian、issue 产物与 OpenCode transcript
@@ -139,6 +139,7 @@ export async function runDashboardTuiCli(argv, deps = {}) {
         baseUrl: liveBaseUrl ?? DEFAULT_BASE_URL,
         transcriptFetcher,
         liveLines: eventBuffer ? eventBuffer.lines() : null,
+        liveRole: ui.liveRole,
       });
       ui.selectedIssue = snapshot.selectedIssue;
       ui.lastRefreshAt = Date.now();
@@ -167,6 +168,7 @@ export async function runDashboardTuiCli(argv, deps = {}) {
       || beforeTab !== ui.tab
       || beforeFilter !== ui.stateFilter
       || action.type === 'toggle-transcript-full'
+      || action.type === 'cycle-live-role'
       || action.type === 'logs-follow-end'
       || action.type === 'logs-pause-follow';
     if (needsRefresh) await refreshNow(action.type === 'refresh' ? 'manual' : 'selection');
@@ -185,8 +187,8 @@ export async function runDashboardTuiCli(argv, deps = {}) {
   }
 
   // Real-time event view: subscribe once to the shared serve's official SSE stream and append mapped
-  // lines to the bounded buffer, filtered to the selected issue's session ids. No polling. Auto
-  // reconnects on stream end/error until cleanup. A repaint fires only while the live tab is visible.
+  // lines to the bounded buffer, filtered to the selected issue's session ids. Auto-refresh re-fetches
+  // the selected transcript; SSE events trigger immediate repaints while the live tab is visible.
   let eventCancel = null;
   let eventStopped = false;
   function scheduleLiveRefresh() {
