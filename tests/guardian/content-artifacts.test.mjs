@@ -56,6 +56,18 @@ test('reads required Chinese PR summary and QA acceptance markdown artifacts', (
   }
 });
 
+test('accepts QA acceptance heading with no space between QA and Chinese title', () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'guardian-content-artifact-'));
+  const compactHeading = VALID_QA_ACCEPTANCE.replace('## QA 验收结论', '## QA验收结论');
+  try {
+    writeMarkdownArtifact(root, 324, 'qa-acceptance', compactHeading);
+
+    assert.equal(readRequiredQaAcceptance(root, 324), compactHeading);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('rejects missing, non-Chinese, incomplete, secret-like, and command-injecting content artifacts', () => {
   const root = mkdtempSync(path.join(tmpdir(), 'guardian-content-artifact-'));
   try {

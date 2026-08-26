@@ -24,11 +24,16 @@ function assertChineseMarkdown(name, text, sections) {
   if (content.length === 0) throw new Error(`${name} artifact is empty`);
   if (!CJK.test(content)) throw new Error(`${name} artifact must be written in Chinese`);
   for (const section of sections) {
-    if (!content.includes(section)) throw new Error(`${name} artifact missing section: ${section}`);
+    if (!hasRequiredSection(content, section)) throw new Error(`${name} artifact missing section: ${section}`);
   }
   if (SECRET_LIKE.test(content)) throw new Error(`${name} artifact contains secret-like text`);
   assertMarkerIsNotCommand(content);
   return content;
+}
+
+function hasRequiredSection(content, section) {
+  return content.includes(section)
+    || (section === '## QA 验收结论' && content.includes('## QA验收结论'));
 }
 
 export function readRequiredPrSummary(guardianDir, issue) {
