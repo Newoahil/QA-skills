@@ -169,6 +169,24 @@ test('plan validation rejects unsafe declared primary files', () => {
   assert.ok(result.errors.includes('plan:unsafe-primary_files:../outside.test.mjs'));
 });
 
+test('plan validation accepts legitimate CJK relative paths', () => {
+  const cjkPath = 'docs/短信/2026-06-26-阿里云短信迁移阶段0准备与治理开发文档.md';
+  const result = validatePlan(plan({ primary_files: [cjkPath], affected_files: [cjkPath] }), dossier);
+  assert.equal(result.errors.some((error) => error.startsWith('plan:unsafe-')), false);
+});
+
+test('plan validation rejects mid-path traversal segments', () => {
+  const result = validatePlan(plan({ primary_files: ['a/../outside.test.mjs'] }), dossier);
+  assert.equal(result.valid, false);
+  assert.ok(result.errors.includes('plan:unsafe-primary_files:a/../outside.test.mjs'));
+});
+
+test('plan validation rejects control characters in declared files', () => {
+  const result = validatePlan(plan({ primary_files: ['docs/x\nmalicious.md'] }), dossier);
+  assert.equal(result.valid, false);
+  assert.ok(result.errors.some((error) => error.startsWith('plan:unsafe-primary_files')));
+});
+
 test('plan validation requires executable test_commands before Gate 1 or fixing', () => {
   const result = validatePlan(plan({ test_commands: undefined }), dossier);
   assert.equal(result.valid, false);

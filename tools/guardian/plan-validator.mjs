@@ -16,7 +16,14 @@ const REQUIRED_PLAN_FIELDS = Object.freeze([
   'risk',
 ]);
 
-const SAFE_RELATIVE_PATH_RE = /^[A-Za-z0-9._/@+-][A-Za-z0-9._/@+\\-]*$/;
+// Reject NUL/control chars, DEL, and any whitespace (anti-prose + anti-ambiguity). Allows CJK/Unicode letters.
+const UNSAFE_PATH_CHAR_RE = /[\u0000-\u001F\u007F\s]/u;
+// Shell/glob metacharacters that a legitimate repo path never needs. Paths are passed as argv (not a
+// shell string), but plan data can appear in logs/errors and future commands, so keep them out.
+const UNSAFE_PATH_METACHAR_RE = /[<>"'`|;&$!*?[\]{}()]/u;
+// "Looks like a path": contains a directory separator OR ends with a file extension. This is what
+// distinguishes a real declared file (docs/短信/....md) from CJK prose masquerading as a path.
+const PATH_LIKE_EXTENSION_RE = /\.[^./]+$/u;
 
 function nonEmpty(value) {
   return typeof value === 'string' && value.trim().length > 0;
@@ -134,12 +141,21 @@ function validateDeclaredFiles(field, value) {
 }
 
 function isSafeRelativePath(value) {
-  return typeof value === 'string'
-    && value.length > 0
-    && !value.includes('..')
-    && !value.startsWith('/')
-    && !/^[A-Za-z]:[\\/]/.test(value)
-    && SAFE_RELATIVE_PATH_RE.test(value);
+  if (typeof value !== 'string') return false;
+  const path = value.trim().replaceAll('\\', '/');
+  if (path.length === 0) return false;
+  // Absolute paths and Windows drive paths (check the raw value for the drive form).
+  if (path.startsWith('/') || /^[A-Za-z]:[\\/]/.test(value)) return false;
+  // Segment-based traversal / empty-segment rejection (stricter than substring `..`:
+  // `docs/v1..notes.md` is a valid filename, while `../x` and `a/../x` are traversal).
+  const parts = path.split('/');
+  if (parts.some((part) => part === '' || part === '.' || part === '..')) return false;
+  // Reject control chars, DEL, whitespace, and shell/glob metacharacters (allows CJK/Unicode letters).
+  if (UNSAFE_PATH_CHAR_RE.test(path)) return false;
+  if (UNSAFE_PATH_METACHAR_RE.test(path)) return false;
+  // Must look like a repo path, not prose: either has a separator or a file extension.
+  if (!path.includes('/') && !PATH_LIKE_EXTENSION_RE.test(path)) return false;
+  return true;
 }
 
 export function canEnterFixing(plan, dossier) {

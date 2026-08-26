@@ -168,11 +168,22 @@ export function createSupervisorExecutor({ repoDir, run = spawnSync } = {}) {
 
     const status = git(['status', '--porcelain=v1', '-uall']);
     if (status.status !== 0) return { ...status, code: 'worktree-status-failed', recoverable: true };
-    const dirtyPaths = status.stdout
+    const statusEntries = status.stdout
       .split(/\r?\n/)
       .filter(Boolean)
-      .map((line) => line.slice(3).trim().replace(/ -> .*$/u, '').replace(/^"|"$/gu, '').replaceAll('\\', '/'))
-      .filter((path) => path !== '' && !GUARDIAN_ALLOWLIST.some((re) => re.test(path)));
+      .map((line) => ({
+        xy: line.slice(0, 2),
+        path: line.slice(3).trim().replace(/ -> .*$/u, '').replace(/^"|"$/gu, '').replaceAll('\\', '/'),
+      }))
+      .filter((entry) => entry.path !== '');
+    const isGuardianOwned = (path) => GUARDIAN_ALLOWLIST.some((re) => re.test(path));
+    const dirtyPaths = statusEntries.filter((entry) => !isGuardianOwned(entry.path)).map((entry) => entry.path);
+    // Guardian-owned TRACKED dirty files (e.g. SyberMem hooks continuously rewrite
+    // .sybermem/.auto-trail.jsonl / .recall-debug.jsonl). Untracked (`??`) entries have no HEAD
+    // version to restore and never block a checkout the way tracked local changes do, so skip them.
+    const guardianOwnedTrackedDirty = statusEntries
+      .filter((entry) => isGuardianOwned(entry.path) && entry.xy !== '??')
+      .map((entry) => entry.path);
     if (dirtyPaths.length > 0) {
       const current = git(['branch', '--show-current']);
       if (current.status !== 0) return { ...current, code: 'current-branch-failed', recoverable: true };
@@ -188,6 +199,17 @@ export function createSupervisorExecutor({ repoDir, run = spawnSync } = {}) {
         code: 'stale-dirty-fix-branch',
         recoverable: true,
       };
+    }
+
+    // Neutralize Guardian-owned tracked dirty files BEFORE any branch-changing op. These are our own
+    // runtime state (SyberMem hooks rewrite them continuously); left dirty they make `git switch` /
+    // `git reset --hard` abort with "local changes would be overwritten". Restore only these exact
+    // allowlisted tracked paths to HEAD — never product files. Idempotent: a no-op once clean.
+    if (guardianOwnedTrackedDirty.length > 0) {
+      const restored = git(['restore', '--source=HEAD', '--staged', '--worktree', '--', ...guardianOwnedTrackedDirty]);
+      if (restored.status !== 0) {
+        return { ...restored, code: 'guardian-state-neutralize-failed', recoverable: true };
+      }
     }
 
     const current = git(['branch', '--show-current']);

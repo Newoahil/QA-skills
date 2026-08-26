@@ -443,7 +443,7 @@ test('prepare-fix-branch fails closed for dirty stale work and performs no branc
   ]);
 });
 
-test('prepare-fix-branch ignores Guardian-owned dirty state before branch prep', () => {
+test('prepare-fix-branch restores Guardian-owned tracked dirty state before branch prep', () => {
   const calls = [];
   const run = (file, argv, options) => {
     calls.push({ file, argv, options });
@@ -460,9 +460,13 @@ test('prepare-fix-branch ignores Guardian-owned dirty state before branch prep',
 
   assert.equal(result.status, 0);
   assert.equal(result.code, 'stale-clean-branch-refreshed');
+  // The tracked Guardian-owned dirty files (263.json + .auto-trail.jsonl) are restored to HEAD BEFORE
+  // the branch switch/reset, so real git checkout is not blocked by "local changes would be overwritten".
+  // The untracked `?? .qa/guardian/263/` entry is NOT restored (no HEAD version, does not block checkout).
   assert.deepEqual(calls.map((call) => call.argv), [
     ['fetch', 'origin', 'dev'],
     ['status', '--porcelain=v1', '-uall'],
+    ['restore', '--source=HEAD', '--staged', '--worktree', '--', '.qa/guardian/263.json', '.sybermem/.auto-trail.jsonl'],
     ['branch', '--show-current'],
     ['rev-parse', '--verify', 'fix/issue-214'],
     ['rev-parse', '--verify', 'origin/dev'],
@@ -470,4 +474,96 @@ test('prepare-fix-branch ignores Guardian-owned dirty state before branch prep',
     ['switch', 'fix/issue-214'],
     ['reset', '--hard', 'origin/dev'],
   ]);
+});
+
+test('prepare-fix-branch fails closed (recoverable) when Guardian-state restore fails', () => {
+  const calls = [];
+  const run = (file, argv, options) => {
+    calls.push({ file, argv, options });
+    if (argv[0] === 'status') return { status: 0, stdout: ' M .sybermem/.auto-trail.jsonl\n', stderr: '' };
+    if (argv[0] === 'restore') return { status: 1, stdout: '', stderr: 'restore failed' };
+    // Any branch-changing op after a failed restore is a bug: the switch would abort in real git.
+    if (argv[0] === 'switch' || argv[0] === 'reset') return { status: 1, stdout: '', stderr: 'must not run after restore failure' };
+    return { status: 0, stdout: '', stderr: '' };
+  };
+  const executor = createSupervisorExecutor({ repoDir: 'D:/repo', run });
+
+  const result = executor.prepareFixBranch(214, { baseBranch: 'dev' });
+
+  assert.equal(result.status, 1);
+  assert.equal(result.code, 'guardian-state-neutralize-failed');
+  assert.equal(result.recoverable, true);
+  // Must not attempt any branch-changing op once neutralization failed.
+  assert.equal(calls.some((call) => call.argv[0] === 'switch' || call.argv[0] === 'reset'), false);
+});
+
+test('prepare-fix-branch restores Guardian-owned tracked dirty state on the new-branch path too', () => {
+  const calls = [];
+  const run = (file, argv, options) => {
+    calls.push({ file, argv, options });
+    if (argv[0] === 'status') return { status: 0, stdout: ' M .sybermem/.recall-debug.jsonl\n', stderr: '' };
+    if (argv[0] === 'branch') return { status: 0, stdout: 'dev\n', stderr: '' };
+    // branch does not exist yet → new-branch creation path
+    if (argv[0] === 'rev-parse' && argv[2] === 'fix/issue-214') return { status: 1, stdout: '', stderr: 'unknown revision' };
+    return { status: 0, stdout: '', stderr: '' };
+  };
+  const executor = createSupervisorExecutor({ repoDir: 'D:/repo', run });
+
+  const result = executor.prepareFixBranch(214, { baseBranch: 'dev' });
+
+  assert.equal(result.status, 0);
+  assert.equal(result.code, 'new-fix-branch-created');
+  assert.deepEqual(calls.map((call) => call.argv), [
+    ['fetch', 'origin', 'dev'],
+    ['status', '--porcelain=v1', '-uall'],
+    ['restore', '--source=HEAD', '--staged', '--worktree', '--', '.sybermem/.recall-debug.jsonl'],
+    ['branch', '--show-current'],
+    ['rev-parse', '--verify', 'fix/issue-214'],
+    ['switch', '--create', 'fix/issue-214', 'origin/dev'],
+  ]);
+});
+
+test('prepare-fix-branch restores staged Guardian-owned dirty files on the new-branch path', () => {
+  const calls = [];
+  const run = (file, argv, options) => {
+    calls.push({ file, argv, options });
+    // Staged (index) modification of a Guardian-owned tracked file also blocks checkout.
+    if (argv[0] === 'status') return { status: 0, stdout: 'M  .sybermem/.recall-debug.jsonl\n', stderr: '' };
+    if (argv[0] === 'branch') return { status: 0, stdout: 'dev\n', stderr: '' };
+    if (argv[0] === 'rev-parse' && argv[2] === 'fix/issue-500') return { status: 1, stdout: '', stderr: 'unknown revision' };
+    if (argv[0] === 'switch') return { status: 0, stdout: '', stderr: '' };
+    return { status: 0, stdout: '', stderr: '' };
+  };
+  const executor = createSupervisorExecutor({ repoDir: 'D:/repo', run });
+
+  const result = executor.prepareFixBranch(500, { baseBranch: 'dev' });
+
+  assert.equal(result.status, 0);
+  assert.equal(result.code, 'new-fix-branch-created');
+  assert.deepEqual(calls.map((call) => call.argv), [
+    ['fetch', 'origin', 'dev'],
+    ['status', '--porcelain=v1', '-uall'],
+    ['restore', '--source=HEAD', '--staged', '--worktree', '--', '.sybermem/.recall-debug.jsonl'],
+    ['branch', '--show-current'],
+    ['rev-parse', '--verify', 'fix/issue-500'],
+    ['switch', '--create', 'fix/issue-500', 'origin/dev'],
+  ]);
+});
+
+test('prepare-fix-branch does not restore untracked Guardian-owned files', () => {
+  const calls = [];
+  const run = (file, argv) => {
+    calls.push(argv);
+    // Only an untracked Guardian dir — no HEAD version, must NOT be restored.
+    if (argv[0] === 'status') return { status: 0, stdout: '?? .qa/guardian/263/\n', stderr: '' };
+    if (argv[0] === 'branch') return { status: 0, stdout: 'dev\n', stderr: '' };
+    if (argv[0] === 'rev-parse' && argv[2] === 'fix/issue-500') return { status: 1, stdout: '', stderr: 'unknown revision' };
+    return { status: 0, stdout: '', stderr: '' };
+  };
+  const executor = createSupervisorExecutor({ repoDir: 'D:/repo', run });
+
+  const result = executor.prepareFixBranch(500, { baseBranch: 'dev' });
+
+  assert.equal(result.code, 'new-fix-branch-created');
+  assert.equal(calls.some((argv) => argv[0] === 'restore'), false);
 });
