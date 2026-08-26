@@ -7,17 +7,19 @@ import { agentEnabled, availableInvestigationTools } from './capabilities.mjs';
 import { BUILTIN_AGENT_REGISTRY, rolesForMode } from './agent-registry.mjs';
 
 export const SPECIALIST_ROLES = BUILTIN_AGENT_REGISTRY.roles;
+const GUARDIAN_DEFAULT_MODEL = 'cpa/gpt-5.5';
+const GUARDIAN_DEFAULT_MODEL_ROLES = new Set([...SPECIALIST_ROLES, 'plan']);
 
-// Resolve the model for a given Guardian role from config, portably. The repository never hardcodes
-// a provider/model: `.qa/guardian/config.json` may set `models.<role>` (e.g. models["guardian-code"]),
-// a `models.plan` for the plan builder, and a `models.default` catch-all. When nothing is configured
-// this returns undefined so OpenCode falls back to the agent definition / global default model —
-// which keeps the repo runnable on any user's provider setup out of the box.
+// Resolve the model for a given Guardian role from config. `.qa/guardian/config.json` may set
+// `models.<role>` (e.g. models["guardian-code"]), a `models.plan` for the plan builder, and a
+// `models.default` catch-all. Guardian's built-in specialists and plan builder default to the same
+// model as their shipped agent frontmatter so a long-running OpenCode server with stale in-memory
+// agent defaults cannot silently route them to an old model.
 export function resolveModelForRole(config, role) {
   const models = config?.models;
-  if (!models || typeof models !== 'object') return undefined;
   const clean = (value) => (typeof value === 'string' && value.trim() !== '' ? value.trim() : undefined);
-  return clean(models[role]) ?? clean(models.default);
+  const configured = models && typeof models === 'object' ? clean(models[role]) ?? clean(models.default) : undefined;
+  return configured ?? (GUARDIAN_DEFAULT_MODEL_ROLES.has(role) ? GUARDIAN_DEFAULT_MODEL : undefined);
 }
 
 export function selectSpecialists({ issueClass, complexity = 'complex', capabilities, config = {}, agentRegistry = BUILTIN_AGENT_REGISTRY }) {

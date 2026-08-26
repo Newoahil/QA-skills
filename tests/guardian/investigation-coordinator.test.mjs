@@ -12,8 +12,12 @@ test('resolveModelForRole reads per-role model from config with default and glob
   assert.equal(resolveModelForRole(config, 'plan'), 'anthropic/claude-y');
   // unlisted role falls back to models.default
   assert.equal(resolveModelForRole(config, 'guardian-runtime'), 'openai/fallback');
-  // no models config at all -> undefined (let OpenCode use the agent/global default; portable)
-  assert.equal(resolveModelForRole({}, 'guardian-code'), undefined);
+  // no models config at all -> repository Guardian default, avoiding stale OpenCode agent defaults
+  assert.equal(resolveModelForRole({}, 'guardian-code'), 'cpa/gpt-5.5');
+  assert.equal(resolveModelForRole({}, 'guardian-business'), 'cpa/gpt-5.5');
+  assert.equal(resolveModelForRole({}, 'guardian-runtime'), 'cpa/gpt-5.5');
+  assert.equal(resolveModelForRole({}, 'guardian-history'), 'cpa/gpt-5.5');
+  assert.equal(resolveModelForRole({}, 'plan'), 'cpa/gpt-5.5');
   assert.equal(resolveModelForRole({ models: {} }, 'qa'), undefined);
   // never hardcode a provider: an empty/whitespace value is treated as unset
   assert.equal(resolveModelForRole({ models: { qa: '  ' } }, 'qa'), undefined);
