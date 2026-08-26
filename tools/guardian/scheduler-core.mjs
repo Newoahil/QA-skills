@@ -11,6 +11,7 @@
 
 export const RUNNABLE_ACTIONS = Object.freeze(['START', 'RESUME', 'STALLED']);
 export const NOTIFY_ACTIONS = Object.freeze(['GATE_1_WAIT', 'GATE_2_WAIT', 'STALLED', 'HANDED_BACK', 'DONE']);
+const PRIORITY_RUNNABLE_REASONS = Object.freeze(['qa-failed-retry', 'plan-scope-recovery']);
 
 // Project a router decision into the authoritative fields for transitions that do not launch a
 // guardian command. The router remains the owner of whether a transition should happen; this
@@ -62,6 +63,19 @@ export function isNotifyDecision(decision) {
     || decision.reason === 'gate2-waiting';
 }
 
+export function preRunPersistableDecisions(decisions, toRun) {
+  return decisions.filter((decision) => (decision.action !== 'RESUME' && decision.action !== 'START')
+    || (toRun && decision.issue === toRun.issue));
+}
+
+function prioritizedRunnableDecision(decisions) {
+  for (const reason of PRIORITY_RUNNABLE_REASONS) {
+    const decision = decisions.find((candidate) => RUNNABLE_ACTIONS.includes(candidate.action) && candidate.reason === reason);
+    if (decision) return decision;
+  }
+  return decisions.find((decision) => RUNNABLE_ACTIONS.includes(decision.action)) ?? null;
+}
+
 /**
  * Is the N=1 lock currently held by a live run?
  * @param {object|null} lock { pid, acquired_at } or null
@@ -100,10 +114,8 @@ export function planTick(args) {
     return { toRun: null, lockBusy: false, activeIssue, notify };
   }
 
-  // N=1: prefer in-loop QA re-fixes over other runnable work; within the same priority,
+  // N=1: prefer same-issue recovery work over other runnable work; within the same priority,
   // pick the first decision in caller-provided order.
-  const toRun = decisions.find((d) => RUNNABLE_ACTIONS.includes(d.action) && d.reason === 'qa-failed-retry')
-    ?? decisions.find((d) => RUNNABLE_ACTIONS.includes(d.action))
-    ?? null;
+  const toRun = prioritizedRunnableDecision(decisions);
   return { toRun, lockBusy: false, activeIssue: null, notify };
 }

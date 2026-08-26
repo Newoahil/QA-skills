@@ -19,7 +19,7 @@ import { defaultGhReader, DEFAULT_LEASE_MS, invocationArgvFor } from './poll.mjs
 import { readState, startFollowupRound, STATES, writeState } from './state.mjs';
 import { storageKey as taskRefStorageKey, isNumericStorageKey, makeTaskRef } from './task-ref.mjs';
 import { routeIssue } from './state-router.mjs';
-import { commandlessStateTransition, planTick } from './scheduler-core.mjs';
+import { commandlessStateTransition, planTick, preRunPersistableDecisions } from './scheduler-core.mjs';
 import { acquireLock, renewLock, releaseLock } from './lock.mjs';
 import { closeoutTransition, deliverNotifications, defaultGhComment, defaultCurlPost, publishGate1Proposal } from './notify-io.mjs';
 import { createLogger } from './runtime-io.mjs';
@@ -642,7 +642,7 @@ async function tick(repoDir, config, logger, signal = null, runtime = createSche
   }
 
   persistCommandlessTransitions({
-    decisions,
+    decisions: preRunPersistableDecisions(decisions, plan.toRun),
     guardianDir: guardianDirOf(repoDir),
     now: new Date(now).toISOString(),
   });

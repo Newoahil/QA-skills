@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { commandlessStateTransition, planTick, isLockLive } from '../../tools/guardian/scheduler-core.mjs';
+import { commandlessStateTransition, planTick, isLockLive, preRunPersistableDecisions } from '../../tools/guardian/scheduler-core.mjs';
 import { newState, STATES } from '../../tools/guardian/state.mjs';
 
 const LEASE = 30 * 60 * 1000;
@@ -58,12 +58,38 @@ test('qa-failed-retry is prioritized over approved-pre-fixer-recovery regardless
   assert.equal(plan.toRun.reason, 'qa-failed-retry');
 });
 
+test('plan-scope-recovery is prioritized over approved-pre-fixer-recovery regardless of array position', () => {
+  const decisions = [
+    d(325, 'RESUME', { reason: 'approved-pre-fixer-recovery' }),
+    d(324, 'RESUME', { reason: 'plan-scope-recovery' }),
+  ];
+  const plan = planTick({ decisions, lock: null, leaseMs: LEASE, now: NOW });
+
+  assert.equal(plan.toRun.issue, 324);
+  assert.equal(plan.toRun.reason, 'plan-scope-recovery');
+});
+
 test('approved-pre-fixer-recovery still runs when no qa-failed-retry is runnable', () => {
   const decisions = [d(325, 'RESUME', { reason: 'approved-pre-fixer-recovery' })];
   const plan = planTick({ decisions, lock: null, leaseMs: LEASE, now: NOW });
 
   assert.equal(plan.toRun.issue, 325);
   assert.equal(plan.toRun.reason, 'approved-pre-fixer-recovery');
+});
+
+test('pre-run persistence excludes non-selected RESUME decisions that would become false active leases', () => {
+  const decisions = [
+    d(325, 'RESUME', { reason: 'approved-pre-fixer-recovery', toState: STATES.FIXING }),
+    d(324, 'RESUME', { reason: 'plan-scope-recovery', toState: STATES.INVESTIGATING }),
+    d(263, 'STALLED', { reason: 'lease-expired', nextStallRetries: 1 }),
+    d(193, 'DONE', { reason: 'merged-closed' }),
+    d(194, 'HANDED_BACK', { reason: 'reject', handedBackReason: 'reject' }),
+  ];
+
+  assert.deepEqual(
+    preRunPersistableDecisions(decisions, decisions[0]).map((decision) => decision.issue),
+    [325, 263, 193, 194],
+  );
 });
 
 test('expired lock is treated as free → a run may start', () => {
