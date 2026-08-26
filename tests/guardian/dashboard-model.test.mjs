@@ -35,6 +35,8 @@ test('dashboard formatting renders Chinese headers and session hints', () => {
   const text = formatDashboardTable(records, { repoDir: 'D:/repo', now });
   assert.match(text, /QA Guardian 仪表盘/);
   assert.match(text, /议题\s+状态\s+风险/);
+  assert.match(text, /下一步/);
+  assert.match(text, /需要可信账号评论 \/guardian approve/);
   assert.match(text, /#42/);
   assert.match(text, /活跃: 1 \| 等待: 1 \| 完成\/交回: 1 \| 共 3 个议题/);
   assert.match(text, /session-view\.mjs/);
@@ -44,7 +46,7 @@ test('formatIssueSummary and relativeTime render Chinese status text', () => {
   const now = Date.parse('2026-08-20T12:00:00.000Z');
   const record = { ...newState(7, '2026-08-20T11:59:00.000Z'), state: STATES.VERIFYING, risk: RISK.LOW };
   assert.equal(relativeTime(record.updated_at, now), '1 分钟前');
-  assert.match(formatIssueSummary(record, { now }), /#7 VERIFYING \[LOW\] 轮次=1 修复=0 更新=1 分钟前/);
+  assert.match(formatIssueSummary(record, { now }), /#7 VERIFYING \[LOW\] 轮次=1 修复=0 下一步=等待只读 QA 验证 更新=1 分钟前/);
 });
 
 test('extractSessionIds and issue detail include fixer qa specialists and round history', () => {
@@ -67,6 +69,8 @@ test('extractSessionIds and issue detail include fixer qa specialists and round 
   assert.match(text, /QA: ses_qa/);
   assert.match(text, /专家\[code\]: ses_code/);
   assert.match(text, /轮次 1/);
+  assert.match(text, /--- 下一步 ---/);
+  assert.match(text, /等待只读 QA 验证/);
 });
 
 test('filterByState supports exact active waiting and terminal groups', () => {

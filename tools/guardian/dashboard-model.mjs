@@ -2,6 +2,7 @@ import { existsSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { ACTIVE_STATES, isTerminalState, normalizeState, readState, STATES } from './state.mjs';
 import { readJsonFile } from './runtime-io.mjs';
+import { formatActionHintLines, nextActionHint } from './state-action-hints.mjs';
 
 const WAITING_STATES = Object.freeze([STATES.GATE_1_WAIT, STATES.GATE_2_WAIT, STATES.STALLED]);
 const ROLE_LABELS = Object.freeze({
@@ -93,7 +94,7 @@ export function extractSessionIds(record) {
 }
 
 export function formatIssueSummary(record, { now = Date.now() } = {}) {
-  return `#${record.issue} ${record.state} [${valueOrDash(record.risk)}] 轮次=${record.processing_round ?? 1} 修复=${record.fix_rounds ?? 0} 更新=${relativeTime(record.updated_at, now)}`;
+  return `#${record.issue} ${record.state} [${valueOrDash(record.risk)}] 轮次=${record.processing_round ?? 1} 修复=${record.fix_rounds ?? 0} 下一步=${nextActionHint(record).headline} 更新=${relativeTime(record.updated_at, now)}`;
 }
 
 export function dashboardStats(records) {
@@ -114,8 +115,9 @@ export function formatDashboardTable(records, { repoDir = '', now = Date.now() }
     return lines.join('\n');
   }
 
-  lines.push(`${pad('议题', 8)} ${pad('状态', 16)} ${pad('风险', 6)} ${pad('轮次', 6)} ${pad('修复', 6)} ${pad('分支', 20)} 更新`);
+  lines.push(`${pad('议题', 8)} ${pad('状态', 16)} ${pad('风险', 6)} ${pad('轮次', 6)} ${pad('修复', 6)} ${pad('分支', 20)} ${pad('下一步', 26)} 更新`);
   for (const record of records) {
+    const action = nextActionHint(record);
     lines.push([
       pad(`#${record.issue}`, 8),
       pad(record.state, 16),
@@ -123,6 +125,7 @@ export function formatDashboardTable(records, { repoDir = '', now = Date.now() }
       pad(record.processing_round ?? 1, 6),
       pad(record.fix_rounds ?? 0, 6),
       pad(valueOrDash(record.branch), 20),
+      pad(action.headline, 26),
       relativeTime(record.updated_at, now),
     ].join(' '));
   }
@@ -145,6 +148,9 @@ export function formatIssueDetail(record) {
     `调查状态: 档案=${valueOrDash(record.dossier_status)} 计划=${valueOrDash(record.plan_status)}`,
     `上次阶段: ${valueOrDash(record.last_phase)}`,
     `上次错误: ${valueOrDash(record.last_error_class)}`,
+    '',
+    '--- 下一步 ---',
+    ...formatActionHintLines(record),
     '',
     '--- OpenCode 会话 ---',
   ];
