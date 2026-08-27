@@ -20,7 +20,8 @@ export const OBSERVER_HTML = readFileSync(path.join(WEB_DIR, 'index.html'), 'utf
 function staticAsset(pathname) {
   const route = STATIC_ROUTES[pathname];
   if (!route) return null;
-  return { body: route.file === 'index.html' ? OBSERVER_HTML : readFileSync(path.join(WEB_DIR, route.file), 'utf8'), type: route.type };
+  const content = readFileSync(path.join(WEB_DIR, route.file), 'utf8');
+  return { body: content, type: route.type };
 }
 
 function proxyHeaders(req, upstream) {

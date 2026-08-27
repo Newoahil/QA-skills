@@ -10,38 +10,77 @@
   <body>
     <header class="topbar">
       <div class="brand">
-        <span class="brand-title">QA Guardian</span>
+        <div class="brand-badge">
+          <svg class="brand-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <span class="brand-title">QA Guardian</span>
+        </div>
+        <span class="brand-divider">/</span>
         <span class="brand-sub">OpenCode Observer</span>
       </div>
       <div class="controls" aria-label="控制">
         <span id="statusBadge" class="status-badge"><span class="status-dot"></span><span id="statusText">连接中</span></span>
+        <div class="divider-v"></div>
         <label class="check"><input id="autoRefreshToggle" type="checkbox" checked> 自动刷新</label>
         <select id="refreshIntervalSelect" aria-label="刷新间隔">
-          <option value="2000">2 秒</option>
-          <option value="3000" selected>3 秒</option>
-          <option value="5000">5 秒</option>
-          <option value="10000">10 秒</option>
+          <option value="2000">2s 刷新</option>
+          <option value="3000" selected>3s 刷新</option>
+          <option value="5000">5s 刷新</option>
+          <option value="10000">10s 刷新</option>
         </select>
-        <button id="refreshBtn" class="button" type="button">刷新</button>
+        <button id="refreshBtn" class="button" type="button" title="立即刷新会话">
+          <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          刷新
+        </button>
       </div>
     </header>
     <main class="shell" data-guardian-observer="app">
       <aside class="sessions" aria-label="会话列表">
         <div class="pane-head">
-          <div class="pane-head-row">
-            <span class="count-pill">SESSIONS (<span id="sessionCount">0</span>)</span>
+        <div class="pane-head-row">
+          <span class="pane-title">SESSIONS</span>
+          <span class="count-pill"><span id="sessionCount">0</span> 个会话</span>
+        </div>
+        <select id="projectSelect" class="project-select" aria-label="项目筛选">
+          <option value="all">全部工作区 & Guardian</option>
+        </select>
+        <div class="search-box">
+            <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="11" cy="11" r="8"/>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+            </svg>
+            <input id="sessionSearch" type="search" placeholder="搜索 ID、标题、角色..." autocomplete="off">
+            <button id="clearSearchBtn" class="clear-btn" type="button" aria-label="清除搜索" hidden>×</button>
           </div>
-          <input id="sessionSearch" type="search" placeholder="筛选 ID / 标题 / agent..." autocomplete="off">
         </div>
         <div id="sessionList" class="session-list"><p class="empty">加载中...</p></div>
       </aside>
       <section class="transcript" aria-label="会话内容">
         <div class="transcript-head">
-          <div>
-            <div id="currentSessionTitle" class="session-headline">请选择会话</div>
+          <div class="transcript-info">
+            <div class="headline-row">
+              <h2 id="currentSessionTitle" class="session-headline">请选择会话</h2>
+              <button id="copySessionBtn" class="icon-action-btn" type="button" title="复制会话 ID" hidden>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                </svg>
+              </button>
+            </div>
             <div id="currentSessionMeta" class="session-sub">-</div>
           </div>
-          <button id="scrollToBottomBtn" class="button" type="button" hidden>到底部</button>
+          <div class="transcript-actions">
+            <button id="scrollToBottomBtn" class="button button-subtle" type="button" hidden>
+              <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="12" y1="5" x2="12" y2="19"/>
+                <polyline points="19 12 12 19 5 12"/>
+              </svg>
+              到底部
+            </button>
+          </div>
         </div>
         <div id="messagesContainer" class="messages"><p class="empty">暂无选中会话。</p></div>
       </section>

@@ -118,10 +118,10 @@ test('observer-server serves HTML observer page at GET / with data-guardian-obse
     assert.equal(script.status, 200);
     assert.match(script.headers.get('content-type'), /application\/javascript/);
     const scriptBody = await script.text();
-    assert.match(scriptBody, /\/session\?limit=200/);
+    assert.match(scriptBody, /\/session\?/);
     assert.doesNotMatch(scriptBody, /roots=true/);
     assert.match(scriptBody, /buildSessionTree/);
-    assert.match(scriptBody, /session-children/);
+    assert.match(scriptBody, /discoverWorktrees/);
   } finally {
     await observer.close();
     await upstream.close();
