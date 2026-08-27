@@ -579,6 +579,17 @@ test('processPlanBuilder uses the SDK client instead of spawning an attach proce
   assert.equal(prompted[0].format.schema.properties.blocking_questions.maxItems, 3);
   assert.equal(prompted[0].format.schema.required.includes('spec_goal'), true);
   assert.equal(prompted[0].format.schema.required.includes('implementation_summary'), true);
+  assert.equal(prompted[0].format.schema.properties.product_solution.type, 'string');
+  assert.equal(prompted[0].format.schema.properties.side_impact.type, 'object');
+  assert.equal(prompted[0].format.schema.properties.side_impact.properties.b_side.items.type, 'string');
+  assert.equal(prompted[0].format.schema.properties.side_impact.properties.c_side.items.type, 'string');
+  assert.deepEqual(prompted[0].format.schema.properties.side_impact.required, ['b_side', 'c_side']);
+  assert.equal(prompted[0].format.schema.properties.related_feature_impact.items.type, 'string');
+  assert.equal(prompted[0].format.schema.properties.product_usage_acceptance.items.type, 'string');
+  assert.equal(prompted[0].format.schema.required.includes('product_solution'), true);
+  assert.equal(prompted[0].format.schema.required.includes('side_impact'), true);
+  assert.equal(prompted[0].format.schema.required.includes('related_feature_impact'), true);
+  assert.equal(prompted[0].format.schema.required.includes('product_usage_acceptance'), true);
   assert.equal(result.root_cause, 'color');
   assert.equal(result.risk, 'LOW');
 });
