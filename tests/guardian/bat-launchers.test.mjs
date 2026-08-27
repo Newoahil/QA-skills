@@ -109,6 +109,33 @@ test('scheduler launcher persists one-time binding and sends control repo plus Q
   assert.match(text, /Save-LauncherBinding/);
 });
 
+test('scheduler launcher supports force rebind only for init-only mode reselection', () => {
+  const text = readFileSync('tools/guardian/scheduler-start.ps1', 'utf8');
+  assert.match(text, /\[switch\]\$ForceRebind/);
+  assert.match(text, /if \(\$ForceRebind -and \(-not \$Init -or -not \$InitOnly\)\)/);
+  assert.match(text, /ForceRebind 仅允许与 -Init 和 -InitOnly 一起使用/);
+});
+
+test('scheduler launcher force rebind clears only selected binding before first mode selection', () => {
+  const text = readFileSync('tools/guardian/scheduler-start.ps1', 'utf8');
+  const selectionIndex = text.indexOf('$binding = Select-LauncherBinding $launcherConfig $canonicalTarget');
+  const validateIndex = text.indexOf('if ($binding) { $binding = Assert-PersistedBinding $binding $canonicalTarget $GuardianRepo }');
+  const resetIndex = text.indexOf('if ($ForceRebind) { $binding = $null }');
+  const promptIndex = text.indexOf('if (-not $Dashboard -and -not $DryRun -and -not $binding) {');
+  assert.ok(selectionIndex >= 0, 'expected binding selection');
+  assert.ok(validateIndex > selectionIndex, 'expected binding validation after selection');
+  assert.ok(resetIndex > validateIndex, 'expected force-rebind reset after validation');
+  assert.ok(promptIndex > resetIndex, 'expected first-mode selection prompt after reset');
+  assert.match(text, /if \(\$ForceRebind\) \{ \$binding = \$null \}/);
+  assert.doesNotMatch(text, /\$launcherConfig\s*=\s*\$null/);
+  assert.doesNotMatch(text, /\$launcherConfig\.projects/);
+});
+
+test('guardian-start remains normal startup and does not pass ForceRebind', () => {
+  const text = readFileSync('tools/guardian/guardian-start.ps1', 'utf8');
+  assert.doesNotMatch(text, /ForceRebind/);
+});
+
 test('dashboard launcher resolves the authoritative control worktree without preflight', () => {
   const text = readFileSync('tools/guardian/dashboard-start.ps1', 'utf8');
   assert.match(text, /Resolve-ControlRepo/);

@@ -5,7 +5,8 @@
 
 .DESCRIPTION
   This is the interactive switching/onboarding entrypoint. It delegates all binding and
-  per-project .qa/guardian/config.json setup to scheduler-start.ps1 -Init -InitOnly, then exits.
+  per-project .qa/guardian/config.json setup to scheduler-start.ps1 -Init -InitOnly -ForceRebind,
+  replacing the existing selected-project mode while preserving all other project bindings, then exits.
   Use guardian-start.bat afterward to run the scheduler + TUI for the selected project.
 #>
 [CmdletBinding()]
@@ -28,7 +29,7 @@ $schedulerScript = Join-Path $PSScriptRoot "scheduler-start.ps1"
 if (-not (Test-Path -LiteralPath $schedulerScript)) { throw "scheduler-start.ps1 not found: $schedulerScript" }
 
 Write-Host "==> QA Guardian project rebind" -ForegroundColor Cyan
-Write-Host "    This updates the selected project's binding/config only; it will not start scheduler or TUI." -ForegroundColor Gray
+Write-Host "    This updates the selected project's binding/config only; the existing selected-project mode is replaced and it will not start scheduler or TUI." -ForegroundColor Gray
 
 if (-not $TargetRepo) {
   $TargetRepo = Read-Host -Prompt 'Target repo path (blank to cancel)'
@@ -41,6 +42,7 @@ $arguments = @(
   '-TargetRepo', $TargetRepo,
   '-Init',
   '-InitOnly',
+  '-ForceRebind',
   '-BaseBranch', $BaseBranch,
   '-WatchMode', $WatchMode
 )

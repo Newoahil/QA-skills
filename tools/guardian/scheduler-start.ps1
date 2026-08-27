@@ -23,6 +23,10 @@
   Create or repair the per-project launcher binding/config, then exit without starting scheduler,
   dashboard, shared server, or TUI. Used by guardian-rebind.ps1.
 
+.PARAMETER ForceRebind
+  Re-run the selected project's mode choice during -Init -InitOnly without touching other project
+  bindings in scheduler.config.json.
+
 .PARAMETER CommandAuthors
   Comma/space-separated GitHub logins allowed to drive /guardian commands (written into config on
   init). Required for a non-interactive init.
@@ -64,6 +68,7 @@ param(
   [string]$TargetRepo = "",
   [switch]$Init,
   [switch]$InitOnly,
+  [switch]$ForceRebind,
   [string]$CommandAuthors = "",
   [string]$BaseBranch = "dev",
   [string]$GitHubRepo = "",
@@ -138,6 +143,10 @@ if (-not $TargetRepoWasExplicit) {
   $inputRepo = Read-Host "    请输入要监控的项目目录（例如 D:\tuantuanrent，直接回车取消）"
   if (-not $inputRepo) { throw "已取消：请通过 -TargetRepo 指定本次值守项目。" }
   $TargetRepo = $inputRepo.Trim('"')
+}
+
+if ($ForceRebind -and (-not $Init -or -not $InitOnly)) {
+  throw "ForceRebind 仅允许与 -Init 和 -InitOnly 一起使用。"
 }
 
 function Find-Node {
@@ -519,6 +528,7 @@ if (-not $Dashboard -and $DryRun -and -not $binding) {
   throw "DryRun 不会进行首次模式选择，也不会写入启动绑定或创建 worktree。请先不带 -DryRun、-Yes 交互式运行 scheduler-start.ps1 一次。"
 }
 if ($binding) { $binding = Assert-PersistedBinding $binding $canonicalTarget $GuardianRepo }
+if ($ForceRebind) { $binding = $null }
 if ($binding -and -not $DryRun) { Save-LauncherBinding $bindingPath $canonicalTarget $binding }
 if ($binding -and [string]$binding.mode -eq 'worktree' -and -not $DryRun) {
   Ensure-ControlWorktree $TargetRepo ([string]$binding.control_worktree_path) ([string]$binding.base_branch)

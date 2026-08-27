@@ -7,6 +7,7 @@ test('guardian-rebind.ps1 delegates to scheduler init-only setup', () => {
   assert.match(text, /scheduler-start\.ps1/);
   assert.match(text, /'-Init'/);
   assert.match(text, /'-InitOnly'/);
+  assert.match(text, /'-ForceRebind'/);
   assert.match(text, /'-TargetRepo', \$TargetRepo/);
   assert.match(text, /'-BaseBranch', \$BaseBranch/);
   assert.match(text, /'-WatchMode', \$WatchMode/);
@@ -16,6 +17,7 @@ test('guardian-rebind.ps1 is interactive and rebind-only', () => {
   const text = readFileSync('tools/guardian/guardian-rebind.ps1', 'utf8');
   assert.match(text, /Target repo path \(blank to cancel\)/);
   assert.match(text, /updates the selected project's binding\/config only/);
+  assert.match(text, /existing selected-project mode is replaced/);
   assert.match(text, /Start with: tools\\guardian\\guardian-start\.bat/);
   assert.doesNotMatch(text, /dashboard-tui\.mjs/);
   assert.doesNotMatch(text, /guardian-runtime\.mjs/);
