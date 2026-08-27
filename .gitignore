@@ -52,10 +52,17 @@ desktop.ini
 .playwright-mcp/
 
 # >>> SyberMem >>>
-# SyberMem machine-local runtime files.
-/.sybermem/.*
-/.sybermem/**/*.bak
+# SyberMem machine-local runtime, scripts, and hook wiring (not shareable memory).
 /.sybermem/hooks/
-/.sybermem/project.yaml
+/.sybermem/.recall-debug.jsonl
+/.sybermem/.recall-outcomes.jsonl
+/.sybermem/.auto-trail.jsonl
+/.sybermem/.nudge-state.json
+/.sybermem/.opencode-nudge-state.json
+/.sybermem/.record-intent.json
+/.sybermem/.auto-change-state.json
+/.sybermem/.codex-compact-marker.json
+/.sybermem/.memory-usage.jsonl
+/.sybermem/**/*.bak
 /.claude/settings.json
 # <<< SyberMem <<<
