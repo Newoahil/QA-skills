@@ -110,7 +110,20 @@ input:focus, select:focus { border-color: var(--line-focus); }
 .session-sub { font-size: 12px; color: var(--faint); margin-top: 2px; font-family: var(--mono); }
 
 .session-list, .messages { flex: 1; min-height: 0; overflow-y: auto; }
-.session-list { padding: 8px; display: flex; flex-direction: column; gap: 4px; }
+.session-list { padding: 8px; display: flex; flex-direction: column; gap: 6px; }
+
+.session-node {
+  position: relative;
+  margin-left: calc(var(--depth, 0) * 14px);
+}
+
+.session-node .session-node { margin-top: 4px; }
+.session-children {
+  position: relative;
+  margin-left: 10px;
+  padding-left: 8px;
+  border-left: 1px solid rgba(148, 163, 184, 0.18);
+}
 
 .session-card {
   text-align: left;
@@ -121,6 +134,16 @@ input:focus, select:focus { border-color: var(--line-focus); }
   cursor: pointer;
   width: 100%;
 }
+.session-card.child::before {
+  content: '';
+  position: absolute;
+  left: -8px;
+  top: 18px;
+  width: 7px;
+  border-top: 1px solid rgba(148, 163, 184, 0.22);
+}
+.session-card.root { background: rgba(15, 23, 42, 0.32); }
+.session-card.child { position: relative; }
 .session-card:hover { background: var(--panel-hover); }
 .session-card.active {
   background: rgba(56, 189, 248, 0.08);

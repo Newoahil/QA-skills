@@ -36,6 +36,68 @@ function sessionTime(session) {
   return session?.time?.updated ?? session?.time?.created ?? session?.updatedAt ?? session?.createdAt ?? null;
 }
 
+function defaultSessionId(sessions) {
+  const latest = sessions[0];
+  if (!latest?.id) return null;
+  const child = sessions.find((session) => session?.parentID === latest.id);
+  return child?.id ?? latest.id;
+}
+
+function sessionMatches(session, filter) {
+  return [session?.id, session?.title, session?.agent, session?.parentID, session?.directory]
+    .some((value) => String(value ?? '').toLowerCase().includes(filter));
+}
+
+function buildSessionTree(sessions) {
+  const nodes = new Map();
+  for (const session of sessions) {
+    if (!session?.id) continue;
+    nodes.set(session.id, { session, children: [] });
+  }
+
+  const roots = [];
+  for (const node of nodes.values()) {
+    const parent = node.session?.parentID ? nodes.get(node.session.parentID) : null;
+    if (parent) parent.children.push(node);
+    else roots.push(node);
+  }
+
+  const sortNodes = (items) => {
+    items.sort((a, b) => Number(sessionTime(b.session) ?? 0) - Number(sessionTime(a.session) ?? 0));
+    for (const item of items) sortNodes(item.children);
+  };
+  sortNodes(roots);
+  return roots;
+}
+
+function nodeVisible(node, filter) {
+  return filter.length === 0 || sessionMatches(node.session, filter) || node.children.some((child) => nodeVisible(child, filter));
+}
+
+function visibleCount(nodes, filter) {
+  return nodes.reduce((total, node) => {
+    if (!nodeVisible(node, filter)) return total;
+    return total + 1 + visibleCount(node.children, filter);
+  }, 0);
+}
+
+function renderSessionNode(node, filter, depth = 0) {
+  if (!nodeVisible(node, filter)) return '';
+  const session = node.session;
+  const id = session?.id ?? 'unknown';
+  const active = id === state.selectedSessionId ? ' active' : '';
+  const branch = depth > 0 ? ' child' : ' root';
+  const children = node.children.map((child) => renderSessionNode(child, filter, depth + 1)).join('');
+  return `<div class="session-node" style="--depth:${depth}">
+    <button class="session-card${active}${branch}" type="button" data-id="${escapeHtml(id)}">
+      <div class="session-id">${escapeHtml(id)}</div>
+      <div class="session-title">${escapeHtml(session?.title || session?.agent || '未命名会话')}</div>
+      <div class="session-meta">${escapeHtml(session?.agent ?? '-')} | ${escapeHtml(formatTime(sessionTime(session)))}</div>
+    </button>
+    ${children ? `<div class="session-children">${children}</div>` : ''}
+  </div>`;
+}
+
 function normalizeList(payload) {
   if (Array.isArray(payload)) return payload;
   if (Array.isArray(payload?.data)) return payload.data;
@@ -53,10 +115,13 @@ async function fetchJson(url) {
 async function fetchSessions({ quiet = false } = {}) {
   if (!quiet) setStatus('同步会话...', 'syncing');
   try {
-    const sessions = normalizeList(await fetchJson('/session?roots=true&limit=100'));
+    const sessions = normalizeList(await fetchJson('/session?limit=200'));
     state.sessions = sessions.slice().sort((a, b) => Number(sessionTime(b) ?? 0) - Number(sessionTime(a) ?? 0));
     renderSessions();
-    if (!state.selectedSessionId && state.sessions[0]?.id) selectSession(state.sessions[0].id, { quiet: true });
+    if (!state.selectedSessionId) {
+      const sessionId = defaultSessionId(state.sessions);
+      if (sessionId) selectSession(sessionId, { quiet: true });
+    }
     if (state.selectedSessionId) await fetchMessages(state.selectedSessionId, { quiet: true });
     setStatus(`已连接 ${new Date().toLocaleTimeString('zh-CN', { hour12: false })}`);
   } catch (error) {
@@ -84,18 +149,10 @@ function selectSession(sessionId, { quiet = false } = {}) {
 
 function renderSessions() {
   const filter = state.filter.toLowerCase();
-  const sessions = state.sessions.filter((session) => [session?.id, session?.title, session?.agent]
-    .some((value) => String(value ?? '').toLowerCase().includes(filter)));
-  $('sessionCount').textContent = String(sessions.length);
-  $('sessionList').innerHTML = sessions.length === 0 ? '<p class="empty">未找到会话</p>' : sessions.map((session) => {
-    const id = session?.id ?? 'unknown';
-    const active = id === state.selectedSessionId ? ' active' : '';
-    return `<button class="session-card${active}" type="button" data-id="${escapeHtml(id)}">
-      <div class="session-id">${escapeHtml(id)}</div>
-      <div class="session-title">${escapeHtml(session?.title || session?.agent || '未命名会话')}</div>
-      <div class="session-meta">${escapeHtml(session?.agent ?? '-')} | ${escapeHtml(formatTime(sessionTime(session)))}</div>
-    </button>`;
-  }).join('');
+  const roots = buildSessionTree(state.sessions);
+  const count = visibleCount(roots, filter);
+  $('sessionCount').textContent = String(count);
+  $('sessionList').innerHTML = count === 0 ? '<p class="empty">未找到会话</p>' : roots.map((node) => renderSessionNode(node, filter)).join('');
   $('sessionList').querySelectorAll('.session-card').forEach((card) => {
     card.addEventListener('click', () => selectSession(card.getAttribute('data-id')));
   });
