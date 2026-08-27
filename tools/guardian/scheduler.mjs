@@ -609,15 +609,7 @@ async function tick(repoDir, config, logger, signal = null, runtime = createSche
       branch: readState(guardianDir, issue)?.branch ?? undefined,
     });
     const afterRun = readState(guardianDir, issue) ?? { issue };
-    writeState(guardianDir, {
-      ...afterRun,
-      qa_verdict_path: qaVerdict ? path.join(String(issue), 'qa-verdict.json') : null,
-      qa_verdict_status: qaVerdict?.status ?? null,
-      qa_verdict_hash: qaVerdict?.report_hash ?? null,
-      last_child_exit_code: code,
-      last_error_class: qaAudit.approved || qaVerdict?.status === 'FAIL' ? afterRun.last_error_class : qaAudit.reason,
-      last_phase: qaAudit.approved || qaVerdict?.status === 'FAIL' ? afterRun.last_phase : 'qa-unapproved',
-    }, { touch: false });
+    writeState(guardianDir, materializeQaVerdictState({ afterRun, issue, qaVerdict, qaAudit, code }), { touch: false });
     if (!qaAudit.approved) logger.warn('qa.verdict_unapproved', { issue, reason: qaAudit.reason, exit_code: code });
     else logger.info('qa.verdict_passed', { issue, exit_code: code });
 
@@ -734,6 +726,20 @@ async function tick(repoDir, config, logger, signal = null, runtime = createSche
 // Idempotent per last_verdict_comment_hash: the same comment is never posted twice. Best-effort —
 // a gh delivery failure is logged and swallowed so the resident loop survives (like notify-io).
 // Side effects (ghComment/readState/writeState) are injected so this is unit-testable without gh.
+export function materializeQaVerdictState({ afterRun, issue, qaVerdict, qaAudit, code }) {
+  return {
+    ...afterRun,
+    qa_verdict_path: qaVerdict ? path.join(String(issue), 'qa-verdict.json') : null,
+    qa_verdict_status: qaVerdict?.status ?? null,
+    qa_verdict_hash: qaVerdict?.report_hash ?? null,
+    qa_verdict_report: qaVerdict?.evidence_summary ?? null,
+    supervisor_test_evidence: qaVerdict?.supervisor_evidence ?? null,
+    last_child_exit_code: code,
+    last_error_class: qaAudit.approved || qaVerdict?.status === 'FAIL' ? afterRun.last_error_class : qaAudit.reason,
+    last_phase: qaAudit.approved || qaVerdict?.status === 'FAIL' ? afterRun.last_phase : 'qa-unapproved',
+  };
+}
+
 export function writeVerdictComment(guardianDir, issue, params, deps) {
   const isActiveRun = deps?.isActiveRun ?? (() => true);
   const fenceError = 'verdict comment fenced: active run is false';

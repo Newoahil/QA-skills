@@ -8,7 +8,7 @@ import { hashArtifact, writeArtifact } from '../../tools/guardian/artifacts.mjs'
 import { ACTORS } from '../../tools/guardian/actor-routing.mjs';
 import { deliverNotifications } from '../../tools/guardian/notify-io.mjs';
 import { buildGate1Comment } from '../../tools/guardian/gate1-comment.mjs';
-import { applyGateCommandState, buildInvestigationFailureState, buildRunFailureState, createLeaseFence, persistCommandlessTransitions, publishWaitingGate1Proposals, summarizeSupervisorEvidence } from '../../tools/guardian/scheduler.mjs';
+import { applyGateCommandState, buildInvestigationFailureState, buildRunFailureState, createLeaseFence, materializeQaVerdictState, persistCommandlessTransitions, publishWaitingGate1Proposals, summarizeSupervisorEvidence } from '../../tools/guardian/scheduler.mjs';
 import { newState, readState, STATES, writeState } from '../../tools/guardian/state.mjs';
 
 function fakeStore(initial) {
@@ -193,6 +193,39 @@ test('gate waiting SKIP does not rewrite authoritative state', () => {
 
   assert.deepEqual(store.writes, []);
   assert.deepEqual(store.store[9], original);
+});
+
+test('materializeQaVerdictState overwrites stale QA report when latest verdict passes', () => {
+  const afterRun = {
+    ...newState(324),
+    state: STATES.FIXING,
+    last_phase: 'qa-failed-retry',
+    last_error_class: 'qa-failed-retry',
+    qa_verdict_status: 'FAIL',
+    qa_verdict_hash: 'sha256:old-fail',
+    qa_verdict_report: 'Overall Status: FAIL\nold failure report',
+    supervisor_test_evidence: { tests: [{ exit_code: 1 }] },
+  };
+  const next = materializeQaVerdictState({
+    afterRun,
+    issue: 324,
+    code: 0,
+    qaAudit: { approved: true, reason: 'qa-pass' },
+    qaVerdict: {
+      status: 'PASS',
+      report_hash: 'sha256:new-pass',
+      evidence_summary: 'Overall Status: PASS\nnew passing report',
+      supervisor_evidence: { tests: [{ exit_code: 0 }] },
+    },
+  });
+
+  assert.equal(next.qa_verdict_path, path.join('324', 'qa-verdict.json'));
+  assert.equal(next.qa_verdict_status, 'PASS');
+  assert.equal(next.qa_verdict_hash, 'sha256:new-pass');
+  assert.equal(next.qa_verdict_report, 'Overall Status: PASS\nnew passing report');
+  assert.deepEqual(next.supervisor_test_evidence, { tests: [{ exit_code: 0 }] });
+  assert.equal(next.last_phase, 'qa-failed-retry');
+  assert.equal(next.last_error_class, 'qa-failed-retry');
 });
 
 test('repeated DONE persistence is idempotent after the first transition', () => {
