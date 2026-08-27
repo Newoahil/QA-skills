@@ -7,22 +7,20 @@ import { STATES } from './state.mjs';
 import { CONTROL_EVENT_KINDS, createTaskObservation } from './task-source.mjs';
 import { githubIssueToTaskRef } from './task-ref.mjs';
 
+const DEFAULT_GH_RETRY_ATTEMPTS = 3;
+const DEFAULT_GH_RETRY_DELAY_MS = 1000;
+
 export function defaultGhReader(repoDir, deps = {}) {
   const spawnSync = deps.spawnSync ?? nodeSpawnSync;
+  const maxAttempts = normalizeRetryAttempts(deps.maxAttempts);
+  const retryDelayMs = deps.retryDelayMs ?? DEFAULT_GH_RETRY_DELAY_MS;
+  const sleep = deps.sleep ?? defaultSleep;
   return function readGithubIssue(issueNumber) {
     const args = [
       'issue', 'view', String(issueNumber),
       '--json', 'state,comments,title,body,labels,closedByPullRequestsReferences',
     ];
-    const res = spawnSync('gh', args, {
-      cwd: repoDir,
-      encoding: 'utf8',
-      shell: false,
-      windowsHide: true,
-    });
-    if (res.status !== 0) {
-      throw new Error(`gh issue view #${issueNumber} failed: ${res.stderr || res.stdout || 'unknown'}`);
-    }
+    const res = runGhIssueViewWithRetry({ spawnSync, repoDir, issueNumber, args, maxAttempts, retryDelayMs, sleep });
     const data = JSON.parse(res.stdout);
     return legacyGithubFacts({
       ...data,
@@ -47,6 +45,49 @@ function readFixBranchPullRequests({ spawnSync, repoDir, issueNumber }) {
   if (res.status !== 0) return [];
   const parsed = JSON.parse(res.stdout);
   return Array.isArray(parsed) ? parsed : [];
+}
+
+function runGhIssueViewWithRetry({ spawnSync, repoDir, issueNumber, args, maxAttempts, retryDelayMs, sleep }) {
+  let finalResult = null;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const res = spawnSync('gh', args, {
+      cwd: repoDir,
+      encoding: 'utf8',
+      shell: false,
+      windowsHide: true,
+    });
+    if (res.status === 0) return res;
+    finalResult = res;
+    if (!isTransientGhIssueViewFailure(res) || attempt === maxAttempts) break;
+    sleep(retryDelayMs);
+  }
+  throw new Error(`gh issue view #${issueNumber} failed: ${ghDiagnostic(finalResult)}`);
+}
+
+function normalizeRetryAttempts(value) {
+  return Number.isInteger(value) && value > 0 ? value : DEFAULT_GH_RETRY_ATTEMPTS;
+}
+
+function ghDiagnostic(res) {
+  return res?.stderr || res?.stdout || 'unknown';
+}
+
+function isTransientGhIssueViewFailure(res) {
+  const diagnostic = ghDiagnostic(res).toLowerCase();
+  return /\beof\b/.test(diagnostic)
+    || /tls|schannel|handshake/.test(diagnostic)
+    || /connection reset/.test(diagnostic)
+    || /timed? out|timeout/.test(diagnostic)
+    || /temporary network/.test(diagnostic)
+    || /http\s+5\d\d\b/.test(diagnostic)
+    || /\b50[234]\b/.test(diagnostic)
+    || /rate limit/.test(diagnostic)
+    || /\b429\b/.test(diagnostic);
+}
+
+function defaultSleep(ms) {
+  if (!Number.isFinite(ms) || ms <= 0) return;
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 }
 
 export function legacyGithubFacts(data) {

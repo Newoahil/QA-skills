@@ -216,3 +216,94 @@ test('defaultGhReader augments open issues with PR facts from the fix branch', (
   ]);
   assert.equal(calls.length, 2);
 });
+
+test('defaultGhReader retries transient EOF failures and still reads PR facts once after success', () => {
+  const calls = [];
+  const sleeps = [];
+  let issueAttempts = 0;
+  const reader = defaultGhReader('D:/repo', {
+    maxAttempts: 3,
+    sleep: (ms) => {
+      sleeps.push(ms);
+    },
+    spawnSync: (_cmd, args, opts) => {
+      calls.push(args);
+      assert.equal(opts.cwd, 'D:/repo');
+      assert.equal(opts.shell, false);
+      if (args[0] === 'pr') {
+        return { status: 0, stdout: '[]' };
+      }
+      issueAttempts += 1;
+      if (issueAttempts < 3) {
+        return { status: 1, stderr: 'Post "https://api.github.com/graphql": EOF' };
+      }
+      return {
+        status: 0,
+        stdout: JSON.stringify({
+          title: 'Recovered issue',
+          body: 'body',
+          state: 'OPEN',
+          comments: [],
+          closedByPullRequestsReferences: [],
+        }),
+      };
+    },
+  });
+
+  assert.equal(reader(42).title, 'Recovered issue');
+  assert.deepEqual(calls, [
+    ['issue', 'view', '42', '--json', 'state,comments,title,body,labels,closedByPullRequestsReferences'],
+    ['issue', 'view', '42', '--json', 'state,comments,title,body,labels,closedByPullRequestsReferences'],
+    ['issue', 'view', '42', '--json', 'state,comments,title,body,labels,closedByPullRequestsReferences'],
+    ['pr', 'list', '--head', 'fix/issue-42', '--state', 'all', '--json', 'number,url,headRefName,baseRefName,mergedAt'],
+  ]);
+  assert.deepEqual(sleeps, [1000, 1000]);
+});
+
+test('defaultGhReader does not retry permanent auth or not found failures', () => {
+  for (const stderr of ['HTTP 401: authentication required', 'HTTP 404: Not Found']) {
+    const calls = [];
+    const sleeps = [];
+    const reader = defaultGhReader('D:/repo', {
+      maxAttempts: 3,
+      sleep: (ms) => {
+        sleeps.push(ms);
+      },
+      spawnSync: (_cmd, args, opts) => {
+        calls.push(args);
+        assert.equal(opts.shell, false);
+        return { status: 1, stderr };
+      },
+    });
+
+    assert.throws(() => reader(42), new Error(`gh issue view #42 failed: ${stderr}`));
+    assert.deepEqual(calls, [
+      ['issue', 'view', '42', '--json', 'state,comments,title,body,labels,closedByPullRequestsReferences'],
+    ]);
+    assert.deepEqual(sleeps, []);
+  }
+});
+
+test('defaultGhReader exhausts transient retries and throws the final diagnostic', () => {
+  const calls = [];
+  const sleeps = [];
+  const reader = defaultGhReader('D:/repo', {
+    maxAttempts: 3,
+    sleep: (ms) => {
+      sleeps.push(ms);
+    },
+    spawnSync: (_cmd, args, opts) => {
+      calls.push(args);
+      assert.equal(opts.shell, false);
+      return { status: 1, stderr: 'HTTP 503 Service Unavailable' };
+    },
+  });
+
+  assert.throws(() => reader(25), new Error('gh issue view #25 failed: HTTP 503 Service Unavailable'));
+  assert.deepEqual(calls, [
+    ['issue', 'view', '25', '--json', 'state,comments,title,body,labels,closedByPullRequestsReferences'],
+    ['issue', 'view', '25', '--json', 'state,comments,title,body,labels,closedByPullRequestsReferences'],
+    ['issue', 'view', '25', '--json', 'state,comments,title,body,labels,closedByPullRequestsReferences'],
+  ]);
+  assert.deepEqual(sleeps, [1000, 1000]);
+});
