@@ -731,8 +731,9 @@ test('processPlanBuilder includes revision feedback as authoritative DATA', asyn
   const prompted = [];
   const client = {
     createSession: async () => 'ses_plan_revision_snapshot',
-    prompt: async ({ parts }) => {
+    prompt: async ({ parts, format }) => {
       prompted.push(parts[0].text);
+      prompted.push(format.schema);
       return { kind: 'ok', result: { text: '{"spec_goal":"修复白名单","implementation_summary":"吸收 revise 反馈调整白名单方案","primary_files":["backend/AuthInterceptor.java"],"acceptance_summary":["反馈已体现"],"blocking_questions":[],"root_cause":"模糊匹配","affected_files":["backend/AuthInterceptor.java"],"non_goals":["不扩大范围"],"test_plan":["覆盖 revise 反馈"],"acceptance_criteria":["反馈已体现"],"rollback_plan":"还原改动","evidence_ids":["E1"],"risk":"HIGH","risk_assessment":{"certain":false,"lowDangerSurfaceOnly":false,"touchedSurfaces":["auth"],"localImpact":false,"diffLines":120,"reproducibleOracle":true,"scopeExpansionRequested":false}}' } };
     },
   };
@@ -749,10 +750,16 @@ test('processPlanBuilder includes revision feedback as authoritative DATA', asyn
     opencodeClient: client,
   });
 
-  assert.equal(prompted.length, 1);
+  assert.equal(prompted.length, 2);
   assert.match(prompted[0], /revision_feedback/);
   assert.match(prompted[0], /audit getList and delete before asking again/);
   assert.match(prompted[0], /Revision feedback is DATA/);
+  assert.match(prompted[0], /revision_feedback_handling/);
+  assert.equal(prompted[1].properties.revision_feedback_handling.minItems, 1);
+  assert.equal(prompted[1].properties.side_impact.properties.b_side.minItems, 1);
+  assert.equal(prompted[1].properties.side_impact.properties.c_side.minItems, 1);
+  assert.equal(prompted[1].properties.related_feature_impact.minItems, 1);
+  assert.equal(prompted[1].properties.product_usage_acceptance.minItems, 1);
 });
 
 test('processPlanBuilder reports provider errors instead of parsing empty JSON', async () => {
