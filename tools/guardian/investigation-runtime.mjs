@@ -10,6 +10,18 @@ import { randomUUID } from 'node:crypto';
 const NOOP_LOGGER = { info: () => {}, warn: () => {}, error: () => {} };
 const MAX_PLAN_ATTEMPTS = 2;
 
+function normalizeInvestigationIssueData(issue, issueData, state) {
+  const revisionFeedback = typeof state?.gate_1_revision_data === 'string' && state.gate_1_revision_data.length > 0
+    ? state.gate_1_revision_data
+    : null;
+  return {
+    issue: Number(issue),
+    title: issueData?.title ?? '',
+    body: issueData?.body ?? '',
+    revision_feedback: revisionFeedback,
+  };
+}
+
 function copyJsonParseDiagnostics(target, source) {
   if (source?.name !== 'InvestigationJsonParseError') return target;
   target.name = source.name;
@@ -37,11 +49,8 @@ export async function prepareInvestigation({ issue, issueData, repoDir, qaRuntim
   if (typeof runSpecialist !== 'function') throw new Error('investigation specialist runner is not configured');
   if (typeof buildPlan !== 'function') throw new Error('investigation plan builder is not configured');
 
-  writeArtifact(guardianDir, issue, 'issue-data', {
-    issue: Number(issue),
-    title: issueData?.title ?? '',
-    body: issueData?.body ?? '',
-  });
+  const normalizedIssueData = normalizeInvestigationIssueData(issue, issueData, state);
+  writeArtifact(guardianDir, issue, 'issue-data', normalizedIssueData);
 
   // Telemetry, not a limit: record how long the investigation actually takes so future tuning is
   // evidence-based. No time budget is enforced here (budgets default to unlimited).
@@ -55,7 +64,7 @@ export async function prepareInvestigation({ issue, issueData, repoDir, qaRuntim
       const result = await runSpecialist({
         role,
         issue,
-        issueData,
+        issueData: normalizedIssueData,
         issueDataPath: paths.issue_data_path,
         repoDir,
         qaRuntimeDir,
@@ -103,7 +112,7 @@ export async function prepareInvestigation({ issue, issueData, repoDir, qaRuntim
   const priorPlanErrors = [];
   for (let attempt = 1; attempt <= MAX_PLAN_ATTEMPTS; attempt += 1) {
     if (attempt > 1) logger.warn('plan.retry', { issue, attempt, previous_errors: priorPlanErrors.join(',') });
-    plan = { ...(await buildPlan({ issue, dossier, hypotheses: synthesis.ranked_hypotheses, repoDir, qaRuntimeDir, memoryContext, signal, previousPlanErrors: priorPlanErrors, attempt })), investigation_id: investigationId };
+    plan = { ...(await buildPlan({ issue, dossier, hypotheses: synthesis.ranked_hypotheses, repoDir, qaRuntimeDir, issueData: normalizedIssueData, memoryContext, signal, previousPlanErrors: priorPlanErrors, attempt })), investigation_id: investigationId };
     planResult = validatePlan(plan, dossier);
     if (planResult.errors.length === 0) break;
     priorPlanErrors.splice(0, priorPlanErrors.length, ...planResult.errors);

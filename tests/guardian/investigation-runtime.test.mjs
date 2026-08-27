@@ -43,12 +43,54 @@ test('prepareInvestigation runs bounded specialists and persists dossier/plan', 
     });
     assert.equal(calls.length, 2);
     assert.deepEqual(calls.map((call) => call.issueData), [
-      { title: 'Wrong badge color', body: 'Expected pink, observed red.' },
-      { title: 'Wrong badge color', body: 'Expected pink, observed red.' },
+      { issue: 42, title: 'Wrong badge color', body: 'Expected pink, observed red.', revision_feedback: null },
+      { issue: 42, title: 'Wrong badge color', body: 'Expected pink, observed red.', revision_feedback: null },
     ]);
     assert.equal(calls.every((call) => call.issueDataPath.endsWith('issue-data.json')), true);
     assert.equal(result.planResult.valid, true);
     assert.equal(investigationArtifactsReady(root, 42), true);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('prepareInvestigation carries gate revision feedback into issue-data and model calls', async () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'guardian-investigation-'));
+  const specialistCalls = [];
+  const planCalls = [];
+  const revisionFeedback = 'keep business/notifications as an explicit segmented prefix and audit /create matches';
+  try {
+    await prepareInvestigation({
+      issue: 355,
+      repoDir: 'D:/repo',
+      guardianDir: root,
+      issueClass: 'bug',
+      complexity: 'simple',
+      issueData: { title: 'Auth whitelist', body: 'indexOf bypass' },
+      state: { gate_1_revision_data: revisionFeedback },
+      capabilities: {},
+      config: {},
+      runSpecialist: async ({ role, issueData }) => {
+        specialistCalls.push({ role, issueData });
+        return {
+          specialist: role,
+          hypotheses: [{ id: 'H1', statement: 'root' }],
+          evidence: [{ id: `E-${role}`, kind: 'source_invariant', source: role, observation: 'root', supports: ['H1'], contradicts: [] }],
+          unresolved_facts: [],
+          acceptance_criteria: [],
+        };
+      },
+      buildPlan: async ({ issueData }) => {
+        planCalls.push(issueData);
+        return { root_cause: 'root', affected_files: ['a.mjs'], non_goals: ['b'], test_plan: ['test'], test_commands: testCommands, acceptance_criteria: ['works'], rollback_plan: 'revert', evidence_ids: ['E-guardian-code', 'E-guardian-runtime'], risk: 'LOW', risk_assessment: riskAssessment };
+      },
+    });
+
+    assert.equal(readArtifact(root, 355, 'issue-data').revision_feedback, revisionFeedback);
+    assert.equal(specialistCalls.length, 2);
+    assert.equal(specialistCalls.every((call) => call.issueData.revision_feedback === revisionFeedback), true);
+    assert.equal(planCalls.length, 1);
+    assert.equal(planCalls[0].revision_feedback, revisionFeedback);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
