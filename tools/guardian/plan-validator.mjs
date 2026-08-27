@@ -3,7 +3,7 @@
 
 import { isDecisionReady, validateDossier } from './evidence.mjs';
 import { gradeRisk, RISK } from './risk.mjs';
-import { parseValidatedTestPlan } from './supervisor-exec.mjs';
+import { parseValidatedTestPlan, testFilesFromValidatedCommands } from './test-command-policy.mjs';
 
 const REQUIRED_PLAN_FIELDS = Object.freeze([
   'root_cause',
@@ -131,7 +131,7 @@ function validateRevisedProductPlan(plan, errors) {
 
 function normalizePlanScope(plan, testCommands, primaryFiles = declaredPathList(plan.primary_files)) {
   const files = [];
-  for (const value of [...declaredPathList(plan.affected_files), ...primaryFiles, ...testFilesFromCommands(testCommands)]) {
+  for (const value of [...declaredPathList(plan.affected_files), ...primaryFiles, ...testFilesFromValidatedCommands(testCommands)]) {
     if (!files.includes(value)) files.push(value);
   }
   return files;
@@ -158,17 +158,6 @@ function pathList(value) {
     const candidate = item.path ?? item.file ?? item.file_path;
     return typeof candidate === 'string' ? candidate.trim() : '';
   }).filter(Boolean);
-}
-
-function testFilesFromCommands(commands) {
-  const files = [];
-  for (const command of Array.isArray(commands) ? commands : []) {
-    for (let index = 1; index < command.length; index += 1) {
-      const arg = command[index];
-      if (typeof arg === 'string' && (arg.endsWith('.test.mjs') || arg.endsWith('.test.js') || arg.endsWith('.js'))) files.push(arg);
-    }
-  }
-  return files;
 }
 
 function validateDeclaredFiles(field, value) {

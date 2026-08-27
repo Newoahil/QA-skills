@@ -179,6 +179,46 @@ test('valid plan materializes executable test_commands as argv arrays', () => {
   assert.deepEqual(result.plan.test_commands, [['node', 'frontend/apps/alipay-miniapp/scripts/test-category-builder-runtime.js']]);
 });
 
+test('valid Python pytest command is accepted and normalized into affected_files', () => {
+  const result = validatePlan(plan({
+    affected_files: ['src/config.mjs'],
+    test_commands: [['python', '-m', 'pytest', 'tests/guardian/test_plan_validator.py']],
+  }), dossier);
+
+  assert.equal(result.valid, true);
+  assert.deepEqual(result.plan.test_commands, [['python', '-m', 'pytest', 'tests/guardian/test_plan_validator.py']]);
+  assert.deepEqual(result.plan.affected_files, ['src/config.mjs', 'tests/guardian/test_plan_validator.py']);
+});
+
+test('pytest node id is stripped to its file path before affected_files merge', () => {
+  const result = validatePlan(plan({
+    affected_files: ['src/config.mjs'],
+    test_commands: [['py', '-m', 'pytest', 'tests/guardian/test_plan_validator.py::test_accepts_python'] ],
+  }), dossier);
+
+  assert.equal(result.valid, true);
+  assert.deepEqual(result.plan.test_commands, [['py', '-m', 'pytest', 'tests/guardian/test_plan_validator.py::test_accepts_python']]);
+  assert.deepEqual(result.plan.affected_files, ['src/config.mjs', 'tests/guardian/test_plan_validator.py']);
+});
+
+test('dotted unittest targets are accepted without creating fake affected file paths', () => {
+  const result = validatePlan(plan({
+    affected_files: ['src/config.mjs'],
+    test_commands: [['python', '-m', 'unittest', 'tests.guardian.test_plan_validator']],
+  }), dossier);
+
+  assert.equal(result.valid, true);
+  assert.deepEqual(result.plan.test_commands, [['python', '-m', 'unittest', 'tests.guardian.test_plan_validator']]);
+  assert.deepEqual(result.plan.affected_files, ['src/config.mjs']);
+});
+
+test('unsafe Python command keeps the existing plan:test_commands error path', () => {
+  const result = validatePlan(plan({ test_commands: [['python', 'script.py']] }), dossier);
+
+  assert.equal(result.valid, false);
+  assert.ok(result.errors.includes('plan:test_commands:test command is not allowed'));
+});
+
 test('valid plan normalizes primary and declared test command files into affected_files', () => {
   const result = validatePlan(plan({
     primary_files: ['src/config.mjs', 'tests/guardian/new-regression.test.mjs'],
