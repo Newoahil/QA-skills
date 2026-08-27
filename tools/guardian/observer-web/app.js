@@ -181,32 +181,53 @@ async function fetchJson(url) {
 
 async function discoverWorktrees() {
   try {
-    const projects = normalizeList(await fetchJson('/project'));
-    state.projects = projects;
+    const [opencodeProjects, guardianProjects] = await Promise.all([
+      fetchJson('/project').then(normalizeList).catch(() => []),
+      fetchJson('/api/guardian-projects').then(normalizeList).catch(() => []),
+    ]);
+
+    state.projects = opencodeProjects;
     const dirs = new Set();
+    const selectOptions = new Map();
+
+    // 1. Ingest Guardian-configured projects and their worktrees (handles current and re-bound projects)
+    for (const gp of guardianProjects) {
+      if (gp?.target_repo) {
+        dirs.add(gp.target_repo);
+        if (gp.qa_worktree) dirs.add(gp.qa_worktree);
+        if (gp.control_worktree) dirs.add(gp.control_worktree);
+        selectOptions.set(gp.target_repo, `${gp.name || 'Guardian 项目'} (含 Guardian)`);
+      }
+    }
     
-    // Add base project directories
-    for (const p of projects) {
+    // 2. Ingest OpenCode workspace projects
+    for (const p of opencodeProjects) {
       if (p?.worktree && p.worktree !== '/') {
         dirs.add(p.worktree);
-        // Add guardian isolated worktrees automatically
         dirs.add(`${p.worktree}.qa-guardian-qa`);
         dirs.add(`${p.worktree}.qa-guardian-control`);
+        if (!selectOptions.has(p.worktree)) {
+          const name = p.worktree.replace(/\\/g, '/').split('/').slice(-1)[0] || p.worktree;
+          selectOptions.set(p.worktree, `${name} (工作区)`);
+        }
       }
     }
     
     state.worktrees = Array.from(dirs);
     
-    // Populate project select dropdown
+    // 3. Update select dropdown if options changed
     const select = $('projectSelect');
-    if (select && select.options.length <= 1) {
-      const uniqueBases = Array.from(new Set(projects.filter(p=>p?.worktree && p.worktree !== '/').map(p=>p.worktree)));
-      for (const base of uniqueBases) {
+    if (select) {
+      const currentVal = select.value;
+      select.innerHTML = '<option value="all">全部工作区 & Guardian</option>';
+      for (const [val, label] of selectOptions) {
         const opt = document.createElement('option');
-        const name = base.replace(/\\/g, '/').split('/').slice(-1)[0] || base;
-        opt.value = base;
-        opt.textContent = `${name} (含 Guardian)`;
+        opt.value = val;
+        opt.textContent = label;
         select.appendChild(opt);
+      }
+      if (selectOptions.has(currentVal)) {
+        select.value = currentVal;
       }
     }
   } catch (err) {

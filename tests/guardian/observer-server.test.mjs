@@ -216,3 +216,18 @@ test('observer-server returns 502 when upstream is unreachable', async () => {
     await observer.close();
   }
 });
+
+test('observer-server serves GET /api/guardian-projects with configured projects', async () => {
+  const upstream = await startFakeUpstream();
+  const observer = await startObserver(upstream.url);
+  try {
+    const res = await fetch(`${observer.url}/api/guardian-projects`);
+    assert.equal(res.status, 200);
+    assert.match(res.headers.get('content-type'), /application\/json/);
+    const data = await res.json();
+    assert.equal(Array.isArray(data), true);
+  } finally {
+    await observer.close();
+    await upstream.close();
+  }
+});

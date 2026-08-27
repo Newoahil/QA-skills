@@ -1,13 +1,15 @@
 // QA Guardian - local observer web page and OpenCode reverse proxy.
 // Serves the observer UI at GET / and proxies every API/SSE route to upstream OpenCode.
 
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
 import { fileURLToPath } from 'node:url';
 
 const WEB_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'observer-web');
+const BINDING_FILE = path.join(path.dirname(fileURLToPath(import.meta.url)), 'scheduler.config.json');
+
 const STATIC_ROUTES = Object.freeze({
   '/': { file: 'index.html', type: 'text/html; charset=utf-8' },
   '/index.html': { file: 'index.html', type: 'text/html; charset=utf-8' },
@@ -22,6 +24,37 @@ function staticAsset(pathname) {
   if (!route) return null;
   const content = readFileSync(path.join(WEB_DIR, route.file), 'utf8');
   return { body: content, type: route.type };
+}
+
+function readGuardianProjects() {
+  if (!existsSync(BINDING_FILE)) return [];
+  try {
+    const raw = readFileSync(BINDING_FILE, 'utf8').replace(/^\uFEFF/, '');
+    const data = JSON.parse(raw);
+    const projects = [];
+    if (data?.projects && typeof data.projects === 'object') {
+      for (const [key, p] of Object.entries(data.projects)) {
+        if (p?.target_repo) {
+          projects.push({
+            name: path.basename(p.target_repo),
+            target_repo: p.target_repo,
+            control_worktree: p.control_worktree_path || `${p.target_repo}.qa-guardian-control`,
+            qa_worktree: p.qa_snapshot_path || `${p.target_repo}.qa-guardian-qa`,
+          });
+        }
+      }
+    } else if (data?.target_repo) {
+      projects.push({
+        name: path.basename(data.target_repo),
+        target_repo: data.target_repo,
+        control_worktree: data.control_worktree_path || `${data.target_repo}.qa-guardian-control`,
+        qa_worktree: data.qa_snapshot_path || `${data.target_repo}.qa-guardian-qa`,
+      });
+    }
+    return projects;
+  } catch {
+    return [];
+  }
 }
 
 function proxyHeaders(req, upstream) {
@@ -45,6 +78,14 @@ export function createProxyHandler({ upstreamUrl = 'http://127.0.0.1:4097', logg
   return (req, res) => {
     const rawPath = req.url ?? '/';
     const pathname = rawPath.split('?')[0];
+
+    if (req.method === 'GET' && pathname === '/api/guardian-projects') {
+      const list = readGuardianProjects();
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-cache' });
+      res.end(JSON.stringify(list));
+      return;
+    }
+
     const asset = req.method === 'GET' ? staticAsset(pathname) : null;
     if (asset) {
       logger?.info?.('observer.static', { path: pathname });
