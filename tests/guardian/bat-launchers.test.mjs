@@ -116,6 +116,26 @@ test('scheduler launcher supports force rebind only for init-only mode reselecti
   assert.match(text, /ForceRebind 仅允许与 -Init 和 -InitOnly 一起使用/);
 });
 
+test('scheduler launcher declares BindingMode and uses it for first mode selection without Read-Host', () => {
+  const text = readFileSync('tools/guardian/scheduler-start.ps1', 'utf8');
+  const selectionBlock = text.slice(text.indexOf('if (-not $Dashboard -and -not $DryRun -and -not $binding) {'), text.indexOf('$bindingAuthors = @()'));
+  assert.match(text, /\[ValidateSet\("strict", "worktree"\)\]\s*\[string\]\$BindingMode = ""/);
+  assert.match(selectionBlock, /\$modeInput = \$BindingMode/);
+  assert.match(selectionBlock, /if \(\$BindingMode\) \{/);
+  assert.match(selectionBlock, /\} else \{/);
+  assert.match(selectionBlock, /Read-Host "    输入 1=严格模式（目标必须 clean）或 2=worktree\/current-snapshot 模式"/);
+  assert.ok(selectionBlock.indexOf('$modeInput = $BindingMode') < selectionBlock.indexOf('Read-Host "    输入 1=严格模式（目标必须 clean）或 2=worktree/current-snapshot 模式"'));
+});
+
+test('scheduler launcher keeps the existing interactive fallback prompt when BindingMode is omitted', () => {
+  const text = readFileSync('tools/guardian/scheduler-start.ps1', 'utf8');
+  const selectionBlock = text.slice(text.indexOf('if (-not $Dashboard -and -not $DryRun -and -not $binding) {'), text.indexOf('$bindingAuthors = @()'));
+  assert.match(selectionBlock, /首次启动需要选择目标仓库模式（选择会保存到 gitignored scheduler\.config\.json）。/);
+  assert.match(selectionBlock, /Read-Host "    输入 1=严格模式（目标必须 clean）或 2=worktree\/current-snapshot 模式"/);
+  assert.match(selectionBlock, /if \(\$modeInput -eq '1' -or \$modeInput -match '\^\(strict\|严格\)\$'\)/);
+  assert.match(selectionBlock, /\} elseif \(\$modeInput -eq '2' -or \$modeInput -match '\^\(worktree\|snapshot\)\$'\) \{/);
+});
+
 test('scheduler launcher force rebind clears only selected binding before first mode selection', () => {
   const text = readFileSync('tools/guardian/scheduler-start.ps1', 'utf8');
   const selectionIndex = text.indexOf('$binding = Select-LauncherBinding $launcherConfig $canonicalTarget');
@@ -134,6 +154,11 @@ test('scheduler launcher force rebind clears only selected binding before first 
 test('guardian-start remains normal startup and does not pass ForceRebind', () => {
   const text = readFileSync('tools/guardian/guardian-start.ps1', 'utf8');
   assert.doesNotMatch(text, /ForceRebind/);
+});
+
+test('guardian-start remains normal startup and does not pass BindingMode', () => {
+  const text = readFileSync('tools/guardian/guardian-start.ps1', 'utf8');
+  assert.doesNotMatch(text, /BindingMode/);
 });
 
 test('dashboard launcher resolves the authoritative control worktree without preflight', () => {

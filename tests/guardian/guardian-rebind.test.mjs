@@ -13,6 +13,13 @@ test('guardian-rebind.ps1 delegates to scheduler init-only setup', () => {
   assert.match(text, /'-WatchMode', \$WatchMode/);
 });
 
+test('guardian-rebind.ps1 declares BindingMode and forwards it only when explicitly provided', () => {
+  const text = readFileSync('tools/guardian/guardian-rebind.ps1', 'utf8');
+  assert.match(text, /\[ValidateSet\("strict", "worktree"\)\]\s*\[string\]\$BindingMode = ""/);
+  assert.match(text, /if \(\$BindingMode\) \{ \$arguments \+= @\('-BindingMode', \$BindingMode\) \}/);
+  assert.doesNotMatch(text, /'-BindingMode', \$BindingMode,\s*'-ForceRebind'/);
+});
+
 test('guardian-rebind.ps1 is interactive and rebind-only', () => {
   const text = readFileSync('tools/guardian/guardian-rebind.ps1', 'utf8');
   assert.match(text, /Target repo path \(blank to cancel\)/);
@@ -31,5 +38,6 @@ test('guardian-start.ps1 remains binding-read-only while rebind owns onboarding'
   assert.match(start, /No Guardian binding found for this project/);
   assert.doesNotMatch(start, /'-InitOnly'/);
   assert.doesNotMatch(start, /Save-LauncherBinding/);
+  assert.doesNotMatch(start, /BindingMode/);
   assert.match(rebind, /'-InitOnly'/);
 });

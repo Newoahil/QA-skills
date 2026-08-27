@@ -15,6 +15,8 @@ param(
   [string]$CommandAuthors = "",
   [string]$GitHubRepo = "",
   [string]$BaseBranch = "dev",
+  [ValidateSet("strict", "worktree")]
+  [string]$BindingMode = "",
   [ValidateSet("new-open", "labeled")]
   [string]$WatchMode = "new-open",
   [switch]$Yes
@@ -48,6 +50,7 @@ $arguments = @(
 )
 if ($CommandAuthors) { $arguments += @('-CommandAuthors', $CommandAuthors) }
 if ($GitHubRepo) { $arguments += @('-GitHubRepo', $GitHubRepo) }
+if ($BindingMode) { $arguments += @('-BindingMode', $BindingMode) }
 if ($Yes) { $arguments += '-Yes' }
 
 & powershell.exe @arguments

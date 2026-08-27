@@ -72,6 +72,8 @@ param(
   [string]$CommandAuthors = "",
   [string]$BaseBranch = "dev",
   [string]$GitHubRepo = "",
+  [ValidateSet("strict", "worktree")]
+  [string]$BindingMode = "",
   [ValidateSet("new-open", "labeled")]
   [string]$WatchMode = "new-open",
   [switch]$SchedulerOnly,
@@ -571,7 +573,11 @@ if (-not $Dashboard) {
 if (-not $Dashboard -and -not $DryRun -and -not $binding) {
   if ($Yes) { throw "首次启动尚未选择模式。请先不带 -Yes 交互式运行一次，选择 strict 或 worktree/current-snapshot 模式。" }
   Write-Host "    首次启动需要选择目标仓库模式（选择会保存到 gitignored scheduler.config.json）。" -ForegroundColor Yellow
-  $modeInput = Read-Host "    输入 1=严格模式（目标必须 clean）或 2=worktree/current-snapshot 模式"
+  if ($BindingMode) {
+    $modeInput = $BindingMode
+  } else {
+    $modeInput = Read-Host "    输入 1=严格模式（目标必须 clean）或 2=worktree/current-snapshot 模式"
+  }
   if ($modeInput -eq '1' -or $modeInput -match '^(strict|严格)$') {
     $binding = [ordered]@{ version = 1; target_repo = (Resolve-Path $TargetRepo).Path; canonical_target_path = (Resolve-Path $TargetRepo).Path; mode = 'strict'; control_worktree_path = (Resolve-Path $TargetRepo).Path; qa_snapshot_path = $null; qa_managed_root = $null; selected_runtime_input_paths = @(); base_branch = $BaseBranch; guardian_repo_path = $GuardianRepo; git_identity = (Invoke-Git $TargetRepo @('rev-parse', '--show-toplevel')).output }
     Save-LauncherBinding $bindingPath $canonicalTarget $binding
