@@ -411,6 +411,17 @@ test('GATE_2_WAIT + typed closed-and-merged terminal fact → DONE (acceptance 9
   assert.equal(d.reason, 'merged-closed');
 });
 
+test('GATE_2_WAIT + open issue with matching merged PR observation → DONE', () => {
+  const r = rec({ state: STATES.GATE_2_WAIT, pr_url: 'https://github.com/o/r/pull/7' });
+  const d = route(r, {
+    closed: false,
+    pullRequests: [{ number: 7, url: 'https://github.com/o/r/pull/7', headRefName: 'fix/issue-42', baseRefName: 'dev', merged: true }],
+  }, { leaseMs: LEASE, now: NOW });
+
+  assert.equal(d.action, 'DONE');
+  assert.equal(d.reason, 'merged-closed');
+});
+
 test('GATE_2_WAIT + legacy issue closed without matching PR evidence does not reach DONE', () => {
   const r = rec({ state: STATES.GATE_2_WAIT });
   const d = routeIssue(r, { closed: true, comments: [] }, { leaseMs: LEASE, now: NOW });

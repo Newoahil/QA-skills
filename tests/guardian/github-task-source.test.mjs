@@ -37,6 +37,33 @@ test('buildGitHubTaskObservation maps closed issue with matching merged PR to te
   assert.deepEqual(observation.facts, { title: 'Done', body: 'Merged by human.' });
 });
 
+test('buildGitHubTaskObservation maps open issue with matching merged PR to terminal fact', () => {
+  const observation = buildGitHubTaskObservation({
+    issueNumber: 42,
+    record: { state: STATES.GATE_2_WAIT, last_consumed_comment_id: null, pr_url: 'https://github.com/o/r/pull/7' },
+    githubIssue: {
+      title: 'PR merged',
+      body: 'Issue left open after merge.',
+      closed: false,
+      comments: [],
+      pullRequests: [{ number: 7, url: 'https://github.com/o/r/pull/7', headRefName: 'fix/issue-42', baseRefName: 'dev', merged: true }],
+    },
+  });
+
+  assert.deepEqual(observation.terminal, {
+    status: 'completed',
+    reason: 'merged-closed',
+    sourceEvidence: {
+      issue_closed: false,
+      matching_pr_merged: true,
+      pr_number: 7,
+      pr_url: 'https://github.com/o/r/pull/7',
+      head: 'fix/issue-42',
+      base: 'dev',
+    },
+  });
+});
+
 test('buildGitHubTaskObservation does not treat issue closure alone as terminal', () => {
   const observation = buildGitHubTaskObservation({
     issueNumber: 42,
@@ -55,6 +82,22 @@ test('buildGitHubTaskObservation ignores unrelated merged PRs when closing an is
       title: 'Closed',
       body: '',
       closed: true,
+      comments: [],
+      pullRequests: [{ number: 8, url: 'https://github.com/o/r/pull/8', headRefName: 'fix/issue-99', baseRefName: 'dev', merged: true }],
+    },
+  });
+
+  assert.equal(observation.terminal, null);
+});
+
+test('buildGitHubTaskObservation ignores unrelated merged PRs while issue remains open', () => {
+  const observation = buildGitHubTaskObservation({
+    issueNumber: 42,
+    record: { state: STATES.GATE_2_WAIT, last_consumed_comment_id: null, pr_url: 'https://github.com/o/r/pull/7' },
+    githubIssue: {
+      title: 'Open',
+      body: '',
+      closed: false,
       comments: [],
       pullRequests: [{ number: 8, url: 'https://github.com/o/r/pull/8', headRefName: 'fix/issue-99', baseRefName: 'dev', merged: true }],
     },
@@ -106,10 +149,16 @@ test('createGitHubTaskSource lists refs and reads observations through injected 
 });
 
 test('defaultGhReader maps gh issue JSON to the legacy GitHub fact shape', () => {
+  const calls = [];
   const reader = defaultGhReader('D:/repo', {
     spawnSync: (_cmd, args, opts) => {
-      assert.deepEqual(args, ['issue', 'view', '42', '--json', 'state,comments,title,body,labels,closedByPullRequestsReferences']);
+      calls.push(args);
       assert.equal(opts.cwd, 'D:/repo');
+      if (args[0] === 'pr') {
+        assert.deepEqual(args, ['pr', 'list', '--head', 'fix/issue-42', '--state', 'all', '--json', 'number,url,headRefName,baseRefName,mergedAt']);
+        return { status: 0, stdout: '[]' };
+      }
+      assert.deepEqual(args, ['issue', 'view', '42', '--json', 'state,comments,title,body,labels,closedByPullRequestsReferences']);
       return {
         status: 0,
         stdout: JSON.stringify({
@@ -130,4 +179,40 @@ test('defaultGhReader maps gh issue JSON to the legacy GitHub fact shape', () =>
     comments: [{ id: 7, body: '/guardian retry', createdAt: '2026-08-24T03:00:00Z', author: 'alice' }],
     pullRequests: [{ number: 9, url: 'https://github.com/o/r/pull/9', headRefName: 'fix/issue-42', baseRefName: 'dev', merged: true }],
   });
+  assert.deepEqual(calls, [
+    ['issue', 'view', '42', '--json', 'state,comments,title,body,labels,closedByPullRequestsReferences'],
+    ['pr', 'list', '--head', 'fix/issue-42', '--state', 'all', '--json', 'number,url,headRefName,baseRefName,mergedAt'],
+  ]);
+});
+
+test('defaultGhReader augments open issues with PR facts from the fix branch', () => {
+  const calls = [];
+  const reader = defaultGhReader('D:/repo', {
+    spawnSync: (_cmd, args, opts) => {
+      calls.push(args);
+      assert.equal(opts.cwd, 'D:/repo');
+      if (args[0] === 'issue') {
+        return {
+          status: 0,
+          stdout: JSON.stringify({
+            title: 'Open after merge',
+            body: 'PR merged but issue stayed open.',
+            state: 'OPEN',
+            comments: [],
+            closedByPullRequestsReferences: [],
+          }),
+        };
+      }
+      assert.deepEqual(args, ['pr', 'list', '--head', 'fix/issue-42', '--state', 'all', '--json', 'number,url,headRefName,baseRefName,mergedAt']);
+      return {
+        status: 0,
+        stdout: JSON.stringify([{ number: 7, url: 'https://github.com/o/r/pull/7', headRefName: 'fix/issue-42', baseRefName: 'dev', mergedAt: '2026-08-27T03:12:49Z' }]),
+      };
+    },
+  });
+
+  assert.deepEqual(reader(42).pullRequests, [
+    { number: 7, url: 'https://github.com/o/r/pull/7', headRefName: 'fix/issue-42', baseRefName: 'dev', merged: true },
+  ]);
+  assert.equal(calls.length, 2);
 });

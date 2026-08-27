@@ -24,8 +24,29 @@ export function defaultGhReader(repoDir, deps = {}) {
       throw new Error(`gh issue view #${issueNumber} failed: ${res.stderr || res.stdout || 'unknown'}`);
     }
     const data = JSON.parse(res.stdout);
-    return legacyGithubFacts(data);
+    return legacyGithubFacts({
+      ...data,
+      pullRequests: [...pullRequestFactsFromIssue(data), ...readFixBranchPullRequests({ spawnSync, repoDir, issueNumber })],
+    });
   };
+}
+
+function readFixBranchPullRequests({ spawnSync, repoDir, issueNumber }) {
+  const args = [
+    'pr', 'list',
+    '--head', `fix/issue-${Number(issueNumber)}`,
+    '--state', 'all',
+    '--json', 'number,url,headRefName,baseRefName,mergedAt',
+  ];
+  const res = spawnSync('gh', args, {
+    cwd: repoDir,
+    encoding: 'utf8',
+    shell: false,
+    windowsHide: true,
+  });
+  if (res.status !== 0) return [];
+  const parsed = JSON.parse(res.stdout);
+  return Array.isArray(parsed) ? parsed : [];
 }
 
 export function legacyGithubFacts(data) {
@@ -50,7 +71,7 @@ export function buildGitHubTaskObservation({ issueNumber, record = null, githubI
   const comments = githubIssue?.comments ?? [];
   const selected = selectCommand(comments, currentState, lastConsumedId, trustedAuthors);
   const controlEvents = selected ? [commandEventFromSelection(selected, comments)] : [];
-  const terminal = githubIssue?.closed ? terminalFactForClosedIssue({ issueNumber, record, pullRequests: githubIssue.pullRequests }) : null;
+  const terminal = terminalFactForMergedPullRequest({ issueNumber, record, githubIssue });
   return createTaskObservation({
     identity,
     terminal,
@@ -79,14 +100,14 @@ function normalizePullRequestFact(pr) {
   };
 }
 
-function terminalFactForClosedIssue({ issueNumber, record, pullRequests }) {
-  const match = matchingMergedPullRequest({ issueNumber, record, pullRequests });
+function terminalFactForMergedPullRequest({ issueNumber, record, githubIssue }) {
+  const match = matchingMergedPullRequest({ issueNumber, record, pullRequests: githubIssue?.pullRequests });
   if (!match) return null;
   return Object.freeze({
     status: 'completed',
     reason: 'merged-closed',
     sourceEvidence: Object.freeze({
-      issue_closed: true,
+      issue_closed: githubIssue?.closed === true,
       matching_pr_merged: true,
       pr_number: match.number ?? null,
       pr_url: match.url ?? null,
