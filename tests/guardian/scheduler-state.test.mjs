@@ -281,6 +281,52 @@ test('applyGateCommandState records manual fixer continuation without clearing Q
   assert.equal(next.last_consumed_comment_id, 99);
 });
 
+test('applyGateCommandState consumes environment retry continue without manual fixer resume or Gate1 overwrite', () => {
+  const current = {
+    ...newState(325),
+    state: STATES.HANDED_BACK,
+    branch: 'fix/issue-325',
+    handed_back_reason: 'environment-blocked',
+    last_error_class: 'qa-blocked-environment',
+    fix_rounds: 2,
+    gate_1_approved_comment_id: 7,
+    gate_1_approved_plan_hash: 'sha256:plan',
+    gate_1_approved_plan_revision: 'rev-1',
+    plan_hash: 'sha256:plan',
+    plan_revision: 'rev-1',
+    qa_verdict_status: 'BLOCKED',
+    opencode: {
+      schema_version: 1,
+      fixer: { session_id: 'ses_fixer', last_status: 'ok' },
+      qa: { session_id: 'ses_qa', last_status: 'ok' },
+      specialists: {},
+      inflight: null,
+    },
+  };
+
+  const next = applyGateCommandState({
+    currentBeforeRun: current,
+    command: { verb: 'continue', commentId: 100, data: 'venv provisioned', qaEnvironmentRetry: true },
+    currentIdentity: { plan_hash: 'sha256:other-plan', plan_revision: 'rev-other' },
+    repoDir: 'D:/repo',
+    qaRuntimeDir: 'D:/repo.qa',
+    now: '2026-08-26T02:00:00.000Z',
+  });
+
+  assert.equal(next.state, STATES.VERIFYING);
+  assert.equal(next.last_phase, 'qa-environment-retry');
+  assert.equal(next.last_consumed_comment_id, 100);
+  assert.equal(next.fix_rounds, 2);
+  assert.equal(next.manual_fix_resume, current.manual_fix_resume);
+  assert.equal(next.manual_fix_resume_comment_id, current.manual_fix_resume_comment_id);
+  assert.equal(next.gate_1_approved_comment_id, 7);
+  assert.equal(next.gate_1_approved_plan_hash, 'sha256:plan');
+  assert.equal(next.gate_1_approved_plan_revision, 'rev-1');
+  assert.equal(next.opencode.fixer.session_id, 'ses_fixer');
+  assert.equal(next.opencode.qa.session_id, 'ses_qa');
+  assert.equal(next.opencode.inflight, null);
+});
+
 test('publishWaitingGate1Proposals publishes one recovered Gate 1 proposal and persists the marker for the second call skip', () => {
   const guardianDir = tempGuardianDir();
   const issue = 263;

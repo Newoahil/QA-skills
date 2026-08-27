@@ -393,6 +393,41 @@ test('HANDED_BACK fix-rounds-exceeded + /guardian continue → RESUME FIXING wit
   assert.equal(d.command.data, 'use the QA failure report');
 });
 
+test('HANDED_BACK environment-blocked + trusted /guardian continue → RESUME VERIFYING for QA-only retry', () => {
+  const r = rec({
+    state: STATES.HANDED_BACK,
+    handed_back_reason: 'environment-blocked',
+    last_error_class: 'qa-blocked-environment',
+    branch: 'fix/issue-42',
+    plan_status: 'valid',
+    dossier_status: 'valid',
+    opencode: { fixer: { session_id: 'ses_fixer', last_status: 'ok' }, qa: { session_id: 'ses_qa', last_status: 'ok' }, specialists: {}, inflight: null },
+  });
+
+  const d = route(r, { comments: [comment(4, '/guardian continue environment is ready')] }, OPTS);
+
+  assert.equal(d.action, 'RESUME');
+  assert.equal(d.reason, 'qa-environment-retry');
+  assert.equal(d.toState, STATES.VERIFYING);
+  assert.equal(d.manualFixResume, undefined);
+  assert.equal(d.clearFixRounds, undefined);
+  assert.equal(d.command.commentId, 4);
+});
+
+test('HANDED_BACK environment-blocked without trusted continue remains terminal', () => {
+  const r = rec({
+    state: STATES.HANDED_BACK,
+    handed_back_reason: 'environment-blocked',
+    last_error_class: 'qa-blocked-environment',
+    branch: 'fix/issue-42',
+    plan_status: 'valid',
+    dossier_status: 'valid',
+  });
+
+  assert.equal(route(r, {}, OPTS).action, 'SKIP');
+  assert.equal(route(r, { comments: [comment(5, '/guardian continue', 'attacker')] }, OPTS).action, 'SKIP');
+});
+
 test('HANDED_BACK non-fix-cap + /guardian continue remains terminal', () => {
   const r = rec({ state: STATES.HANDED_BACK, handed_back_reason: 'reject', last_error_class: 'reject' });
   const d = route(r, { comments: [comment(3, '/guardian continue')] }, OPTS);

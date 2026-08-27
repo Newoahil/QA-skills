@@ -345,6 +345,52 @@ test('runPipeline preserves fixer to QA state and artifact write order', async (
   ]);
 });
 
+test('runPipeline starting from VERIFYING skips fixer and reruns independent QA against existing diff', async () => {
+  const calls = [];
+  const state = {
+    issue: 25,
+    state: STATES.VERIFYING,
+    branch: 'fix/issue-25',
+    last_phase: 'qa-environment-retry',
+    last_error_class: 'qa-blocked-environment',
+    opencode: { fixer: { session_id: 'ses_fixer', last_status: 'ok' }, qa: null, specialists: {}, inflight: null },
+  };
+  const context = stageRunnerContext({
+    client: {},
+    issue: 25,
+    repoDir: 'D:/repo',
+    guardianDir: 'D:/repo/.qa/guardian',
+    command: { verb: 'continue', commentId: 25, data: 'environment ready', qaEnvironmentRetry: true },
+    config: {},
+    investigationMode: 'enforced',
+    fallbackModels: [],
+    signal: null,
+    issueTitle: 'Fix issue 25',
+    supervisor: { preQaEvidence: () => ({ status: 0, evidence: { status_diff: { exit_code: 0 }, tests: [] } }) },
+    logger: { info: () => {}, warn: () => {} },
+    readState: () => state,
+    writeState: () => {},
+    readArtifactPair: () => ({ plan: { affected_files: ['src/env.mjs'] } }),
+    writeMarkdownArtifact: () => {},
+    writeArtifact: () => {},
+    resolveSessionDeadlineMs: () => 100,
+    resolveModelForRole: () => undefined,
+    runFixerSession: async () => { calls.push('fixer'); return { status: 'ok', state, completion: { changedFiles: ['src/env.mjs'], summary: 'fixed' } }; },
+    runQaSession: async (request) => {
+      calls.push('qa');
+      assert.equal(request.branch, 'fix/issue-25');
+      assert.deepEqual(request.diffSummary.changed_files, ['src/env.mjs']);
+      return { status: 'ok', state: request.state, verdict: 'PASS', report: 'Overall Status: PASS' };
+    },
+  });
+
+  const result = await runPipeline({ stages: loadPipelineManifest(), context });
+
+  assert.equal(result.stopped, false);
+  assert.deepEqual(calls, ['qa']);
+  assert.equal(result.qaVerdict.status, 'PASS');
+});
+
 test('runQaStage passes Supervisor pre-QA evidence into the independent QA diff summary', async () => {
   const evidence = { status_diff: { command: ['git', 'status', '--short'], exit_code: 0, stdout: ' M src/a.mjs\n', stderr: '' }, tests: [] };
   let received = null;

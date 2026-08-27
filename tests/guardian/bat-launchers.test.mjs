@@ -333,6 +333,19 @@ test('scheduler launcher allows one-shot QA human-review dirty recovery', () => 
   assert.doesNotMatch(controlFunction, /\?\?/);
 });
 
+test('scheduler launcher allows dirty environment-blocked QA retry only for matching plan-scoped fix branch', () => {
+  const text = readFileSync('tools/guardian/scheduler-start.ps1', 'utf8');
+  const controlFunction = text.slice(text.indexOf('function Ensure-ControlWorktree'), text.indexOf('function Ensure-QaSnapshot'));
+  assert.match(controlFunction, /recoverableQaEnvironmentHandback = \[string\]\$state\.state -eq 'HANDED_BACK'/);
+  assert.match(controlFunction, /\[string\]\$state\.handed_back_reason -eq 'environment-blocked'/);
+  assert.match(controlFunction, /\[string\]\$state\.last_error_class -eq 'qa-blocked-environment'/);
+  assert.match(controlFunction, /\[string\]\$state\.branch -eq "fix\/issue-\$issue"/);
+  assert.match(controlFunction, /\[string\]\$state\.plan_status -eq 'valid'/);
+  assert.match(controlFunction, /\[string\]\$state\.dossier_status -eq 'valid'/);
+  assert.match(controlFunction, /-and -not \$recoverableQaEnvironmentHandback/);
+  assert.match(controlFunction, /\$unplannedDirty = @\(\$unownedDirty \| Where-Object \{ \$activePlanPaths -notcontains \$_ \}\)/);
+});
+
 test('scheduler launcher allows plan-scope recovery after router rewrites state to investigating', () => {
   const text = readFileSync('tools/guardian/scheduler-start.ps1', 'utf8');
   const controlFunction = text.slice(text.indexOf('function Ensure-ControlWorktree'), text.indexOf('function Ensure-QaSnapshot'));

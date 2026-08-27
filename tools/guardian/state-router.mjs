@@ -82,6 +82,14 @@ export function routeIssue(record, gh, opts) {
       };
     }
     const cmd = selectControlCommand(controlEvents, STATES.HANDED_BACK);
+    if (cmd && cmd.verb === 'continue' && isQaEnvironmentRetry(record)) {
+      return {
+        action: 'RESUME',
+        reason: 'qa-environment-retry',
+        toState: STATES.VERIFYING,
+        command: { ...cmd, qaEnvironmentRetry: true },
+      };
+    }
     if (cmd && cmd.verb === 'continue' && record.handed_back_reason === 'fix-rounds-exceeded') {
       return {
         action: 'RESUME',
@@ -220,6 +228,15 @@ export function routeIssue(record, gh, opts) {
 function isQaFailedRetry(record) {
   return record.last_error_class === 'qa-failed-retry'
     || record.last_phase === 'qa-failed-retry';
+}
+
+function isQaEnvironmentRetry(record) {
+  return record.handed_back_reason === 'environment-blocked'
+    && record.last_error_class === 'qa-blocked-environment'
+    && record.plan_status === 'valid'
+    && record.dossier_status === 'valid'
+    && typeof record.branch === 'string'
+    && /^fix\/issue-\d+$/.test(record.branch);
 }
 
 function normalizeRouteInput(input, record, trustedAuthors) {

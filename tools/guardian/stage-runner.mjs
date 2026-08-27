@@ -90,6 +90,7 @@ export async function runPipeline({ stages, context, runners = RUNNERS }) {
   const pipelineStages = stages ?? profile.stages;
   const state = { completion: null, qaVerdict: null };
   for (const stage of pipelineStages) {
+    if (shouldSkipStageForCurrentState(stage, context)) continue;
     const runner = runners[stage.runner];
     if (!runner) throw new Error(`unknown stage runner: ${stage.runner}`);
     const result = await runner({ ...context, pipeline: state, stage });
@@ -98,6 +99,16 @@ export async function runPipeline({ stages, context, runners = RUNNERS }) {
     if (result?.stop) return Object.freeze({ ...state, stopped: true, stage: stage.id, status: result.status });
   }
   return Object.freeze({ ...state, stopped: false });
+}
+
+function shouldSkipStageForCurrentState(stage, context = {}) {
+  if (typeof context.readState !== 'function' || !context.guardianDir || context.issue == null) return false;
+  const currentState = context.readState(context.guardianDir, context.issue)?.state;
+  if (!currentState || !stage.stateTransition?.from) return false;
+  const order = [STATES.FIXING, STATES.VERIFYING];
+  const currentIndex = order.indexOf(currentState);
+  const stageIndex = order.indexOf(stage.stateTransition.to ?? stage.stateTransition.from);
+  return currentIndex >= 0 && stageIndex >= 0 && stageIndex < currentIndex;
 }
 
 function selectExecutionProfile(context = {}) {
@@ -197,6 +208,7 @@ export async function runQaStage(context) {
     ? context.config.max_evidence_retries
     : MAX_EVIDENCE_RETRIES;
   const plan = context.readArtifactPair?.(context.guardianDir, context.issue)?.plan ?? null;
+  const changedFiles = context.pipeline.completion?.changedFiles ?? (Array.isArray(plan?.affected_files) ? plan.affected_files : []);
   const supervisorEvidence = typeof context.supervisor?.preQaEvidence === 'function'
     ? context.supervisor.preQaEvidence({ plan })
     : { status: 0, evidence: { status_diff: null, tests: [] } };
@@ -209,7 +221,7 @@ export async function runQaStage(context) {
     branch: afterFix.branch ?? null,
     diffSummary: {
       branch: afterFix.branch ?? 'unknown',
-      changed_files: context.pipeline.completion?.changedFiles ?? [],
+      changed_files: changedFiles,
       fixer_summary: context.pipeline.completion?.summary ?? null,
       supervisor_evidence: supervisorEvidence.evidence ?? supervisorEvidence,
     },

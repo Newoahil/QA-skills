@@ -69,17 +69,18 @@ export function applyGateCommandState({ currentBeforeRun, command, currentIdenti
   const gateApproved = command.verb === 'approve';
   const gateRevision = command.verb === 'revise';
   const manualFixResume = command.verb === 'continue' && command.manualFixResume === true;
+  const qaEnvironmentRetry = command.verb === 'continue' && command.qaEnvironmentRetry === true;
   return {
     ...currentBeforeRun,
     control_repo_dir: repoDir,
     qa_runtime_dir: qaRuntimeDir,
-    state: gateApproved || manualFixResume ? STATES.FIXING : (gateRevision ? STATES.INVESTIGATING : currentBeforeRun.state),
+    state: qaEnvironmentRetry ? STATES.VERIFYING : (gateApproved || manualFixResume ? STATES.FIXING : (gateRevision ? STATES.INVESTIGATING : currentBeforeRun.state)),
     last_consumed_comment_id: command.commentId,
     last_command_verb: command.verb,
     last_command_comment_id: command.commentId,
-    gate_1_approved_comment_id: gateApproved ? command.commentId : null,
-    gate_1_approved_plan_hash: gateApproved ? currentIdentity.plan_hash : null,
-    gate_1_approved_plan_revision: gateApproved ? currentIdentity.plan_revision : null,
+    gate_1_approved_comment_id: gateApproved ? command.commentId : (gateRevision ? null : currentBeforeRun.gate_1_approved_comment_id),
+    gate_1_approved_plan_hash: gateApproved ? currentIdentity.plan_hash : (gateRevision ? null : currentBeforeRun.gate_1_approved_plan_hash),
+    gate_1_approved_plan_revision: gateApproved ? currentIdentity.plan_revision : (gateRevision ? null : currentBeforeRun.gate_1_approved_plan_revision),
     gate_1_revision_data: gateRevision ? command.data : currentBeforeRun.gate_1_revision_data,
     manual_fix_resume: manualFixResume ? true : currentBeforeRun.manual_fix_resume,
     manual_fix_resume_comment_id: manualFixResume ? command.commentId : currentBeforeRun.manual_fix_resume_comment_id,
@@ -95,7 +96,7 @@ export function applyGateCommandState({ currentBeforeRun, command, currentIdenti
     plan_revision: gateRevision ? null : currentBeforeRun.plan_revision,
     fix_rounds: command.clearFixRounds ? 0 : currentBeforeRun.fix_rounds,
     stall_retries: command.nextStallRetries ?? currentBeforeRun.stall_retries,
-    last_phase: gateRevision ? 'gate1-revision' : currentBeforeRun.last_phase,
+    last_phase: qaEnvironmentRetry ? 'qa-environment-retry' : (gateRevision ? 'gate1-revision' : currentBeforeRun.last_phase),
     opencode: {
       ...(currentBeforeRun.opencode ?? { schema_version: 1, fixer: null, qa: null, specialists: {}, inflight: null }),
       inflight: gateApproved || manualFixResume ? {
