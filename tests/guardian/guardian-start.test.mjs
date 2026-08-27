@@ -42,7 +42,8 @@ test('guardian-start.ps1 forwards a control progress dir so the TUI Logs tab sho
 test('guardian-start.ps1 starts a shared opencode serve and points scheduler + TUI at it', () => {
   const text = readFileSync('tools/guardian/guardian-start.ps1', 'utf8');
   assert.match(text, /function Start-SharedOpencodeServer/);
-  assert.match(text, /'serve', '--port', "\$Port", '--hostname', '127\.0\.0\.1'/);
+  assert.match(text, /'serve',\s+'--port',\s+"\$internalPort",\s+'--hostname',\s+'127\.0\.0\.1'/);
+  assert.match(text, /observer-server\.mjs/);
   assert.match(text, /global\/health/);
   assert.match(text, /\$schedulerArguments \+= @\('-OpenCodeServerUrl', \$plannedServerUrl\)/);
   assert.match(text, /\$tuiArguments \+= @\('--base-url', \$plannedServerUrl\)/);

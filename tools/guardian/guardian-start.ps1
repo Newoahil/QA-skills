@@ -39,16 +39,41 @@ function Resolve-OpencodeBin {
   return $null
 }
 
-# Start a shared `opencode serve` so every Guardian agent session (fixer/qa/specialists) lives on one
-# server that the read-only TUI and `opencode attach` can view natively. Returns the base URL, or
-# $null when a shared server is disabled/unavailable (scheduler then falls back to child processes).
+function Find-Node {
+  $command = Get-Command node -ErrorAction SilentlyContinue
+  if ($command) { return $command.Source }
+  $candidates = @(
+    "$env:ProgramFiles\nodejs\node.exe",
+    "$env:LOCALAPPDATA\Programs\nodejs\node.exe"
+  )
+  foreach ($candidate in $candidates) {
+    if (Test-Path -LiteralPath $candidate) { return $candidate }
+  }
+  throw "node not found. Install Node.js >= 18 or run from a terminal with node on PATH."
+}
+
+# Start a shared `opencode serve` on an internal port and an observer proxy on the public port,
+# so every Guardian agent session (fixer/qa/specialists) is viewable via browser UI and native attach/TUI.
+# Returns the base URL, or $null when a shared server is disabled/unavailable (scheduler falls back to child processes).
 function Start-SharedOpencodeServer([int]$Port) {
   $bin = Resolve-OpencodeBin
   if (-not $bin) {
     Write-Host "    [warn] opencode executable not found; skipping shared server (specialist sessions won't be natively viewable in the TUI)." -ForegroundColor Yellow
     return $null
   }
-  Start-Process -FilePath $bin -WorkingDirectory $GuardianRepo -WindowStyle Minimized -ArgumentList @('serve', '--port', "$Port", '--hostname', '127.0.0.1') -PassThru | Out-Null
+  $internalPort = $Port + 1
+  Start-Process -FilePath $bin -WorkingDirectory $GuardianRepo -WindowStyle Minimized -ArgumentList @('serve', '--port', "$internalPort", '--hostname', '127.0.0.1') -PassThru | Out-Null
+
+  $observerScript = Join-Path $PSScriptRoot "observer-server.mjs"
+  if (Test-Path -LiteralPath $observerScript) {
+    try {
+      $nodeExe = Find-Node
+      Start-Process -FilePath $nodeExe -WorkingDirectory $GuardianRepo -WindowStyle Minimized -ArgumentList @($observerScript, '--port', "$Port", '--upstream', "http://127.0.0.1:$internalPort") -PassThru | Out-Null
+    } catch {
+      Write-Host "    [warn] could not start observer server proxy: $_" -ForegroundColor Yellow
+    }
+  }
+
   $baseUrl = "http://127.0.0.1:$Port"
   for ($attempt = 0; $attempt -lt 60; $attempt++) {
     try {
@@ -112,19 +137,6 @@ function Resolve-LauncherCommandAuthors($Binding, [string]$TargetRepo, [string]$
     if ($authors.Count -gt 0) { return $authors }
   }
   return @()
-}
-
-function Find-Node {
-  $command = Get-Command node -ErrorAction SilentlyContinue
-  if ($command) { return $command.Source }
-  $candidates = @(
-    "$env:ProgramFiles\nodejs\node.exe",
-    "$env:LOCALAPPDATA\Programs\nodejs\node.exe"
-  )
-  foreach ($candidate in $candidates) {
-    if (Test-Path -LiteralPath $candidate) { return $candidate }
-  }
-  throw "node not found. Install Node.js >= 18 or run from a terminal with node on PATH."
 }
 
 if (-not $TargetRepo) {

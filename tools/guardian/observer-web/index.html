@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="zh-CN" data-guardian-observer="true">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="description" content="QA Guardian OpenCode session observer">
+    <title>QA Guardian OpenCode Observer</title>
+    <link rel="stylesheet" href="/observer.css">
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-title">QA Guardian</span>
+        <span class="brand-sub">OpenCode Observer</span>
+      </div>
+      <div class="controls" aria-label="控制">
+        <span id="statusBadge" class="status-badge"><span class="status-dot"></span><span id="statusText">连接中</span></span>
+        <label class="check"><input id="autoRefreshToggle" type="checkbox" checked> 自动刷新</label>
+        <select id="refreshIntervalSelect" aria-label="刷新间隔">
+          <option value="2000">2 秒</option>
+          <option value="3000" selected>3 秒</option>
+          <option value="5000">5 秒</option>
+          <option value="10000">10 秒</option>
+        </select>
+        <button id="refreshBtn" class="button" type="button">刷新</button>
+      </div>
+    </header>
+    <main class="shell" data-guardian-observer="app">
+      <aside class="sessions" aria-label="会话列表">
+        <div class="pane-head">
+          <div class="pane-head-row">
+            <span class="count-pill">SESSIONS (<span id="sessionCount">0</span>)</span>
+          </div>
+          <input id="sessionSearch" type="search" placeholder="筛选 ID / 标题 / agent..." autocomplete="off">
+        </div>
+        <div id="sessionList" class="session-list"><p class="empty">加载中...</p></div>
+      </aside>
+      <section class="transcript" aria-label="会话内容">
+        <div class="transcript-head">
+          <div>
+            <div id="currentSessionTitle" class="session-headline">请选择会话</div>
+            <div id="currentSessionMeta" class="session-sub">-</div>
+          </div>
+          <button id="scrollToBottomBtn" class="button" type="button" hidden>到底部</button>
+        </div>
+        <div id="messagesContainer" class="messages"><p class="empty">暂无选中会话。</p></div>
+      </section>
+    </main>
+    <script src="/observer.js" defer></script>
+  </body>
+</html>
