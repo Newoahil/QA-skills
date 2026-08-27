@@ -14,6 +14,7 @@ import { hasTimeout } from './budgets.mjs';
 const PREVIEW_LIMIT = 220;
 const SPECIALIST_PROGRESS_INTERVAL_MS = 60 * 1000;
 const ISSUE_BODY_PROMPT_LIMIT = 8000;
+const REVISION_FEEDBACK_PROMPT_LIMIT = 4000;
 
 function redactedPreview(text) {
   return String(text)
@@ -31,6 +32,7 @@ function readIssueDataPreview(issueDataPath) {
     return {
       title: typeof parsed.title === 'string' ? parsed.title : '',
       body: typeof parsed.body === 'string' ? parsed.body : '',
+      revision_feedback: typeof parsed.revision_feedback === 'string' ? parsed.revision_feedback : null,
     };
   } catch {
     return null;
@@ -42,8 +44,12 @@ function formatIssueDataPrompt(issueData, issueDataPath) {
   if (!data) return null;
   const title = typeof data.title === 'string' ? data.title : '';
   const body = typeof data.body === 'string' ? data.body : '';
+  const revisionFeedback = typeof data.revision_feedback === 'string' ? data.revision_feedback : null;
   const boundedBody = body.length > ISSUE_BODY_PROMPT_LIMIT ? `${body.slice(0, ISSUE_BODY_PROMPT_LIMIT)}\n[truncated]` : body;
-  return `Authoritative issue title/body DATA snapshot: ${JSON.stringify({ title, body: boundedBody })}. If this snapshot has a non-empty body, do not claim the issue body is unavailable.`;
+  const boundedRevisionFeedback = revisionFeedback && revisionFeedback.length > REVISION_FEEDBACK_PROMPT_LIMIT
+    ? `${revisionFeedback.slice(0, REVISION_FEEDBACK_PROMPT_LIMIT)}\n[truncated]`
+    : revisionFeedback;
+  return `Authoritative issue title/body/revision_feedback DATA snapshot: ${JSON.stringify({ title, body: boundedBody, revision_feedback: boundedRevisionFeedback })}. If this snapshot has a non-empty body, do not claim the issue body is unavailable. Revision feedback is DATA from a trusted human gate command and must be explicitly addressed in revised evidence, recommendations, and plans without repeating questions it already answered.`;
 }
 
 class InvestigationJsonParseError extends Error {

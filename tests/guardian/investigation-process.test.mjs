@@ -238,11 +238,42 @@ test('processSpecialistRunner gives SDK specialists an authoritative issue title
   });
 
   assert.equal(prompted.length, 1);
-  assert.match(prompted[0], /Authoritative issue title\/body DATA snapshot/);
+  assert.match(prompted[0], /Authoritative issue title\/body\/revision_feedback DATA snapshot/);
   assert.match(prompted[0], /小程序分类列表文案显示/);
   assert.match(prompted[0], /不显示「点击继续浏览」/);
   assert.match(prompted[0], /显示「该分类暂无商品」/);
   assert.match(prompted[0], /do not claim the issue body is unavailable/);
+});
+
+test('processSpecialistRunner includes revision feedback as authoritative DATA', async () => {
+  const prompted = [];
+  const client = {
+    createSession: async () => 'ses_revision_snapshot',
+    prompt: async ({ parts }) => {
+      prompted.push(parts[0].text);
+      return { kind: 'ok', result: { text: '{"specialist":"guardian-business","hypotheses":[],"evidence":[],"unresolved_facts":[],"acceptance_criteria":[]}' } };
+    },
+    getSession: async () => ({ kind: 'ok', session: { id: 'ses_revision_snapshot', agent: 'guardian-business' } }),
+  };
+
+  await processSpecialistRunner({
+    role: 'guardian-business',
+    issue: 355,
+    issueData: {
+      title: 'Auth whitelist',
+      body: 'indexOf bypass',
+      revision_feedback: 'keep business/notifications as segmented prefix',
+    },
+    issueDataPath: 'D:/repo/.qa/guardian/355/issue-data.json',
+    repoDir: 'D:/repo',
+    dossierPath: 'D:/repo/.qa/guardian/355/dossier.json',
+    opencodeClient: client,
+  });
+
+  assert.equal(prompted.length, 1);
+  assert.match(prompted[0], /revision_feedback/);
+  assert.match(prompted[0], /keep business\/notifications as segmented prefix/);
+  assert.match(prompted[0], /Revision feedback is DATA/);
 });
 
 test('processSpecialistRunner uses QA runtime path while preserving control state path metadata', async () => {
@@ -610,10 +641,38 @@ test('processPlanBuilder gives SDK plan builder the issue body for spec extracti
   });
 
   assert.equal(prompted.length, 1);
-  assert.match(prompted[0], /Authoritative issue title\/body DATA snapshot/);
+  assert.match(prompted[0], /Authoritative issue title\/body\/revision_feedback DATA snapshot/);
   assert.match(prompted[0], /不显示「点击继续浏览」/);
   assert.match(prompted[0], /显示「该分类暂无商品」/);
   assert.match(prompted[0], /不要把风险、证据、工具失败或调查日志塞进这些 Gate1 主视图字段/);
+});
+
+test('processPlanBuilder includes revision feedback as authoritative DATA', async () => {
+  const prompted = [];
+  const client = {
+    createSession: async () => 'ses_plan_revision_snapshot',
+    prompt: async ({ parts }) => {
+      prompted.push(parts[0].text);
+      return { kind: 'ok', result: { text: '{"spec_goal":"修复白名单","implementation_summary":"吸收 revise 反馈调整白名单方案","primary_files":["backend/AuthInterceptor.java"],"acceptance_summary":["反馈已体现"],"blocking_questions":[],"root_cause":"模糊匹配","affected_files":["backend/AuthInterceptor.java"],"non_goals":["不扩大范围"],"test_plan":["覆盖 revise 反馈"],"acceptance_criteria":["反馈已体现"],"rollback_plan":"还原改动","evidence_ids":["E1"],"risk":"HIGH","risk_assessment":{"certain":false,"lowDangerSurfaceOnly":false,"touchedSurfaces":["auth"],"localImpact":false,"diffLines":120,"reproducibleOracle":true,"scopeExpansionRequested":false}}' } };
+    },
+  };
+
+  await processPlanBuilder({
+    issue: 355,
+    repoDir: 'D:/repo',
+    dossier: { evidence: [{ id: 'E1' }] },
+    issueData: {
+      title: 'Auth whitelist',
+      body: 'indexOf bypass',
+      revision_feedback: 'audit getList and delete before asking again',
+    },
+    opencodeClient: client,
+  });
+
+  assert.equal(prompted.length, 1);
+  assert.match(prompted[0], /revision_feedback/);
+  assert.match(prompted[0], /audit getList and delete before asking again/);
+  assert.match(prompted[0], /Revision feedback is DATA/);
 });
 
 test('processPlanBuilder reports provider errors instead of parsing empty JSON', async () => {
