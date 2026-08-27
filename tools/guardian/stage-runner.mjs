@@ -355,8 +355,12 @@ export async function runQaStage(context) {
       handed_back_reason: 'environment-blocked',
       last_phase: 'qa-blocked',
       last_error_class: 'qa-blocked-environment',
+      qa_verdict_status: qaVerdict.status,
+      qa_verdict_hash: qaVerdict.report_hash,
+      qa_verdict_report: qaVerdict.evidence_summary,
+      supervisor_test_evidence: qaVerdict.supervisor_evidence,
     }, { touch: false });
-    return { stop: true, status: qaRun.status };
+    return { stop: true, status: qaRun.status, qaVerdict };
   }
 
   if (qaRun.verdict === 'NEEDS_HUMAN_REVIEW') {
@@ -372,7 +376,7 @@ export async function runQaStage(context) {
       qa_verdict_report: qaVerdict.evidence_summary,
       supervisor_test_evidence: qaVerdict.supervisor_evidence,
     }, { touch: false });
-    return { stop: true, status: qaRun.status };
+    return { stop: true, status: qaRun.status, qaVerdict };
   }
 
   return { stop: false, status: qaRun.status, qaVerdict };

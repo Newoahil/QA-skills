@@ -684,21 +684,30 @@ test('runQaStage bounds missing-supervisor-evidence retries and hands back when 
 test('runQaStage hands back environment BLOCKED and NEEDS_HUMAN_REVIEW without active residue', async () => {
   for (const verdict of ['BLOCKED', 'NEEDS_HUMAN_REVIEW']) {
     let state = { issue: 268, state: STATES.VERIFYING, fix_rounds: 0, branch: 'fix/issue-268', opencode: {} };
+    const report = `Overall Status: ${verdict}\nblocker_class: environment`;
+    const supervisorEvidence = { tests: [{ command: ['node', '--test', 'tests/guardian/fix.test.mjs'], exit_code: 0 }] };
     const { runQaStage } = await import('../../tools/guardian/stage-runner.mjs');
-    await runQaStage({
+    const result = await runQaStage({
       client: {}, issue: 268, repoDir: 'D:/repo', guardianDir: 'D:/repo/.qa/guardian', config: {}, fallbackModels: [], signal: null,
       issueTitle: 'Needs review', logger: { info: () => {}, warn: () => {} }, readState: () => state, writeState: (_dir, next) => { state = next; },
       readArtifactPair: () => ({ plan: { test_commands: [['node', '--test', 'tests/guardian/fix.test.mjs']] } }),
       writeArtifact: () => {}, writeMarkdownArtifact: () => {}, pipeline: { completion: { changedFiles: [], summary: null } },
-      supervisor: { preQaEvidence: () => ({ status: 0, evidence: {} }) }, resolveSessionDeadlineMs: () => 100, resolveModelForRole: () => undefined,
-      runQaSession: async (request) => ({ status: 'ok', state: request.state, verdict, report: `Overall Status: ${verdict}\nblocker_class: environment` }),
+      supervisor: { preQaEvidence: () => ({ status: 0, evidence: supervisorEvidence }) }, resolveSessionDeadlineMs: () => 100, resolveModelForRole: () => undefined,
+      runQaSession: async (request) => ({ status: 'ok', state: request.state, verdict, report }),
     });
     assert.equal(state.state, STATES.HANDED_BACK);
     assert.equal(state.handed_back_reason, verdict === 'BLOCKED' ? 'environment-blocked' : 'needs-clarification');
+    assert.equal(result.qaVerdict.status, verdict);
+    assert.equal(result.qaVerdict.evidence_summary, report);
+    assert.equal(state.qa_verdict_status, verdict);
+    assert.equal(state.qa_verdict_hash, result.qaVerdict.report_hash);
+    assert.equal(state.qa_verdict_report, report);
+    assert.deepEqual(state.supervisor_test_evidence, supervisorEvidence);
     if (verdict === 'NEEDS_HUMAN_REVIEW') {
       assert.equal(state.evidence_retries, 1);
-      assert.equal(state.qa_verdict_status, 'NEEDS_HUMAN_REVIEW');
       assert.equal(state.last_error_class, 'qa-needs-human-review');
+    } else {
+      assert.equal(state.last_error_class, 'qa-blocked-environment');
     }
   }
 });
