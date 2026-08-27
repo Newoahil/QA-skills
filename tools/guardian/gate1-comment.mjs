@@ -51,9 +51,29 @@ function primaryFiles(plan) {
   return preferred.length > 0 ? preferred : fallback;
 }
 
-function blockingQuestions(plan, dossier) {
-  const preferred = arrayItems(plan.blocking_questions);
-  return preferred.length > 0 ? preferred : arrayItems(dossier.unresolved_facts);
+function blockingQuestions(plan) {
+  return arrayItems(plan.blocking_questions);
+}
+
+function renderBlockingQuestion(item) {
+  if (typeof item === 'string') {
+    const question = compact(item, '');
+    if (!question) return '';
+    return `${question}（建议默认: 按当前方案继续执行。）`;
+  }
+  if (!item || typeof item !== 'object' || Array.isArray(item)) return '';
+  const question = compact(item.question, '');
+  const recommendedDefault = compact(item.recommended_default, '');
+  if (!question || !recommendedDefault) return '';
+  return `${question}（建议默认: ${recommendedDefault}）`;
+}
+
+function blockingQuestionItems(items, fallback, limit = 3) {
+  const rendered = arrayItems(items)
+    .map((item) => renderBlockingQuestion(item))
+    .filter(Boolean)
+    .slice(0, limit);
+  return rendered.length > 0 ? rendered.map((item) => `- ${item}`) : [`- ${fallback}`];
 }
 
 function sideImpactItems(plan, side) {
@@ -62,13 +82,18 @@ function sideImpactItems(plan, side) {
 }
 
 export function buildGate1Comment({ issue, plan = {}, dossier = {}, planHash = null, planRevision = null }) {
-  const unresolved = blockingQuestions(plan, dossier);
+  const unresolved = blockingQuestions(plan);
   const files = primaryFiles(plan);
   const risk = compact(plan.risk, 'HIGH');
   const goal = firstText([plan.spec_goal, plan.root_cause], '未提供');
   const productSolution = firstText([plan.product_solution, plan.spec_goal, plan.implementation_summary], '未提供');
   const summary = firstText([plan.implementation_summary, plan.root_cause], '未提供');
   const acceptance = arrayItems(plan.acceptance_summary).length > 0 ? plan.acceptance_summary : plan.acceptance_criteria;
+  const confirmationSection = unresolved.length > 0 ? [
+    '',
+    '需要你确认:',
+    ...blockingQuestionItems(unresolved, '无', 3),
+  ] : [];
   const lines = [
     '[GATE_1_WAIT]',
     `QA Guardian: issue #${Number(issue)} 方案需要人工确认。`,
@@ -102,15 +127,13 @@ export function buildGate1Comment({ issue, plan = {}, dossier = {}, planHash = n
     '',
     '验收标准:',
     ...bulletItems(acceptance, '未提供', 5),
-    '',
-    '需要你确认:',
-    ...bulletItems(unresolved, '无', 3),
+    ...confirmationSection,
     '',
     '风险摘要:',
     `- ${risk}（自动修复未满足 autonomous-ready 条件）`,
     '',
     '下一步（仅可信人类评论有效）:',
-    '- `/guardian approve`：按当前方案进入修复。',
+    '- `/guardian approve`：按当前方案进入修复，并接受全部建议默认值。',
     '- `/guardian revise <feedback>`：补充信息或调整要求；系统会重新生成/更新方案并再次等待确认，文本仅作为 DATA。',
     '- `/guardian reject`：停止自动处理。',
     '',

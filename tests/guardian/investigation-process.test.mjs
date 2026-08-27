@@ -663,6 +663,40 @@ test('processPlanBuilder uses the SDK client instead of spawning an attach proce
   assert.equal(result.risk, 'LOW');
 });
 
+test('processPlanBuilder schema makes blocking_questions optional and requires structured question objects when present', async () => {
+  const prompted = [];
+  const client = {
+    createSession: async () => 'ses_plan_blocking_schema',
+    prompt: async ({ parts, format }) => {
+      prompted.push({ text: parts[0].text, schema: format.schema });
+      return {
+        kind: 'ok',
+        result: {
+          text: '{"spec_goal":"修复颜色","product_solution":"调整颜色规则","revision_feedback_handling":["无 revise 反馈"],"side_impact":{"b_side":["无后台影响"],"c_side":["用户看到正确颜色"]},"related_feature_impact":["不影响其他配色规则"],"product_usage_acceptance":["页面颜色符合预期"],"implementation_summary":"修改颜色 token","primary_files":["a"],"acceptance_summary":["颜色正确"],"root_cause":"color","affected_files":["a"],"non_goals":["b"],"test_plan":["t"],"test_commands":[["node","--test","tests/a.test.mjs"]],"acceptance_criteria":["c"],"rollback_plan":"r","evidence_ids":[],"risk":"LOW","risk_assessment":{"certain":true,"lowDangerSurfaceOnly":true,"touchedSurfaces":[],"localImpact":true,"diffLines":8,"reproducibleOracle":true,"scopeExpansionRequested":false}}',
+        },
+      };
+    },
+  };
+
+  await processPlanBuilder({
+    issue: 211,
+    repoDir: 'D:/repo',
+    dossier: { evidence: [{ id: 'E1' }] },
+    opencodeClient: client,
+  });
+
+  assert.equal(prompted.length, 1);
+  const schema = prompted[0].schema;
+  assert.equal(schema.required.includes('blocking_questions'), false);
+  assert.equal(schema.properties.blocking_questions.maxItems, 3);
+  assert.equal(schema.properties.blocking_questions.items.type, 'object');
+  assert.deepEqual(schema.properties.blocking_questions.items.required, ['question', 'recommended_default']);
+  assert.equal(schema.properties.blocking_questions.items.properties.question.type, 'string');
+  assert.equal(schema.properties.blocking_questions.items.properties.question.minLength, 1);
+  assert.equal(schema.properties.blocking_questions.items.properties.recommended_default.type, 'string');
+  assert.equal(schema.properties.blocking_questions.items.properties.recommended_default.minLength, 1);
+});
+
 test('processPlanBuilder requires Chinese plan content for human Gate1 review', async () => {
   // Given: an injected SDK client that records the prompt sent to the plan builder.
   const prompted = [];
@@ -696,6 +730,37 @@ test('processPlanBuilder requires Chinese plan content for human Gate1 review', 
   assert.match(prompted[0], /unresolved_facts|未确定事实/);
   assert.match(prompted[0], /LOW\|HIGH/);
   assert.match(prompted[0], /risk_assessment/);
+});
+
+test('processPlanBuilder prompt limits blocking questions to real human decisions and requires recommended defaults', async () => {
+  const prompted = [];
+  const client = {
+    createSession: async () => 'ses_plan_blocking_prompt',
+    prompt: async ({ parts }) => {
+      prompted.push(parts[0].text);
+      return {
+        kind: 'ok',
+        result: {
+          text: '{"spec_goal":"修复分类页文案","product_solution":"按 issue 预期调整空状态文案","revision_feedback_handling":["无 revise 反馈"],"side_impact":{"b_side":["无后台影响"],"c_side":["用户看到正确空状态文案"]},"related_feature_impact":["不影响分类切换"],"product_usage_acceptance":["无商品分类显示正确提示"],"implementation_summary":"按 issue 预期调整空状态文案","primary_files":["pages/category/index.tsx"],"acceptance_summary":["Gate1 评论可读"],"root_cause":"分类页文案预期不明确","affected_files":["pages/category/index.tsx"],"non_goals":["不扩大业务范围"],"test_plan":["人工确认后验证分类页文案"],"test_commands":[["node","--test","tests/guardian/gate1-comment.test.mjs"]],"acceptance_criteria":["Gate1 评论可读"],"rollback_plan":"还原文案改动","evidence_ids":["E1"],"risk":"HIGH","risk_assessment":{"certain":false,"lowDangerSurfaceOnly":false,"touchedSurfaces":["core-business-flow"],"localImpact":false,"diffLines":120,"reproducibleOracle":false,"scopeExpansionRequested":false}}',
+        },
+      };
+    },
+  };
+
+  await processPlanBuilder({
+    issue: 263,
+    repoDir: 'D:/repo',
+    dossier: { evidence: [{ id: 'E1' }] },
+    opencodeClient: client,
+  });
+
+  assert.equal(prompted.length, 1);
+  const prompt = prompted[0];
+  assert.match(prompt, /真正需要人类决策|真实的人类\/业务决策/);
+  assert.match(prompt, /无法通过仓库调查确定|repository investigation cannot determine/i);
+  assert.match(prompt, /不要把风险、证据、工具失败、未解决证据或可继续调查的事实变成问题/);
+  assert.match(prompt, /recommended_default/);
+  assert.match(prompt, /blocking_questions 最多 3/);
 });
 
 test('processPlanBuilder gives SDK plan builder the issue body for spec extraction', async () => {

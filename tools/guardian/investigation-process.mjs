@@ -469,7 +469,18 @@ const PLAN_SCHEMA = Object.freeze({
     implementation_summary: { type: 'string' },
     primary_files: { type: 'array', items: { type: 'string' }, maxItems: 3 },
     acceptance_summary: { type: 'array', items: { type: 'string' }, maxItems: 5 },
-    blocking_questions: { type: 'array', items: { type: 'string' }, maxItems: 3 },
+    blocking_questions: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          question: { type: 'string', minLength: 1 },
+          recommended_default: { type: 'string', minLength: 1 },
+        },
+        required: ['question', 'recommended_default'],
+      },
+      maxItems: 3,
+    },
     root_cause: { type: 'string' },
     affected_files: { type: 'array', items: { type: 'string' } },
     test_files: { type: 'array', items: { type: 'string' } },
@@ -494,7 +505,7 @@ const PLAN_SCHEMA = Object.freeze({
       required: ['certain', 'lowDangerSurfaceOnly', 'touchedSurfaces', 'localImpact', 'diffLines', 'reproducibleOracle', 'scopeExpansionRequested'],
     },
   },
-  required: ['spec_goal', 'product_solution', 'revision_feedback_handling', 'side_impact', 'related_feature_impact', 'product_usage_acceptance', 'implementation_summary', 'primary_files', 'acceptance_summary', 'blocking_questions', 'root_cause', 'affected_files', 'non_goals', 'test_plan', 'test_commands', 'acceptance_criteria', 'rollback_plan', 'evidence_ids', 'risk', 'risk_assessment'],
+  required: ['spec_goal', 'product_solution', 'revision_feedback_handling', 'side_impact', 'related_feature_impact', 'product_usage_acceptance', 'implementation_summary', 'primary_files', 'acceptance_summary', 'root_cause', 'affected_files', 'non_goals', 'test_plan', 'test_commands', 'acceptance_criteria', 'rollback_plan', 'evidence_ids', 'risk', 'risk_assessment'],
 });
 
 function normalizePlanRisk(plan) {
@@ -586,7 +597,9 @@ export function processPlanBuilder({ issue, repoDir, qaRuntimeDir = repoDir, gua
     planRetryPromptLine(previousPlanErrors, attempt),
     revisionFeedbackPlanPromptLine(state, issueData),
     'spec_goal 用 1 句写清本次要达成的用户可见规格；product_solution 写产品方案和用户可见规则，不要只写技术实现；revision_feedback_handling 逐条说明可信 revise 反馈已如何进入调查结论、方案或仍需人决策的原因；side_impact.b_side 写 B 端/后台/运营/商家侧影响，side_impact.c_side 写 C 端/用户/小程序/客户端侧影响；related_feature_impact 写关联功能、历史入口、上下游流程和不应破坏的既有语义；product_usage_acceptance 写功能修改完成后从产品使用视角应观察到的验收预期。',
-	'implementation_summary 用 1-2 句写清批准后要改什么；primary_files 最多 3 个；test_files 列出批准后会新增或修改的测试文件；acceptance_summary 最多 5 条；blocking_questions 最多 3 条，只放真正需要人类决策的问题。不要把风险、证据、工具失败或调查日志塞进这些 Gate1 主视图字段。',
+	'implementation_summary 用 1-2 句写清批准后要改什么；primary_files 最多 3 个；test_files 列出批准后会新增或修改的测试文件；acceptance_summary 最多 5 条；blocking_questions 最多 3 条，但可省略；省略时表示当前方案没有需要人类确认的问题。若提供，每条都必须是 {"question":"...","recommended_default":"..."}。',
+	'blocking_questions 只放真实的人类/业务决策：只有当仓库调查无法确定（repository investigation cannot determine）、且确实需要可信人类拍板时才提出。不要把风险、证据、工具失败、未解决证据或可继续调查的事实变成问题；未补齐的调查材料也不能变成人类确认问题。每个问题都必须给出 recommended_default，供 `/guardian approve` 一并接受。',
+	'不要把风险、证据、工具失败或调查日志塞进这些 Gate1 主视图字段。',
 	'所有给人类阅读的 plan 字段必须使用中文填写，包括 spec_goal、product_solution、side_impact、related_feature_impact、product_usage_acceptance、implementation_summary、primary_files、acceptance_summary、blocking_questions、root_cause、affected_files 说明、non_goals、test_plan、acceptance_criteria、rollback_plan，以及进入 Gate1 人工确认的未确定事实。',
     memoryPromptLine(memoryContext),
     JSON.stringify(dossier),

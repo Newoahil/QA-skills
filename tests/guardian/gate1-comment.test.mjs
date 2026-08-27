@@ -191,3 +191,80 @@ test('gate1 comment shows product solution, B/C impact, and product usage accept
   assert.match(body, /plan_hash: sha256:355-product/);
   assert.match(body, /plan_revision: rev-355-product/);
 });
+
+test('gate1 comment hides confirmation section when plan has no blocking questions even if dossier has unresolved facts', () => {
+  const body = buildGate1Comment({
+    issue: 402,
+    plan: {
+      risk: 'HIGH',
+      spec_goal: '修复分类页空状态文案。',
+      implementation_summary: '按已确认规格更新文案。',
+      primary_files: ['frontend/apps/alipay-miniapp/src/pages/classifyAgain/index.js'],
+      acceptance_summary: ['文案符合规格。'],
+      blocking_questions: [],
+      root_cause: 'issue 规格已足够，无需额外确认。',
+      affected_files: ['frontend/apps/alipay-miniapp/src/pages/classifyAgain/index.js'],
+    },
+    dossier: {
+      unresolved_facts: ['运行时截图尚未补充', '未读取历史提交'],
+    },
+    planHash: 'sha256:no-questions',
+    planRevision: 'rev-no-questions',
+  });
+
+  assert.doesNotMatch(body, /需要你确认:/);
+  assert.match(body, /未确定事实 \/ 需人确认:/);
+  assert.match(body, /运行时截图尚未补充/);
+});
+
+test('gate1 comment renders structured blocking questions with recommendation and approve-default semantics', () => {
+  const body = buildGate1Comment({
+    issue: 403,
+    plan: {
+      risk: 'HIGH',
+      spec_goal: '修复后台权限白名单匹配绕过。',
+      implementation_summary: '按当前方案收敛白名单匹配语义。',
+      primary_files: ['backend/AuthInterceptor.java'],
+      acceptance_summary: ['权限校验符合产品预期。'],
+      blocking_questions: [
+        {
+          question: '是否保留 business/notifications 作为仅需登录即可访问的历史入口？',
+          recommended_default: '保留该历史入口，仅收紧后台受控管理接口。',
+        },
+      ],
+      root_cause: '白名单模糊匹配导致后台接口绕过菜单权限。',
+      affected_files: ['backend/AuthInterceptor.java'],
+    },
+    dossier: { unresolved_facts: [] },
+    planHash: 'sha256:structured-questions',
+    planRevision: 'rev-structured-questions',
+  });
+
+  assert.match(body, /需要你确认:/);
+  assert.match(body, /是否保留 business\/notifications 作为仅需登录即可访问的历史入口/);
+  assert.match(body, /建议默认: 保留该历史入口，仅收紧后台受控管理接口。/);
+  assert.match(body, /按当前方案进入修复，并接受全部建议默认值/);
+});
+
+test('gate1 comment keeps legacy string blocking questions readable with a safe generic recommendation', () => {
+  const body = buildGate1Comment({
+    issue: 404,
+    plan: {
+      risk: 'HIGH',
+      spec_goal: '修复分类页文案。',
+      implementation_summary: '调整分类页文案。',
+      primary_files: ['pages/category/index.tsx'],
+      acceptance_summary: ['文案符合规格。'],
+      blocking_questions: ['是否只覆盖底部 Tab 分类页 pages/classifyAgain/index？'],
+      root_cause: '页面范围仍需人确认。',
+      affected_files: ['pages/category/index.tsx'],
+    },
+    dossier: { unresolved_facts: [] },
+    planHash: 'sha256:legacy-string',
+    planRevision: 'rev-legacy-string',
+  });
+
+  assert.match(body, /需要你确认:/);
+  assert.match(body, /是否只覆盖底部 Tab 分类页 pages\/classifyAgain\/index/);
+  assert.match(body, /建议默认:/);
+});
