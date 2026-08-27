@@ -96,6 +96,52 @@ test('validated test commands allow the project category builder script and reje
   ]) assert.throws(() => parseValidatedTestPlan([command]), /not allowed|protected|network|wrapper|scoped/i);
 });
 
+test('validated test commands accept tightly scoped Python pytest and unittest argv', () => {
+  assert.throws(() => parseValidatedTestPlan([['node', '--test', 'tests/test_docs.py']]), /not allowed|scoped/i);
+  assert.deepEqual(parseValidatedTestPlan([['python', '-m', 'pytest', 'tests/test_docs.py']]), [
+    ['python', '-m', 'pytest', 'tests/test_docs.py'],
+  ]);
+  assert.deepEqual(parseValidatedTestPlan([['py', '-m', 'pytest', 'tests/test_docs.py::test_renders_docs', '-q', '-x']]), [
+    ['py', '-m', 'pytest', 'tests/test_docs.py::test_renders_docs', '-q', '-x'],
+  ]);
+  assert.deepEqual(parseValidatedTestPlan([['python', '-m', 'unittest', 'tests/test_docs.py']]), [
+    ['python', '-m', 'unittest', 'tests/test_docs.py'],
+  ]);
+  assert.deepEqual(parseValidatedTestPlan([['py', '-m', 'unittest', 'tests.test_docs.TestDocs.test_renders_docs']]), [
+    ['py', '-m', 'unittest', 'tests.test_docs.TestDocs.test_renders_docs'],
+  ]);
+  assert.deepEqual(parseValidatedTestPlan([['python', '-m', 'unittest', 'discover', '-s', 'tests', '-p', 'test_*.py']]), [
+    ['python', '-m', 'unittest', 'discover', '-s', 'tests', '-p', 'test_*.py'],
+  ]);
+});
+
+test('validated Python test commands reject arbitrary Python and unscoped execution', () => {
+  for (const command of [
+    ['python', '-c', 'print(1)'],
+    ['py', '-m', 'pip', 'install', 'pytest'],
+    ['python', '-m', 'http.server'],
+    ['python', '-m', 'pytest'],
+    ['python', '-m', 'pytest', '-c', 'pytest.ini', 'tests/test_docs.py'],
+    ['python', '-m', 'pytest', '-p', 'no:warnings', 'tests/test_docs.py'],
+    ['python', '-m', 'pytest', '../tests/test_docs.py'],
+    ['python', '-m', 'pytest', 'D:/repo/tests/test_docs.py'],
+    ['python', '-m', 'pytest', 'src/app.py'],
+    ['python', '-m', 'pytest', 'tests/test_docs.py', '&&', 'git', 'push'],
+    ['python', '-m', 'unittest'],
+    ['python', '-m', 'unittest', 'discover'],
+    ['python', '-m', 'unittest', 'discover', '-s', '.'],
+    ['python', '-m', 'unittest', 'discover', '-s', 'src'],
+    ['python', '-m', 'unittest', 'discover', '-s', '../tests'],
+    ['python', '-m', 'unittest', 'discover', '-s', 'tests', '-p', '*.py'],
+    ['python', 'tests/test_docs.py'],
+    ['python3', '-m', 'pytest', 'tests/test_docs.py'],
+    ['uv', 'run', 'python', '-m', 'pytest', 'tests/test_docs.py'],
+    ['pytest', 'tests/test_docs.py'],
+    ['cmd', '/c', 'python', '-m', 'pytest', 'tests/test_docs.py'],
+    ['powershell', '-Command', 'python -m pytest tests/test_docs.py'],
+  ]) assert.throws(() => parseValidatedTestPlan([command]), /not allowed|scoped|test path|test target/i);
+});
+
 test('pre-QA evidence returns actual status/diff and scoped test command evidence without mutation', () => {
   const calls = [];
   const run = (file, argv, options) => {

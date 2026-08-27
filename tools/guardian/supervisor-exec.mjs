@@ -5,19 +5,11 @@ import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 
 import { declaredPathList } from './plan-validator.mjs';
+export { parseValidatedTestPlan } from './test-command-policy.mjs';
+import { parseValidatedTestPlan } from './test-command-policy.mjs';
 
 export const SUPERVISOR_OPERATIONS = Object.freeze([
   'current-branch', 'status-diff', 'staged-files', 'worktree-files', 'ensure-fix-branch', 'run-tests', 'pre-qa-evidence', 'stage-files', 'commit', 'push',
-]);
-
-// A scoped node test target is either (a) a file under a tests/test/__tests__ directory segment, or
-// (b) a file whose basename follows a test naming convention (test-*, *.test.*, *.spec.*). The latter
-// covers monorepos like frontend/apps/*/scripts/test-*.js where regression tests live beside build
-// scripts. A bare src/ directory is intentionally NOT a test root (its files are product source);
-// only a test-named file under src/ qualifies. repoRelativePath() already blocks traversal/absolute.
-const TEST_PATH = /(?:(?:^|[\\/])(?:tests?|__tests__)[\\/].+|(?:^|[\\/])(?:test-[^\\/]+|[^\\/]+\.(?:test|spec)))\.(?:mjs|js|cjs|ts|tsx|jsx)$/;
-const ALLOWED_PROJECT_TEST_SCRIPTS = Object.freeze([
-  'frontend/apps/alipay-miniapp/scripts/test-category-builder-runtime.js',
 ]);
 
 // Paths the Guardian runtime legitimately mutates outside the plan scope. These are never staged
@@ -75,28 +67,6 @@ function repoRelativePath(value, label) {
     throw new Error(`${label} must be a scoped relative path`);
   }
   return normalized;
-}
-
-function testArgv(argv) {
-  if (!Array.isArray(argv) || argv.length < 2 || argv[0] !== 'node') {
-    throw new Error('test command is not allowed');
-  }
-  const [, subcommand, ...args] = argv;
-  if (argv.length === 2 && ALLOWED_PROJECT_TEST_SCRIPTS.includes(repoRelativePath(subcommand, 'test script'))) {
-    return ['node', repoRelativePath(subcommand, 'test script')];
-  }
-  if (subcommand === '--test' && args.length > 0 && args.every((arg) => TEST_PATH.test(repoRelativePath(arg, 'test path')))) {
-    return ['node', '--test', ...args.map((arg) => repoRelativePath(arg, 'test path'))];
-  }
-  throw new Error('test command is not allowed');
-}
-
-export function parseValidatedTestPlan(commands) {
-  if (!Array.isArray(commands) || commands.length === 0) throw new Error('test plan is empty');
-  return commands.map((command) => {
-    if (!Array.isArray(command)) throw new Error('test plan must contain argv arrays; command strings are not allowed');
-    return testArgv(command);
-  });
 }
 
 function issueNumber(issue) {
