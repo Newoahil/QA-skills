@@ -416,7 +416,7 @@ async function tick(repoDir, config, logger, signal = null, runtime = createSche
             deadlineMs: resolveSessionDeadlineMs(config, 'specialist_deadline_ms'),
             progressSink: (fields) => logger.info('specialist.progress', fields),
           }),
-           buildPlan: (args) => processPlanBuilder({ ...args, repoDir, qaRuntimeDir, guardianDir, opencodeClient, fallbackModels, model: resolveModelForRole(config, 'plan'), deadlineMs: resolveSessionDeadlineMs(config, 'specialist_deadline_ms') }),
+           buildPlan: (args) => processPlanBuilder({ ...args, repoDir, qaRuntimeDir, guardianDir, state: investigationState, opencodeClient, fallbackModels, model: resolveModelForRole(config, 'plan'), deadlineMs: resolveSessionDeadlineMs(config, 'specialist_deadline_ms') }),
          });
          if (!isActiveRun()) return;
          const state = readState(guardianDir, issue) ?? { issue };

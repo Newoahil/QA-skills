@@ -276,6 +276,75 @@ test('processSpecialistRunner includes revision feedback as authoritative DATA',
   assert.match(prompted[0], /Revision feedback is DATA/);
 });
 
+test('processSpecialistRunner continues the prior specialist session during revise investigation', async () => {
+  const created = [];
+  const prompted = [];
+  const client = {
+    createSession: async (args) => { created.push(args); return 'ses_new_spec'; },
+    prompt: async ({ sessionId, parts }) => {
+      prompted.push({ sessionId, text: parts[0].text });
+      return { kind: 'ok', result: { text: '{"specialist":"guardian-code","hypotheses":[],"evidence":[],"unresolved_facts":[],"acceptance_criteria":[]}' } };
+    },
+    getSession: async () => ({ kind: 'ok', session: { id: 'ses_prior_spec', agent: 'guardian-code', directory: 'D:/repo' } }),
+  };
+  const state = {
+    gate_1_revision_data: '继续调研 setUserOrderStatus 是否有后台依赖',
+    opencode: { specialists: { 'guardian-code': { session_id: 'ses_prior_spec', agent: 'guardian-code', repo_dir: 'D:/repo', issue: 366, role: 'guardian-code', permission_policy_version: 2 } } },
+  };
+
+  await processSpecialistRunner({
+    role: 'guardian-code',
+    issue: 366,
+    issueData: { title: '取消申请', body: '申请取消只能申请一次', revision_feedback: state.gate_1_revision_data },
+    issueDataPath: 'D:/repo/.qa/guardian/366/issue-data.json',
+    repoDir: 'D:/repo',
+    dossierPath: 'D:/repo/.qa/guardian/366/dossier.json',
+    opencodeClient: client,
+    state,
+  });
+
+  assert.equal(created.length, 0);
+  assert.equal(prompted.length, 1);
+  assert.equal(prompted[0].sessionId, 'ses_prior_spec');
+  assert.match(prompted[0].text, /继续调研 setUserOrderStatus/);
+  assert.equal(state.opencode.specialists['guardian-code'].session_id, 'ses_prior_spec');
+  assert.equal(state.opencode.specialists['guardian-code'].last_status, 'ok');
+});
+
+test('processPlanBuilder reuses and records a prior plan session during revise investigation', async () => {
+  const created = [];
+  const prompted = [];
+  const client = {
+    createSession: async (args) => { created.push(args); return 'ses_new_plan'; },
+    prompt: async ({ sessionId, parts }) => {
+      prompted.push({ sessionId, text: parts[0].text });
+      return { kind: 'ok', result: { text: '{"spec_goal":"修复取消申请","product_solution":"申请取消只能提交一次","side_impact":{"b_side":["后台只处理一次申请"],"c_side":["重复点击提示等待审核"]},"related_feature_impact":["商家通知只触发一次"],"product_usage_acceptance":["用户重复点击不会重复申请"],"implementation_summary":"补状态机和幂等","primary_files":["backend/a.java"],"acceptance_summary":["只能申请一次"],"blocking_questions":[],"root_cause":"状态可裸改","affected_files":["backend/a.java"],"non_goals":["不重做订单"],"test_plan":["测幂等"],"test_commands":[["node","--test","tests/guardian/investigation-process.test.mjs"]],"acceptance_criteria":["重复申请幂等"],"rollback_plan":"revert","evidence_ids":["E1"],"risk":"HIGH","risk_assessment":{"certain":true,"lowDangerSurfaceOnly":false,"touchedSurfaces":["order"],"localImpact":false,"diffLines":80,"reproducibleOracle":true,"scopeExpansionRequested":false}}' } };
+    },
+    getSession: async () => ({ kind: 'ok', session: { id: 'ses_prior_plan', agent: 'guardian-business', directory: 'D:/repo' } }),
+  };
+  const state = {
+    gate_1_revision_data: '继续整理申请取消只能申请一次的产品验收',
+    opencode: { plan: { session_id: 'ses_prior_plan', agent: 'guardian-business', repo_dir: 'D:/repo', issue: 366, role: 'plan', permission_policy_version: 2 } },
+  };
+
+  const result = await processPlanBuilder({
+    issue: 366,
+    repoDir: 'D:/repo',
+    dossier: { evidence: [{ id: 'E1' }] },
+    issueData: { title: '取消申请', body: '申请取消只能申请一次', revision_feedback: state.gate_1_revision_data },
+    opencodeClient: client,
+    state,
+  });
+
+  assert.equal(created.length, 0);
+  assert.equal(prompted.length, 1);
+  assert.equal(prompted[0].sessionId, 'ses_prior_plan');
+  assert.match(prompted[0].text, /继续整理申请取消只能申请一次/);
+  assert.equal(state.opencode.plan.session_id, 'ses_prior_plan');
+  assert.equal(state.opencode.plan.last_status, 'ok');
+  assert.equal(result.product_solution, '申请取消只能提交一次');
+});
+
 test('processSpecialistRunner uses QA runtime path while preserving control state path metadata', async () => {
   const created = [];
   const client = {

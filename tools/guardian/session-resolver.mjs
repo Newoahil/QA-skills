@@ -3,7 +3,8 @@
 // Decides, for a given role, whether to reuse a persisted OpenCode session or create a new one,
 // based on the issue's state.opencode metadata and a session-validation result. This is the
 // session-continuity core: fixer/qa sessions are reused across Gate 1 approve/revise, QA FAIL,
-// Gate 2 rework, and followup rounds; specialist sessions are per-round.
+// Gate 2 rework, and followup rounds. Specialist sessions are fresh by default, but a trusted
+// Gate 1 revise may continue the prior specialist session to apply human feedback in context.
 //
 import path from 'node:path';
 import { isPermissionCompatible } from './opencode-client.mjs';
@@ -13,11 +14,12 @@ import { isPermissionCompatible } from './opencode-client.mjs';
 export const ROLE_AGENTS = Object.freeze({
   fixer: 'qa-guardian',
   qa: 'qa',
+  plan: 'guardian-business',
 });
 
 // A persisted session is reusable only if it exists and its agent matches the role's expected
 // agent. A role/agent mismatch is treated as unusable (never prompt a fixer session as qa).
-export async function resolveSessionForRole({ role, opencode, repoDir, issue, round = 1, expectedPermissionPolicyVersion, getSession }) {
+export async function resolveSessionForRole({ role, opencode, repoDir, issue, round = 1, expectedPermissionPolicyVersion, getSession, allowSpecialistReuse = false }) {
   const expectedAgent = ROLE_AGENTS[role];
   const isSpecialist = !ROLE_AGENTS[role];
   const agent = expectedAgent ?? role;
@@ -25,10 +27,9 @@ export async function resolveSessionForRole({ role, opencode, repoDir, issue, ro
     ? opencode?.specialists?.[role]
     : opencode?.[role];
 
-  // Specialists are one-shot read-only investigations. NEVER reuse a prior specialist session:
-  // accumulated history from an earlier attempt (or an unrelated exchange) can contaminate the
-  // structured result. Always create a fresh session so each investigation attempt is isolated.
-  if (isSpecialist) return { action: 'create', agent, contextLoss: false };
+  // Specialists are one-shot for fresh investigations. A trusted Gate 1 revise is different: it is
+  // a continuation request over the previous investigation, so reuse the same role session when safe.
+  if (isSpecialist && !allowSpecialistReuse) return { action: 'create', agent, contextLoss: false };
 
   // No persisted session -> create.
   if (!record?.session_id) return { action: 'create', agent, contextLoss: false };

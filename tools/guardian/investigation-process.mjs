@@ -292,6 +292,19 @@ function stampSpecialistSession(state, role, patch) {
   };
 }
 
+function stampPlanSession(state, patch) {
+  if (!state) return;
+  const opencode = state.opencode ?? { specialists: {} };
+  state.opencode = {
+    ...opencode,
+    plan: { ...(opencode.plan ?? {}), ...patch },
+  };
+}
+
+function hasRevisionFeedback(state) {
+  return typeof state?.gate_1_revision_data === 'string' && state.gate_1_revision_data.trim().length > 0;
+}
+
 // Bound a promise by a deadline. On timeout, invoke onTimeout (e.g. abort the session) and reject
 // with a timeout error, so a hung/queued SDK prompt cannot hold the N=1 lock indefinitely (undici
 // header/body timeouts are intentionally disabled for long model runs). deadlineMs<=0 => no bound.
@@ -342,6 +355,7 @@ export function processSpecialistRunner({ role, issue, issueDataPath, issueData 
       const opencode = state?.opencode ?? { specialists: {} };
       const decision = await resolveSessionForRole({
         role, issue, repoDir: qaRuntimeDir, round, opencode, expectedPermissionPolicyVersion: PERMISSION_POLICY_VERSION, getSession: opencodeClient.getSession,
+        allowSpecialistReuse: hasRevisionFeedback(state),
       });
       if (decision.action === 'retry') {
         const error = new Error(`specialist ${role} session lookup retryable`);
@@ -564,7 +578,39 @@ export function processPlanBuilder({ issue, repoDir, qaRuntimeDir = repoDir, gua
   // SDK path (Oracle design): create a session and prompt with json_schema structured output.
   if (opencodeClient) {
     return (async () => {
-       const sessionId = await opencodeClient.createSession({ title: `plan-${issue}`, agent: 'guardian-business', directory: qaRuntimeDir });
+      const startedAt = Date.now();
+      const opencode = state?.opencode ?? { specialists: {} };
+      const decision = await resolveSessionForRole({
+        role: 'plan',
+        issue,
+        repoDir: qaRuntimeDir,
+        round,
+        opencode,
+        expectedPermissionPolicyVersion: PERMISSION_POLICY_VERSION,
+        getSession: hasRevisionFeedback(state) ? opencodeClient.getSession : null,
+      });
+      if (decision.action === 'retry') {
+        const error = new Error('plan session lookup retryable');
+        error.retryable = true;
+        throw error;
+      }
+      const sessionId = decision.action === 'create'
+        ? await opencodeClient.createSession({ title: `plan-${issue}`, agent: 'guardian-business', directory: qaRuntimeDir })
+        : decision.sessionId;
+      stampPlanSession(state, {
+        session_id: sessionId,
+        agent: 'guardian-business',
+        repo_dir: decision.binding?.repo_dir ?? qaRuntimeDir,
+        issue: Number(issue),
+        role: 'plan',
+        permission_policy_version: PERMISSION_POLICY_VERSION,
+        round,
+        created_round: opencode.plan?.created_round ?? round,
+        last_used_round: round,
+        started_at: new Date(startedAt).toISOString(),
+        last_status: 'running',
+        last_seen_at: new Date(startedAt).toISOString(),
+      });
       const outcome = await withPromptDeadline(
         () => opencodeClient.prompt({
         sessionId,
@@ -577,7 +623,11 @@ export function processPlanBuilder({ issue, repoDir, qaRuntimeDir = repoDir, gua
         deadlineMs,
         () => opencodeClient.abort?.(sessionId),
       );
-        if (outcome.kind !== 'ok') throw new Error(promptFailureMessage('plan prompt failed', outcome));
+      if (outcome.kind !== 'ok') {
+        stampPlanSession(state, { last_status: 'failed', last_seen_at: new Date().toISOString(), duration_ms: Date.now() - startedAt });
+        throw new Error(promptFailureMessage('plan prompt failed', outcome));
+      }
+      stampPlanSession(state, { last_status: 'ok', last_seen_at: new Date().toISOString(), duration_ms: Date.now() - startedAt });
       if (outcome.result?.structured && typeof outcome.result.structured === 'object') return normalizePlanRisk(outcome.result.structured);
       const text = typeof outcome.result?.text === 'string' ? outcome.result.text : JSON.stringify(outcome.result ?? {});
       return normalizePlanRisk(extractJson(text, { phase: 'plan-final-json', role: 'guardian-business', response: outcome.result?.prompt_response ?? null }));

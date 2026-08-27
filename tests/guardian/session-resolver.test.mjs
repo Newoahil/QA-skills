@@ -169,7 +169,7 @@ test('persisted session with wrong agent -> unusable, recreate', async () => {
   assert.equal(decision.contextLoss, true);
 });
 
-test('specialist sessions are always created fresh (never reuse a prior, possibly polluted session)', async () => {
+test('specialist sessions are created fresh unless a trusted revise continues the prior investigation', async () => {
   // Specialists are one-shot read-only investigations. Reusing a prior session carries accumulated
   // history that can contaminate the structured result (an old "OK" exchange got echoed back), so a
   // specialist must always create a fresh session even when a same-round record exists.
@@ -183,6 +183,21 @@ test('specialist sessions are always created fresh (never reuse a prior, possibl
   });
   assert.equal(decision.action, 'create');
   assert.equal(getSessionCalled, false, 'must not validate/reuse a persisted specialist session');
+});
+
+test('revise investigation reuses a valid prior specialist session for the same issue and role', async () => {
+  const decision = await resolveSessionForRole({
+    role: 'guardian-code',
+    opencode: { specialists: { 'guardian-code': { session_id: 'ses_spec', agent: 'guardian-code', repo_dir: 'D:/repo', issue: 211, role: 'guardian-code', permission_policy_version: PERMISSION_POLICY_VERSION, round: 1 } } },
+    round: 1,
+    repoDir: 'D:/repo',
+    issue: 211,
+    expectedPermissionPolicyVersion: PERMISSION_POLICY_VERSION,
+    allowSpecialistReuse: true,
+    getSession: async () => ({ kind: 'ok', session: { id: 'ses_spec', agent: 'guardian-code', directory: 'D:/repo' } }),
+  });
+  assert.equal(decision.action, 'reuse');
+  assert.equal(decision.sessionId, 'ses_spec');
 });
 
 test('legacy unbound session is adopted only after live directory and agent match', async () => {

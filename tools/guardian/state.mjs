@@ -184,6 +184,7 @@ export function newState(issueNumber, now = new Date().toISOString()) {
       schema_version: 1,
       fixer: null, // { session_id, agent:'qa-guardian', repo_dir, issue, role, created_round, last_used_round, last_status, last_seen_at }
       qa: null, // { session_id, agent:'qa', repo_dir, issue, role, ... }
+      plan: null, // { session_id, agent:'guardian-business', repo_dir, issue, role:'plan', ... }
       specialists: {}, // { [role]: { session_id, agent, repo_dir, issue, role, round, last_status, last_seen_at } }
       inflight: null, // { operation_id, role, session_id, kind, round, started_at, deadline_at, status }
     },
