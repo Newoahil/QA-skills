@@ -32,7 +32,8 @@
   init). Required for a non-interactive init.
 
 .PARAMETER BaseBranch
-  PR base branch written into config on init. Default: dev.
+  PR base branch written into config on init. Default: dev. ForceRebind requires guardian-rebind to
+  supply a nonblank explicit value.
 
 .PARAMETER GitHubRepo
   GitHub repository in owner/name form. If omitted, inferred from git remote origin or requested
@@ -92,6 +93,7 @@ $OutputEncoding = $utf8
 $GuardianRepo = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 $bindingPath = Join-Path $PSScriptRoot "scheduler.config.json"
 $TargetRepoWasExplicit = -not [string]::IsNullOrWhiteSpace($TargetRepo)
+$BaseBranchWasExplicit = $PSBoundParameters.ContainsKey('BaseBranch') -and -not [string]::IsNullOrWhiteSpace($BaseBranch)
 
 function Read-LauncherConfig([string]$Path) {
   if (-not (Test-Path -LiteralPath $Path)) { return $null }
@@ -268,6 +270,11 @@ function Assert-CleanAndLatest([string]$Repo, [string]$Branch, [string]$Label, [
 function Assert-CleanAndUpstreamLatest([string]$Repo, [string]$Label, [switch]$SkipFetch, [string[]]$IgnorePathPrefixes) {
   $branch = Current-GitBranch $Repo
   return Assert-CleanAndLatest $Repo $branch $Label -AllowBehind -SkipFetch:$SkipFetch -IgnorePathPrefixes $IgnorePathPrefixes
+}
+
+function Assert-RemoteBaseAvailable([string]$Repo, [string]$Base) {
+  Invoke-Git $Repo @('fetch', 'origin', $Base) | Out-Null
+  Invoke-Git $Repo @('rev-parse', "origin/$Base") | Out-Null
 }
 
 function Confirm-Start($message) {
@@ -531,7 +538,6 @@ if (-not $Dashboard -and $DryRun -and -not $binding) {
 }
 if ($binding) { $binding = Assert-PersistedBinding $binding $canonicalTarget $GuardianRepo }
 if ($ForceRebind) { $binding = $null }
-if ($binding -and -not $DryRun) { Save-LauncherBinding $bindingPath $canonicalTarget $binding }
 if ($binding -and [string]$binding.mode -eq 'worktree' -and -not $DryRun) {
   Ensure-ControlWorktree $TargetRepo ([string]$binding.control_worktree_path) ([string]$binding.base_branch)
 }
@@ -571,6 +577,12 @@ if (-not $Dashboard) {
 }
 
 if (-not $Dashboard -and -not $DryRun -and -not $binding) {
+  if ($ForceRebind -and -not $BaseBranchWasExplicit) {
+    if ($Yes) { throw "PR base branch is required under -Yes. Please rerun with -BaseBranch <branch>." }
+    $BaseBranch = Read-Host "    请输入 PR base branch（必填，例如 dev 或 main，直接回车取消）"
+    if (-not $BaseBranch) { throw "已取消：缺少 PR base branch。" }
+    $BaseBranch = $BaseBranch.Trim()
+  }
   if ($Yes) { throw "首次启动尚未选择模式。请先不带 -Yes 交互式运行一次，选择 strict 或 worktree/current-snapshot 模式。" }
   Write-Host "    首次启动需要选择目标仓库模式（选择会保存到 gitignored scheduler.config.json）。" -ForegroundColor Yellow
   if ($BindingMode) {
@@ -580,12 +592,13 @@ if (-not $Dashboard -and -not $DryRun -and -not $binding) {
   }
   if ($modeInput -eq '1' -or $modeInput -match '^(strict|严格)$') {
     $binding = [ordered]@{ version = 1; target_repo = (Resolve-Path $TargetRepo).Path; canonical_target_path = (Resolve-Path $TargetRepo).Path; mode = 'strict'; control_worktree_path = (Resolve-Path $TargetRepo).Path; qa_snapshot_path = $null; qa_managed_root = $null; selected_runtime_input_paths = @(); base_branch = $BaseBranch; guardian_repo_path = $GuardianRepo; git_identity = (Invoke-Git $TargetRepo @('rev-parse', '--show-toplevel')).output }
+    Assert-RemoteBaseAvailable $TargetRepo $BaseBranch
     Save-LauncherBinding $bindingPath $canonicalTarget $binding
   } elseif ($modeInput -eq '2' -or $modeInput -match '^(worktree|snapshot)$') {
     $binding = Initialize-WorktreeBinding $TargetRepo $BaseBranch $bindingPath -ForDryRun
-    Save-LauncherBinding $bindingPath $canonicalTarget $binding
-    Invoke-Git $TargetRepo @('fetch', 'origin', $BaseBranch) | Out-Null
+    Assert-RemoteBaseAvailable $TargetRepo $BaseBranch
     Ensure-ControlWorktree $TargetRepo ([string]$binding.control_worktree_path) $BaseBranch
+    Save-LauncherBinding $bindingPath $canonicalTarget $binding
   } else { throw "选择无效：请输入 1 或 2。" }
 }
 
@@ -636,7 +649,7 @@ if (-not (Test-Path -LiteralPath $configPath)) {
     github_repo      = $targetGithub
     watch_mode       = $WatchMode
     command_authors  = $list
-    base_branch      = $BaseBranch
+    base_branch      = [string]$binding.base_branch
      poll_interval_ms = 10000
     lease_ms         = 1800000
   }
@@ -649,7 +662,7 @@ $cfg = Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json
 $changedCfg = $false
 if (-not $cfg.github_repo) { $cfg | Add-Member -NotePropertyName github_repo -NotePropertyValue $targetGithub; $changedCfg = $true }
 if (-not $cfg.watch_mode) { $cfg | Add-Member -NotePropertyName watch_mode -NotePropertyValue $WatchMode; $changedCfg = $true }
-if (-not $cfg.base_branch) { $cfg | Add-Member -NotePropertyName base_branch -NotePropertyValue $BaseBranch; $changedCfg = $true }
+if (-not $cfg.base_branch) { $cfg | Add-Member -NotePropertyName base_branch -NotePropertyValue ([string]$binding.base_branch); $changedCfg = $true }
 if ($bindingAuthors.Count -gt 0) {
   $cfg | Add-Member -NotePropertyName command_authors -NotePropertyValue $bindingAuthors -Force
   $changedCfg = $true
@@ -694,7 +707,7 @@ if ($InitOnly) {
   return
 }
 
-$base = if ($cfg.base_branch) { [string]$cfg.base_branch } else { $BaseBranch }
+$base = [string]$cfg.base_branch
 $guardianFacts = Assert-CleanAndUpstreamLatest $GuardianRepo 'Guardian tools repo' -SkipFetch:$DryRun -IgnorePathPrefixes @('.sybermem/')
 $bindingMode = [string]$binding.mode
 

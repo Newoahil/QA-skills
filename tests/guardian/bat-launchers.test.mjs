@@ -127,6 +127,48 @@ test('scheduler launcher declares BindingMode and uses it for first mode selecti
   assert.ok(selectionBlock.indexOf('$modeInput = $BindingMode') < selectionBlock.indexOf('Read-Host "    输入 1=严格模式（目标必须 clean）或 2=worktree/current-snapshot 模式"'));
 });
 
+test('scheduler launcher keeps default dev for normal startup but requires explicit nonblank base during ForceRebind', () => {
+  const text = readFileSync('tools/guardian/scheduler-start.ps1', 'utf8');
+  assert.match(text, /\[string\]\$BaseBranch = "dev"/);
+  const selectionBlock = text.slice(text.indexOf('if (-not $Dashboard -and -not $DryRun -and -not $binding) {'), text.indexOf('$bindingAuthors = @()'));
+  assert.match(selectionBlock, /if \(\$ForceRebind -and -not \$BaseBranchWasExplicit\) \{/);
+  assert.match(selectionBlock, /if \(\$Yes\) \{ throw "PR base branch is required under -Yes/);
+  assert.match(selectionBlock, /\$BaseBranch = Read-Host/);
+  assert.match(selectionBlock, /\$BaseBranch = \$BaseBranch\.Trim\(\)/);
+});
+
+test('scheduler launcher validates remote base before saving a new strict binding', () => {
+  const text = readFileSync('tools/guardian/scheduler-start.ps1', 'utf8');
+  assert.match(text, /function Assert-RemoteBaseAvailable\(\[string\]\$Repo, \[string\]\$Base\)/);
+  assert.match(text, /Invoke-Git \$Repo @\('fetch', 'origin', \$Base\) \| Out-Null/);
+  assert.match(text, /Invoke-Git \$Repo @\('rev-parse', "origin\/\$Base"\) \| Out-Null/);
+  const selectionBlock = text.slice(text.indexOf('if (-not $Dashboard -and -not $DryRun -and -not $binding) {'), text.indexOf('$bindingAuthors = @()'));
+  const strictBranchIndex = selectionBlock.indexOf("if ($modeInput -eq '1' -or $modeInput -match '^(strict|严格)$') {");
+  const strictVerifyIndex = selectionBlock.indexOf('Assert-RemoteBaseAvailable $TargetRepo $BaseBranch', strictBranchIndex);
+  const strictSaveIndex = selectionBlock.indexOf('Save-LauncherBinding $bindingPath $canonicalTarget $binding', strictBranchIndex);
+  assert.ok(strictVerifyIndex > strictBranchIndex, 'expected strict remote verification before save');
+  assert.ok(strictSaveIndex > strictVerifyIndex, 'expected strict save after remote validation');
+});
+
+test('scheduler launcher validates remote base and control worktree before saving a new worktree binding', () => {
+  const text = readFileSync('tools/guardian/scheduler-start.ps1', 'utf8');
+  const selectionBlock = text.slice(text.indexOf('if (-not $Dashboard -and -not $DryRun -and -not $binding) {'), text.indexOf('$bindingAuthors = @()'));
+  const worktreeBranchIndex = selectionBlock.indexOf("} elseif ($modeInput -eq '2' -or $modeInput -match '^(worktree|snapshot)$') {");
+  const worktreeVerifyIndex = selectionBlock.indexOf('Assert-RemoteBaseAvailable $TargetRepo $BaseBranch', worktreeBranchIndex);
+  const worktreeEnsureIndex = selectionBlock.indexOf('Ensure-ControlWorktree $TargetRepo ([string]$binding.control_worktree_path) $BaseBranch', worktreeBranchIndex);
+  const worktreeSaveIndex = selectionBlock.indexOf('Save-LauncherBinding $bindingPath $canonicalTarget $binding', worktreeBranchIndex);
+  assert.ok(worktreeVerifyIndex > worktreeBranchIndex, 'expected worktree remote verification inside worktree branch');
+  assert.ok(worktreeEnsureIndex > worktreeVerifyIndex, 'expected worktree control init after remote validation');
+  assert.ok(worktreeSaveIndex > worktreeEnsureIndex, 'expected worktree save after control worktree init');
+});
+
+test('scheduler launcher has no pre-validation Save-LauncherBinding inside first-run strict/worktree branch bodies', () => {
+  const text = readFileSync('tools/guardian/scheduler-start.ps1', 'utf8');
+  const selectionBlock = text.slice(text.indexOf('if (-not $Dashboard -and -not $DryRun -and -not $binding) {'), text.indexOf('$bindingAuthors = @()'));
+  assert.doesNotMatch(selectionBlock, /if \(\$modeInput -eq '1' -or \$modeInput -match '\^\(strict\|严格\)\$'\) \{[\s\S]*?Save-LauncherBinding \$bindingPath \$canonicalTarget \$binding[\s\S]*?Invoke-Git \$TargetRepo @\('fetch', 'origin', \$BaseBranch\) \| Out-Null/);
+  assert.doesNotMatch(selectionBlock, /elseif \(\$modeInput -eq '2' -or \$modeInput -match '\^\(worktree\|snapshot\)\$'\) \{[\s\S]*?Save-LauncherBinding \$bindingPath \$canonicalTarget \$binding[\s\S]*?Ensure-ControlWorktree \$TargetRepo \(\[string\]\$binding\.control_worktree_path\) \$BaseBranch/);
+});
+
 test('scheduler launcher keeps the existing interactive fallback prompt when BindingMode is omitted', () => {
   const text = readFileSync('tools/guardian/scheduler-start.ps1', 'utf8');
   const selectionBlock = text.slice(text.indexOf('if (-not $Dashboard -and -not $DryRun -and -not $binding) {'), text.indexOf('$bindingAuthors = @()'));
@@ -149,6 +191,50 @@ test('scheduler launcher force rebind clears only selected binding before first 
   assert.match(text, /if \(\$ForceRebind\) \{ \$binding = \$null \}/);
   assert.doesNotMatch(text, /\$launcherConfig\s*=\s*\$null/);
   assert.doesNotMatch(text, /\$launcherConfig\.projects/);
+});
+
+test('scheduler launcher keeps default dev outside rebind selection and fails closed for ForceRebind without explicit base', () => {
+  const text = readFileSync('tools/guardian/scheduler-start.ps1', 'utf8');
+  assert.match(text, /\[string\]\$BaseBranch = "dev"/);
+  const selectionBlock = text.slice(text.indexOf('if (-not $Dashboard -and -not $DryRun -and -not $binding) {'), text.indexOf('$bindingAuthors = @()'));
+  assert.match(selectionBlock, /if \(\$ForceRebind -and -not \$BaseBranchWasExplicit\) \{/);
+  assert.match(selectionBlock, /\$BaseBranch = Read-Host/);
+});
+
+test('scheduler launcher validates origin base before saving strict binding during forced first-mode selection', () => {
+  const text = readFileSync('tools/guardian/scheduler-start.ps1', 'utf8');
+  const selectionBlock = text.slice(text.indexOf('if (-not $Dashboard -and -not $DryRun -and -not $binding) {'), text.indexOf('$bindingAuthors = @()'));
+  const strictIndex = selectionBlock.indexOf("mode = 'strict'");
+  const strictVerifyIndex = selectionBlock.indexOf('Assert-RemoteBaseAvailable $TargetRepo $BaseBranch');
+  const strictSaveIndex = selectionBlock.indexOf('Save-LauncherBinding $bindingPath $canonicalTarget $binding');
+  assert.ok(strictIndex >= 0, 'expected strict binding block');
+  assert.ok(strictVerifyIndex > strictIndex, 'expected strict remote verification after binding assembly');
+  assert.ok(strictSaveIndex > strictVerifyIndex, 'expected strict save after remote base verification');
+});
+
+test('scheduler launcher validates origin base and control worktree before saving worktree binding during forced first-mode selection', () => {
+  const text = readFileSync('tools/guardian/scheduler-start.ps1', 'utf8');
+  const selectionBlock = text.slice(text.indexOf('if (-not $Dashboard -and -not $DryRun -and -not $binding) {'), text.indexOf('$bindingAuthors = @()'));
+  const worktreeInitIndex = selectionBlock.indexOf('$binding = Initialize-WorktreeBinding $TargetRepo $BaseBranch $bindingPath -ForDryRun');
+  const worktreeVerifyIndex = selectionBlock.indexOf('Assert-RemoteBaseAvailable $TargetRepo $BaseBranch', worktreeInitIndex);
+  const controlIndex = selectionBlock.indexOf('Ensure-ControlWorktree $TargetRepo ([string]$binding.control_worktree_path) $BaseBranch');
+  const worktreeSaveIndex = selectionBlock.lastIndexOf('Save-LauncherBinding $bindingPath $canonicalTarget $binding');
+  assert.ok(worktreeInitIndex >= 0, 'expected worktree binding init');
+  assert.ok(worktreeVerifyIndex > worktreeInitIndex, 'expected worktree remote verification after dry-run binding init');
+  assert.ok(controlIndex > worktreeVerifyIndex, 'expected control worktree validation after remote base verification');
+  assert.ok(worktreeSaveIndex > controlIndex, 'expected worktree save after Ensure-ControlWorktree');
+});
+
+test('scheduler launcher keeps prior persisted binding until a new verified binding is saved', () => {
+  const text = readFileSync('tools/guardian/scheduler-start.ps1', 'utf8');
+  const resetIndex = text.indexOf('if ($ForceRebind) { $binding = $null }');
+  const selectionBlock = text.slice(text.indexOf('if (-not $Dashboard -and -not $DryRun -and -not $binding) {'), text.indexOf('$bindingAuthors = @()'));
+  const strictSaveIndex = selectionBlock.indexOf('Save-LauncherBinding $bindingPath $canonicalTarget $binding');
+  assert.ok(resetIndex > 0, 'expected in-memory force-rebind reset');
+  assert.ok(strictSaveIndex > 0, 'expected replacement save only inside first-mode selection');
+  assert.doesNotMatch(text, /if \(\$ForceRebind\) \{[\s\S]*?Save-LauncherBinding \$bindingPath \$canonicalTarget \$binding[\s\S]*?if \(-not \$Dashboard -and -not \$DryRun -and -not \$binding\) \{/);
+  assert.doesNotMatch(selectionBlock, /\$launcherConfig\.projects\.[^\n]*=\s*\$null/);
+  assert.doesNotMatch(selectionBlock, /Remove-Item -LiteralPath \$bindingPath/);
 });
 
 test('guardian-start remains normal startup and does not pass ForceRebind', () => {

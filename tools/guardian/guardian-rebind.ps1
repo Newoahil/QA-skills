@@ -14,7 +14,7 @@ param(
   [string]$TargetRepo = "",
   [string]$CommandAuthors = "",
   [string]$GitHubRepo = "",
-  [string]$BaseBranch = "dev",
+  [string]$BaseBranch = "",
   [ValidateSet("strict", "worktree")]
   [string]$BindingMode = "",
   [ValidateSet("new-open", "labeled")]
@@ -39,15 +39,22 @@ if (-not $TargetRepo) {
   $TargetRepo = $TargetRepo.Trim([char]34)
 }
 
+if (-not $BaseBranch) {
+  if ($Yes) { throw "PR base branch is required under -Yes. Please rerun with -BaseBranch <branch>." }
+  $BaseBranch = Read-Host -Prompt 'PR base branch (for example main or dev; blank to cancel)'
+  if (-not $BaseBranch) { throw "Cancelled: PR base branch is required." }
+  $BaseBranch = $BaseBranch.Trim()
+}
+
 $arguments = @(
   '-NoLogo', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $schedulerScript,
   '-TargetRepo', $TargetRepo,
   '-Init',
   '-InitOnly',
   '-ForceRebind',
-  '-BaseBranch', $BaseBranch,
   '-WatchMode', $WatchMode
 )
+if ($BaseBranch) { $arguments += @('-BaseBranch', $BaseBranch) }
 if ($CommandAuthors) { $arguments += @('-CommandAuthors', $CommandAuthors) }
 if ($GitHubRepo) { $arguments += @('-GitHubRepo', $GitHubRepo) }
 if ($BindingMode) { $arguments += @('-BindingMode', $BindingMode) }
