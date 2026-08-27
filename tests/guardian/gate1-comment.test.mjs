@@ -154,6 +154,7 @@ test('gate1 comment shows product solution, B/C impact, and product usage accept
       risk: 'HIGH',
       spec_goal: '修复后台权限白名单匹配绕过。',
       product_solution: '后台接口权限从前缀式误命中改为按真实业务入口校验，同时保留已确认无需菜单权限的登录态入口。',
+      revision_feedback_handling: ['已按 revise 反馈审计 create/modify/getList/delete，并保留 business/notifications 的历史语义。'],
       side_impact: {
         b_side: ['后台管理端 create/modify/getList/delete 等接口按菜单权限表现一致。'],
         c_side: ['小程序绑定会话等 C 端登录态功能不因为后台菜单权限收紧而中断。'],
@@ -176,11 +177,13 @@ test('gate1 comment shows product solution, B/C impact, and product usage accept
 
   assert.doesNotMatch(body, /\[object Object\]/);
   assert.ok(body.indexOf('产品方案:') < body.indexOf('拟实施:'));
+  assert.ok(body.indexOf('反馈处理:') < body.indexOf('拟实施:'));
   assert.ok(body.indexOf('B 侧影响:') < body.indexOf('拟实施:'));
   assert.ok(body.indexOf('C 侧影响:') < body.indexOf('拟实施:'));
   assert.ok(body.indexOf('关联功能影响:') < body.indexOf('拟实施:'));
   assert.ok(body.indexOf('产品使用验收:') < body.indexOf('验收标准:'));
   assert.match(body, /后台接口权限从前缀式误命中改为按真实业务入口校验/);
+  assert.match(body, /已按 revise 反馈审计 create\/modify\/getList\/delete/);
   assert.match(body, /后台管理端 create\/modify\/getList\/delete/);
   assert.match(body, /小程序绑定会话等 C 端登录态功能/);
   assert.match(body, /C 端用户绑定会话流程保持可用/);
