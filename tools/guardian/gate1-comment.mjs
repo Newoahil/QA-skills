@@ -56,11 +56,17 @@ function blockingQuestions(plan, dossier) {
   return preferred.length > 0 ? preferred : arrayItems(dossier.unresolved_facts);
 }
 
+function sideImpactItems(plan, side) {
+  const value = plan.side_impact?.[side];
+  return arrayItems(value);
+}
+
 export function buildGate1Comment({ issue, plan = {}, dossier = {}, planHash = null, planRevision = null }) {
   const unresolved = blockingQuestions(plan, dossier);
   const files = primaryFiles(plan);
   const risk = compact(plan.risk, 'HIGH');
   const goal = firstText([plan.spec_goal, plan.root_cause], '未提供');
+  const productSolution = firstText([plan.product_solution, plan.spec_goal, plan.implementation_summary], '未提供');
   const summary = firstText([plan.implementation_summary, plan.root_cause], '未提供');
   const acceptance = arrayItems(plan.acceptance_summary).length > 0 ? plan.acceptance_summary : plan.acceptance_criteria;
   const lines = [
@@ -70,6 +76,20 @@ export function buildGate1Comment({ issue, plan = {}, dossier = {}, planHash = n
     '## 建议 Spec',
     '',
     `目标: ${goal}`,
+    '',
+    `产品方案: ${productSolution}`,
+    '',
+    'B 侧影响:',
+    ...bulletItems(sideImpactItems(plan, 'b_side'), '无', 5),
+    '',
+    'C 侧影响:',
+    ...bulletItems(sideImpactItems(plan, 'c_side'), '无', 5),
+    '',
+    '关联功能影响:',
+    ...bulletItems(plan.related_feature_impact, '无', 6),
+    '',
+    '产品使用验收:',
+    ...bulletItems(plan.product_usage_acceptance, '未提供', 6),
     '',
     '拟实施:',
     ...bulletItems([summary], '未提供'),

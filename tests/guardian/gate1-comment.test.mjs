@@ -146,3 +146,45 @@ test('gate1 comment puts the actionable spec before noisy investigation details'
   assert.match(body, /<summary>调查详情、证据、完整风险和未确定事实<\/summary>/);
   assert.match(body, /审计标识: plan_hash: sha256:263-spec/);
 });
+
+test('gate1 comment shows product solution, B/C impact, and product usage acceptance before technical details', () => {
+  const body = buildGate1Comment({
+    issue: 355,
+    plan: {
+      risk: 'HIGH',
+      spec_goal: '修复后台权限白名单匹配绕过。',
+      product_solution: '后台接口权限从前缀式误命中改为按真实业务入口校验，同时保留已确认无需菜单权限的登录态入口。',
+      side_impact: {
+        b_side: ['后台管理端 create/modify/getList/delete 等接口按菜单权限表现一致。'],
+        c_side: ['小程序绑定会话等 C 端登录态功能不因为后台菜单权限收紧而中断。'],
+      },
+      related_feature_impact: ['business/notifications 历史路径继续保留登录态免菜单权限语义。'],
+      product_usage_acceptance: ['后台无菜单权限账号不能使用受控管理接口。', 'C 端用户绑定会话流程保持可用。'],
+      implementation_summary: '收敛 otherNoAuthUriSet 语义并补齐权限映射测试。',
+      primary_files: ['backend/AuthInterceptor.java'],
+      acceptance_summary: ['权限校验符合产品预期。'],
+      blocking_questions: ['哪些 otherNoAuthUriSet 条目仍被产品确认允许登录即可访问？'],
+      root_cause: '白名单模糊匹配导致后台接口绕过菜单权限。',
+      affected_files: ['backend/AuthInterceptor.java'],
+      non_goals: ['不重做菜单权限模型。'],
+      test_plan: ['覆盖后台受控接口和 C 端登录态入口。'],
+    },
+    dossier: { unresolved_facts: [] },
+    planHash: 'sha256:355-product',
+    planRevision: 'rev-355-product',
+  });
+
+  assert.doesNotMatch(body, /\[object Object\]/);
+  assert.ok(body.indexOf('产品方案:') < body.indexOf('拟实施:'));
+  assert.ok(body.indexOf('B 侧影响:') < body.indexOf('拟实施:'));
+  assert.ok(body.indexOf('C 侧影响:') < body.indexOf('拟实施:'));
+  assert.ok(body.indexOf('关联功能影响:') < body.indexOf('拟实施:'));
+  assert.ok(body.indexOf('产品使用验收:') < body.indexOf('验收标准:'));
+  assert.match(body, /后台接口权限从前缀式误命中改为按真实业务入口校验/);
+  assert.match(body, /后台管理端 create\/modify\/getList\/delete/);
+  assert.match(body, /小程序绑定会话等 C 端登录态功能/);
+  assert.match(body, /C 端用户绑定会话流程保持可用/);
+  assert.match(body, /\/guardian approve/);
+  assert.match(body, /plan_hash: sha256:355-product/);
+  assert.match(body, /plan_revision: rev-355-product/);
+});

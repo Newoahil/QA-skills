@@ -44,6 +44,29 @@ test('valid evidence-backed LOW bug plan is autonomous-ready', () => {
   assert.equal(canEnterFixing(plan(), dossier), true);
 });
 
+test('product planning fields are optional for old plans and preserved for new plans', () => {
+  const legacy = validatePlan(plan(), dossier);
+  assert.equal(legacy.valid, true);
+  assert.equal(legacy.errors.some((error) => error.startsWith('plan:missing-product_')), false);
+  assert.equal(legacy.errors.includes('plan:missing-side_impact'), false);
+
+  const productFields = {
+    product_solution: '后台菜单权限从模糊匹配改为精确匹配，保留登录态免菜单权限入口。',
+    side_impact: {
+      b_side: ['后台用户访问 create/modify/getList/delete 时按菜单权限校验。'],
+      c_side: ['小程序绑定会话等登录态入口不新增菜单权限要求。'],
+    },
+    related_feature_impact: ['现有 business/notifications 历史路径语义保持不变。'],
+    product_usage_acceptance: ['后台无权限账号访问受控接口时被拒绝，有权限账号原流程可继续使用。'],
+  };
+  const next = validatePlan(plan(productFields), dossier);
+  assert.equal(next.valid, true);
+  assert.equal(next.plan.product_solution, productFields.product_solution);
+  assert.deepEqual(next.plan.side_impact, productFields.side_impact);
+  assert.deepEqual(next.plan.related_feature_impact, productFields.related_feature_impact);
+  assert.deepEqual(next.plan.product_usage_acceptance, productFields.product_usage_acceptance);
+});
+
 test('missing plan fields block fixing', () => {
   const result = validatePlan({ risk: 'LOW' }, dossier);
   assert.equal(result.valid, false);
