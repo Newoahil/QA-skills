@@ -16,6 +16,15 @@ const REQUIRED_PLAN_FIELDS = Object.freeze([
   'risk',
 ]);
 
+const REQUIRED_REVISED_PRODUCT_FIELDS = Object.freeze([
+  'product_solution',
+  'revision_feedback_handling',
+  'related_feature_impact',
+  'product_usage_acceptance',
+]);
+
+const PLACEHOLDER_TEXT = new Set(['无', '无影响', '未提供', '待确认', '暂无', '不涉及', 'n/a', 'na', 'none', 'null']);
+
 // Reject NUL/control chars, DEL, and any whitespace (anti-prose + anti-ambiguity). Allows CJK/Unicode letters.
 const UNSAFE_PATH_CHAR_RE = /[\u0000-\u001F\u007F\s]/u;
 // Shell/glob metacharacters that a legitimate repo path never needs. Paths are passed as argv (not a
@@ -33,12 +42,26 @@ function nonEmptyArray(value) {
   return Array.isArray(value) && value.length > 0;
 }
 
+function concreteText(value) {
+  if (typeof value !== 'string') return false;
+  const text = value.trim();
+  return text.length > 0 && !PLACEHOLDER_TEXT.has(text.toLowerCase());
+}
+
+function concreteArray(value) {
+  return Array.isArray(value) && value.some((item) => concreteText(item));
+}
+
+function hasRevisionContext(context) {
+  return typeof context?.revisionFeedback === 'string' && context.revisionFeedback.trim().length > 0;
+}
+
 /**
  * Validate a plan against a dossier. Structural errors always block. Unresolved facts force
  * Gate 1 rather than pretending the plan is autonomous-ready. LOW requires full readiness;
  * HIGH plans may be structurally complete but still require human approval.
  */
-export function validatePlan(plan, dossier) {
+export function validatePlan(plan, dossier, context = {}) {
   const errors = [];
   const p = plan ?? {};
   const d = dossier ?? {};
@@ -75,6 +98,10 @@ export function validatePlan(plan, dossier) {
   const affectedFiles = declaredPathList(p.affected_files);
   for (const error of validateDeclaredFiles('affected_files', affectedFiles)) errors.push(error);
 
+  if (hasRevisionContext(context)) {
+    validateRevisedProductPlan(p, errors);
+  }
+
   const readiness = isDecisionReady(d);
   const mechanicalRisk = gradeRisk(p.risk_assessment);
   const riskMismatch = p.risk === 'LOW' && mechanicalRisk.risk !== RISK.LOW;
@@ -90,6 +117,16 @@ export function validatePlan(plan, dossier) {
     mechanicalRisk,
     plan: errors.length === 0 ? { ...p, ...(normalizedTestCommands ? { test_commands: normalizedTestCommands } : {}), ...(normalizedScope ? { affected_files: normalizedScope } : {}) } : null,
   };
+}
+
+function validateRevisedProductPlan(plan, errors) {
+  for (const field of REQUIRED_REVISED_PRODUCT_FIELDS) {
+    const value = plan[field];
+    const valid = Array.isArray(value) ? concreteArray(value) : concreteText(value);
+    if (!valid) errors.push(`plan:missing-${field}`);
+  }
+  if (!concreteArray(plan.side_impact?.b_side)) errors.push('plan:missing-side_impact:b_side');
+  if (!concreteArray(plan.side_impact?.c_side)) errors.push('plan:missing-side_impact:c_side');
 }
 
 function normalizePlanScope(plan, testCommands, primaryFiles = declaredPathList(plan.primary_files)) {

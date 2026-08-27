@@ -22,6 +22,11 @@ function normalizeInvestigationIssueData(issue, issueData, state) {
   };
 }
 
+function planValidationContext(state) {
+  const revisionFeedback = typeof state?.gate_1_revision_data === 'string' ? state.gate_1_revision_data.trim() : '';
+  return revisionFeedback ? { revisionFeedback } : {};
+}
+
 function copyJsonParseDiagnostics(target, source) {
   if (source?.name !== 'InvestigationJsonParseError') return target;
   target.name = source.name;
@@ -110,10 +115,11 @@ export async function prepareInvestigation({ issue, issueData, repoDir, qaRuntim
   let plan = null;
   let planResult = null;
   const priorPlanErrors = [];
+  const validationContext = planValidationContext(state);
   for (let attempt = 1; attempt <= MAX_PLAN_ATTEMPTS; attempt += 1) {
     if (attempt > 1) logger.warn('plan.retry', { issue, attempt, previous_errors: priorPlanErrors.join(',') });
     plan = { ...(await buildPlan({ issue, dossier, hypotheses: synthesis.ranked_hypotheses, repoDir, qaRuntimeDir, issueData: normalizedIssueData, memoryContext, signal, previousPlanErrors: priorPlanErrors, attempt })), investigation_id: investigationId };
-    planResult = validatePlan(plan, dossier);
+    planResult = validatePlan(plan, dossier, validationContext);
     if (planResult.errors.length === 0) break;
     priorPlanErrors.splice(0, priorPlanErrors.length, ...planResult.errors);
     writeArtifact(guardianDir, issue, 'plan-invalid', plan);

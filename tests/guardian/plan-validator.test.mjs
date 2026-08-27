@@ -37,6 +37,20 @@ function plan(overrides = {}) {
   };
 }
 
+function productPlan(overrides = {}) {
+  return plan({
+    product_solution: '小程序用户提交申请取消动作，后端固定进入 CANCEL_APPLY(14) 并等待后台审核。',
+    revision_feedback_handling: ['已按反馈保留 CANCEL_APPLY(14)，并把重复申请只能等待审核纳入产品规则。'],
+    side_impact: {
+      b_side: ['后台/运营继续按 CANCEL_APPLY(14) 处理待审核取消申请，且不会收到重复申请副作用。'],
+      c_side: ['用户重复点击申请取消时看到等待审核语义，不会再次提交可篡改状态。'],
+    },
+    related_feature_impact: ['已调查 setUserOrderStatus 相关入口，C 端取消申请迁移后不再暴露任意 status 改写。'],
+    product_usage_acceptance: ['同一订单重复申请取消只产生一次待审核申请，其余重试按当前状态幂等返回。'],
+    ...overrides,
+  });
+}
+
 test('valid evidence-backed LOW bug plan is autonomous-ready', () => {
   const result = validatePlan(plan(), dossier);
   assert.equal(result.valid, true);
@@ -65,6 +79,45 @@ test('product planning fields are optional for old plans and preserved for new p
   assert.deepEqual(next.plan.side_impact, productFields.side_impact);
   assert.deepEqual(next.plan.related_feature_impact, productFields.related_feature_impact);
   assert.deepEqual(next.plan.product_usage_acceptance, productFields.product_usage_acceptance);
+});
+
+test('revised plans require concrete product impact and feedback handling fields', () => {
+  const result = validatePlan(plan(), dossier, { revisionFeedback: '调查 setUserOrderStatus 依赖，并确认申请取消只能申请一次' });
+
+  assert.equal(result.valid, false);
+  assert.equal(result.errors.includes('plan:missing-product_solution'), true);
+  assert.equal(result.errors.includes('plan:missing-revision_feedback_handling'), true);
+  assert.equal(result.errors.includes('plan:missing-side_impact:b_side'), true);
+  assert.equal(result.errors.includes('plan:missing-side_impact:c_side'), true);
+  assert.equal(result.errors.includes('plan:missing-related_feature_impact'), true);
+  assert.equal(result.errors.includes('plan:missing-product_usage_acceptance'), true);
+});
+
+test('revised plans reject placeholder product impact values', () => {
+  const result = validatePlan(productPlan({
+    product_solution: '未提供',
+    revision_feedback_handling: ['无'],
+    side_impact: { b_side: ['无影响'], c_side: ['N/A'] },
+    related_feature_impact: ['不涉及'],
+    product_usage_acceptance: ['暂无'],
+  }), dossier, { revisionFeedback: '重复申请只能申请一次' });
+
+  assert.equal(result.valid, false);
+  assert.equal(result.errors.includes('plan:missing-product_solution'), true);
+  assert.equal(result.errors.includes('plan:missing-revision_feedback_handling'), true);
+  assert.equal(result.errors.includes('plan:missing-side_impact:b_side'), true);
+  assert.equal(result.errors.includes('plan:missing-side_impact:c_side'), true);
+  assert.equal(result.errors.includes('plan:missing-related_feature_impact'), true);
+  assert.equal(result.errors.includes('plan:missing-product_usage_acceptance'), true);
+});
+
+test('revised plans pass with concrete feedback assimilation and product impacts', () => {
+  const result = validatePlan(productPlan(), dossier, { revisionFeedback: '重复申请只能申请一次' });
+
+  assert.equal(result.valid, true);
+  assert.equal(result.plan.revision_feedback_handling.length, 1);
+  assert.match(result.plan.side_impact.b_side[0], /后台/);
+  assert.match(result.plan.product_usage_acceptance[0], /重复申请取消只产生一次/);
 });
 
 test('missing plan fields block fixing', () => {

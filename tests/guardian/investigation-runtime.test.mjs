@@ -82,7 +82,26 @@ test('prepareInvestigation carries gate revision feedback into issue-data and mo
       },
       buildPlan: async ({ issueData }) => {
         planCalls.push(issueData);
-        return { root_cause: 'root', affected_files: ['a.mjs'], non_goals: ['b'], test_plan: ['test'], test_commands: testCommands, acceptance_criteria: ['works'], rollback_plan: 'revert', evidence_ids: ['E-guardian-code', 'E-guardian-runtime'], risk: 'LOW', risk_assessment: riskAssessment };
+        return {
+          root_cause: 'root',
+          affected_files: ['a.mjs'],
+          non_goals: ['b'],
+          test_plan: ['test'],
+          test_commands: testCommands,
+          acceptance_criteria: ['works'],
+          rollback_plan: 'revert',
+          evidence_ids: ['E-guardian-code', 'E-guardian-runtime'],
+          risk: 'LOW',
+          risk_assessment: riskAssessment,
+          product_solution: '后台白名单按分段前缀处理并保留业务通知入口。',
+          revision_feedback_handling: ['已按反馈审计 create 路径并保留 business/notifications 语义。'],
+          side_impact: {
+            b_side: ['后台 create 路径按真实权限边界校验。'],
+            c_side: ['C 端登录态通知入口不受后台菜单权限收紧影响。'],
+          },
+          related_feature_impact: ['business/notifications 历史入口继续可用。'],
+          product_usage_acceptance: ['有权限后台用户可继续访问通知入口，无权限用户不能命中 create 绕过。'],
+        };
       },
     });
 
@@ -91,6 +110,7 @@ test('prepareInvestigation carries gate revision feedback into issue-data and mo
     assert.equal(specialistCalls.every((call) => call.issueData.revision_feedback === revisionFeedback), true);
     assert.equal(planCalls.length, 1);
     assert.equal(planCalls[0].revision_feedback, revisionFeedback);
+    assert.equal(readArtifact(root, 355, 'plan').revision_feedback_handling.length, 1);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
