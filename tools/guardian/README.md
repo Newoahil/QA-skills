@@ -196,10 +196,17 @@ Use `tools/guardian/scheduler-start.ps1` for resident runs on Windows. It guides
 of silently watching the wrong checkout:
 
 ```powershell
+.\tools\guardian\guardian-rebind.ps1 -TargetRepo D:\your-project -CommandAuthors your-login -GitHubRepo owner/repo
 .\tools\guardian\scheduler-start.ps1 -TargetRepo D:\your-project -Init -CommandAuthors your-login -GitHubRepo owner/repo
 .\tools\guardian\scheduler-start.ps1 -TargetRepo D:\your-project -DryRun -Yes
 .\tools\guardian\scheduler-start.ps1 -TargetRepo D:\your-project -Dashboard -Yes
 ```
+
+For a new project or when switching a project's local binding, prefer
+`tools\guardian\guardian-rebind.bat`. It is an initialization-only wrapper: it interactively gathers
+the target repo, GitHub repo, trusted command authors, base branch, and strict/worktree choice, writes
+the per-project binding/config, then exits without starting the scheduler or TUI. After rebind, start
+the selected project with `tools\guardian\guardian-start.bat D:\your-project`.
 
 Before starting, the launcher confirms the target directory, target GitHub repository, watch mode,
 trusted command authors, and PR base branch. The gitignored
@@ -261,8 +268,8 @@ node tools/guardian/session-view.mjs --session ses_abc123 --full
 `getMessages(sessionId)` 读取；如果服务没启动，请先运行 `opencode serve`，或用 `--base-url`
 指定地址。所有错误都会用中文给出「问题 / 原因 / 下一步」。
 
-Windows 上也可以直接双击两个 bat 分开启动，日常入口严格只有两个：`tools/guardian/scheduler-start.bat` 负责值守，
-`tools/guardian/dashboard-start.bat` 负责只读 Dashboard（内部调用 `dashboard-start.ps1` 解析 node）。两个 bat 都可传目标项目路径；显式路径只切换到该项目的 binding，不会复用另一项目的 control worktree 或配置。无参启动时会交互要求输入本次目标目录，避免误监控上次项目。
+Windows 上也可以直接双击 bat 入口：`tools/guardian/guardian-rebind.bat` 负责新增/换绑项目且不会启动值守，`tools/guardian/scheduler-start.bat` 负责值守，
+`tools/guardian/dashboard-start.bat` 负责只读 Dashboard（内部调用 `dashboard-start.ps1` 解析 node）。这些 bat 都可传目标项目路径；显式路径只切换到该项目的 binding，不会复用另一项目的 control worktree 或配置。无参启动时会交互要求输入本次目标目录，避免误监控上次项目。
 
 如果希望一次双击同时启动 scheduler 和新的单终端 TUI，使用组合入口：
 
@@ -270,7 +277,7 @@ Windows 上也可以直接双击两个 bat 分开启动，日常入口严格只�
 tools\guardian\guardian-start.bat D:\tuantuanrent
 ```
 
-它会打开两个窗口：scheduler 在独立 PowerShell 窗口持续值守，当前窗口进入只读 TUI。TUI 中按 `q` 只退出视图，不会停止 scheduler；需要停止值守时，在 scheduler 窗口按 `Ctrl+C`。组合入口只读取已有项目 binding，不会重复询问模式或 `command_authors`；新项目首次使用前，先运行一次 `scheduler-start.bat D:\tuantuanrent` 完成初始化。
+它会打开两个窗口：scheduler 在独立 PowerShell 窗口持续值守，当前窗口进入只读 TUI。TUI 中按 `q` 只退出视图，不会停止 scheduler；需要停止值守时，在 scheduler 窗口按 `Ctrl+C`。组合入口只读取已有项目 binding，不会重复询问模式或 `command_authors`；新项目首次使用前，先运行一次 `guardian-rebind.bat D:\tuantuanrent` 完成初始化/换绑。
 
 ### 单终端只读 ANSI TUI（独立入口）
 
