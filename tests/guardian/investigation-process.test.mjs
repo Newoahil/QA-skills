@@ -966,6 +966,71 @@ test('processPlanBuilder includes declared test_files in normalized affected_fil
   assert.deepEqual(result.affected_files, ['src/controller.js', 'tests/controller.test.js']);
 });
 
+test('processPlanBuilder prompt includes structural Node and Python test command routing fragments', async () => {
+  const prompted = [];
+  const client = {
+    createSession: async () => 'ses_plan_prompt_routes',
+    prompt: async ({ parts }) => {
+      prompted.push(parts[0].text);
+      return {
+        kind: 'ok',
+        result: {
+          text: '{"root_cause":"root","affected_files":["a"],"non_goals":["b"],"test_plan":["t"],"test_commands":[["node","--test","tests/a.test.mjs"]],"acceptance_criteria":["c"],"rollback_plan":"r","evidence_ids":["E1"],"risk":"HIGH","risk_assessment":{"certain":false,"lowDangerSurfaceOnly":false,"touchedSurfaces":[],"localImpact":true,"diffLines":80,"reproducibleOracle":false,"scopeExpansionRequested":false}}',
+        },
+      };
+    },
+  };
+
+  await processPlanBuilder({
+    issue: 211,
+    repoDir: 'D:/repo',
+    dossier: { evidence: [{ id: 'E1' }] },
+    opencodeClient: client,
+  });
+
+  assert.equal(prompted.length, 1);
+  const prompt = prompted[0];
+  assert.match(prompt, /node --test/);
+  assert.match(prompt, /python/);
+  assert.match(prompt, /py/);
+  assert.match(prompt, /pytest/);
+  assert.match(prompt, /unittest/);
+  assert.match(prompt, /\.py/);
+});
+
+test('processPlanBuilder prompt explicitly forbids invalid Python and wrapper command patterns', async () => {
+  const prompted = [];
+  const client = {
+    createSession: async () => 'ses_plan_prompt_forbid',
+    prompt: async ({ parts }) => {
+      prompted.push(parts[0].text);
+      return {
+        kind: 'ok',
+        result: {
+          text: '{"root_cause":"root","affected_files":["a"],"non_goals":["b"],"test_plan":["t"],"test_commands":[["node","--test","tests/a.test.mjs"]],"acceptance_criteria":["c"],"rollback_plan":"r","evidence_ids":["E1"],"risk":"HIGH","risk_assessment":{"certain":false,"lowDangerSurfaceOnly":false,"touchedSurfaces":[],"localImpact":true,"diffLines":80,"reproducibleOracle":false,"scopeExpansionRequested":false}}',
+        },
+      };
+    },
+  };
+
+  await processPlanBuilder({
+    issue: 212,
+    repoDir: 'D:/repo',
+    dossier: { evidence: [{ id: 'E1' }] },
+    opencodeClient: client,
+  });
+
+  assert.equal(prompted.length, 1);
+  const prompt = prompted[0];
+  assert.match(prompt, /Do not use node --test for \.py/i);
+  assert.match(prompt, /arbitrary Python modules, scripts/i);
+  assert.match(prompt, /config\/plugin injection/i);
+  assert.match(prompt, /wrappers/i);
+  assert.match(prompt, /install/i);
+  assert.match(prompt, /network/i);
+  assert.match(prompt, /git/i);
+});
+
 test('runAgentJson reports malformed event lines without treating them as final output', async () => {
   // Given: one malformed progress line followed by a valid text result.
   const child = fakeChild();
