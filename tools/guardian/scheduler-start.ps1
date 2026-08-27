@@ -19,6 +19,10 @@
   Create .qa/guardian/config.json for the target repo if it does not exist, then start. When the
   config is missing and -Init is not given, the script offers to create it interactively.
 
+.PARAMETER InitOnly
+  Create or repair the per-project launcher binding/config, then exit without starting scheduler,
+  dashboard, shared server, or TUI. Used by guardian-rebind.ps1.
+
 .PARAMETER CommandAuthors
   Comma/space-separated GitHub logins allowed to drive /guardian commands (written into config on
   init). Required for a non-interactive init.
@@ -59,6 +63,7 @@
 param(
   [string]$TargetRepo = "",
   [switch]$Init,
+  [switch]$InitOnly,
   [string]$CommandAuthors = "",
   [string]$BaseBranch = "dev",
   [string]$GitHubRepo = "",
@@ -653,6 +658,24 @@ if (-not $cfg.command_authors -or @($cfg.command_authors).Count -eq 0) {
     [System.IO.File]::WriteAllText($configPath, (($cfg | ConvertTo-Json -Depth 8) + "`n"), (New-Object System.Text.UTF8Encoding($false)))
   }
   Write-Host "    Command authors: $($normalizedCfgAuthors -join ', ')" -ForegroundColor Green
+}
+
+if ($InitOnly) {
+  $bindingMode = [string]$binding.mode
+  $controlRepo = $TargetRepo
+  $qaRuntimeRepo = $TargetRepo
+  if ($bindingMode -eq 'worktree') {
+    $controlRepo = [string]$binding.control_worktree_path
+    $qaRuntimeRepo = [string]$binding.qa_snapshot_path
+  }
+  Write-Host "==> Guardian binding is ready" -ForegroundColor Cyan
+  Write-Host "    Target repo : $TargetRepo" -ForegroundColor Green
+  Write-Host "    GitHub repo : $targetGithub" -ForegroundColor Green
+  Write-Host "    PR base     : $([string]$cfg.base_branch)" -ForegroundColor Green
+  Write-Host "    Binding mode: $bindingMode" -ForegroundColor Green
+  if ($bindingMode -eq 'worktree') { Write-Host "    Control     : $controlRepo" -ForegroundColor Green; Write-Host "    QA snapshot : $qaRuntimeRepo" -ForegroundColor Green }
+  Write-Host "    Next        : tools\guardian\guardian-start.bat `"$TargetRepo`"" -ForegroundColor Gray
+  return
 }
 
 $base = if ($cfg.base_branch) { [string]$cfg.base_branch } else { $BaseBranch }

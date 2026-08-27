@@ -16,6 +16,17 @@ test('dashboard-start.bat launches the read-only dashboard wrapper', () => {
   assert.doesNotMatch(text, /-Init -CommandAuthors/);
 });
 
+test('guardian-rebind.bat launches the rebind wrapper without scheduler entrypoints', () => {
+  const text = readFileSync('tools/guardian/guardian-rebind.bat', 'utf8');
+  assert.match(text, /guardian-rebind\.ps1/);
+  assert.match(text, /-TargetRepo "%~1"/);
+  assert.match(text, /-CommandAuthors "%~2"/);
+  assert.match(text, /-GitHubRepo "%~3"/);
+  assert.match(text, /Guardian rebind exited/);
+  assert.doesNotMatch(text, /scheduler-start\.ps1/);
+  assert.doesNotMatch(text, /guardian-start\.ps1/);
+});
+
 test('dashboard-start.ps1 runs the read-only dashboard without scheduler preflight', () => {
   const text = readFileSync('tools/guardian/dashboard-start.ps1', 'utf8');
   assert.match(text, /dashboard\.mjs/);
@@ -209,6 +220,19 @@ test('scheduler DryRun fails before first-run binding prompt or write', () => {
   assert.match(text, /if \(-not \$Dashboard -and \$DryRun -and -not \$binding\)/);
   assert.match(text, /DryRun 不会进行首次模式选择/);
   assert.match(text, /if \(-not \$Dashboard -and -not \$DryRun -and -not \$binding\)/);
+});
+
+test('scheduler InitOnly exits after binding/config setup before startup preflight', () => {
+  const text = readFileSync('tools/guardian/scheduler-start.ps1', 'utf8');
+  const initOnly = text.indexOf('if ($InitOnly) {');
+  const cleanPreflight = text.indexOf('$guardianFacts = Assert-CleanAndUpstreamLatest');
+  const startRuntime = text.indexOf('Starting Guardian combined runtime');
+  assert.ok(initOnly > 0);
+  assert.ok(cleanPreflight > initOnly);
+  assert.ok(startRuntime > cleanPreflight);
+  assert.match(text, /\[switch\]\$InitOnly/);
+  assert.match(text, /Guardian binding is ready/);
+  assert.match(text, /tools\\guardian\\guardian-start\.bat/);
 });
 
 test('scheduler DryRun skips git fetch preflight mutation', () => {
