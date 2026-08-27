@@ -100,14 +100,15 @@ export async function buildTranscriptLines(record, { baseUrl, full = false, tran
   return buildSessionTranscriptLines(resolved, transcript.messages ?? [], { full });
 }
 
-function buildSessionTranscriptLines(resolved, messages, { full = false } = {}) {
+function buildSessionTranscriptLines(resolved, messages, { full = false, newestFirst = false } = {}) {
   const lines = [`会话来源: ${resolved.source} | 角色: ${resolved.role} | session: ${resolved.sessionId}`, ''];
   if (messages.length === 0) {
     lines.push('暂无消息。');
     return lines;
   }
-  for (const message of messages) {
-    const created = valueOrDash(message?.createdAt ?? message?.created_at ?? message?.time?.created);
+  const orderedMessages = newestFirst ? [...messages].reverse() : messages;
+  for (const message of orderedMessages) {
+    const created = valueOrDash(message?.createdAt ?? message?.created_at ?? message?.time?.created ?? message?.info?.time?.created);
     const role = valueOrDash(message?.role ?? message?.author ?? message?.info?.role);
     lines.push(`[${role}] ${created}`);
     const parts = Array.isArray(message?.parts)
@@ -150,6 +151,6 @@ export async function buildLiveTranscriptLines(record, { baseUrl, full = false, 
   }
   const transcript = await transcriptFetcher(resolved.sessionId, { baseUrl });
   if (transcript.kind !== 'ok') return [...header, '', ...splitLines(transcript.error)];
-  const body = buildSessionTranscriptLines(resolved, transcript.messages ?? [], { full });
+  const body = buildSessionTranscriptLines(resolved, transcript.messages ?? [], { full, newestFirst: true });
   return [...header, `当前 session: ${resolved.sessionId} | 来源=${resolved.source} | 状态=${resolved.status}`, '', ...body];
 }

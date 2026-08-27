@@ -399,6 +399,56 @@ test('live tab renders selected role transcript and role cycling updates state',
   }
 });
 
+test('live tab shows newest OpenCode messages first with current API metadata', async () => {
+  const repo = tempRepo();
+  const guardianDir = guardianDirFor(repo);
+  try {
+    mkdirSync(guardianDir, { recursive: true });
+    const record = {
+      ...newState(207, '2026-08-20T10:00:00.000Z'),
+      state: STATES.INVESTIGATING,
+      opencode: {
+        schema_version: 1,
+        fixer: null,
+        qa: null,
+        specialists: {
+          'guardian-code': { session_id: 'ses_code', agent: 'guardian-code', last_status: 'ok' },
+        },
+        inflight: null,
+      },
+    };
+    writeFileSync(path.join(guardianDir, '207.json'), `${JSON.stringify(record)}\n`, 'utf8');
+
+    const snapshot = await loadDashboardTuiSnapshot({
+      requestedRepo: repo,
+      bindingFile: path.join('tests', 'guardian', 'does-not-exist.json'),
+      selectedIssue: 207,
+      tab: TUI_TABS.live,
+      baseUrl: 'http://127.0.0.1:4096',
+      liveLines: [],
+      transcriptFetcher: async () => ({
+        kind: 'ok',
+        messages: [
+          {
+            info: { role: 'user', time: { created: 1787802659307 } },
+            parts: [{ type: 'text', text: 'very long issue prompt' }],
+          },
+          {
+            info: { role: 'assistant', time: { created: 1787802820391 } },
+            parts: [{ type: 'text', text: 'latest investigation result' }],
+          },
+        ],
+      }),
+    });
+
+    const text = snapshot.contextLines.join('\n');
+    assert.match(text, /\[assistant\] 1787802820391/);
+    assert(text.indexOf('latest investigation result') < text.indexOf('very long issue prompt'));
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
 test('createInitialUiState defaults to the current filter and t cycles it', () => {
   const ui = createInitialUiState();
   assert.equal(ui.stateFilter, 'current');
