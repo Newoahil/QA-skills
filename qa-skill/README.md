@@ -1,41 +1,31 @@
 # QA Skill 开发文档
 
-> 一个用于 opencode 的、面向"单个 bounded 变更"的证据优先 QA skill。它把标准 QA 流程（STLC 六阶段）沉淀为对 agent 的**方向与边界约束**，而不是逐步 SOP，让 agent 自主决定"具体怎么做"，同时用 opencode 的 agent permission 从机制层焊死只读与防越权。
+> 当前分支聚焦 `qa` 这个 QA 编排者 agent，以及两个直接证据 subagent：`qa-cr` 和 `qa-e2e`。`qa-cr` 是 P0 CR-first 质量闸门；`qa-e2e` 在 CR 之后按需采集真实浏览器/端到端证据。两者都不输出总判定。
 
 ---
 
-## 1. 背景
+## 1. 产品定位
 
-### 1.1 问题来源
+`qa-skill` 是面向单个 bounded requirement、fix、Diff/PR-change 的证据优先 QA prior。它定义 QA verdict 的边界和不变式，而不是固定 SOP：`qa` 先做 minimal intake，代码变更立即进入 CR gate；CR 过或无阻断代码风险后，才规划后续证据；最后由 `qa` 输出唯一 `Overall Status:`。
 
-早期版本的 QA skill 是一套 **SOP（标准作业流程）**：41 个文件、约 3917 行，拆成 `using-qa / qa-triage / qa-plan / qa-execute / qa-conclude / qa-lite` 一条流水线，外加大量 reference、template、JSON planner 校验器（`validate-qa-plan.mjs` 755 行）、memory 匹配工具（`match-memory.mjs` 669 行）。
+当前 agent 分工：
 
-实测暴露出这套 SOP 的三个根本问题：
+- `qa`：QA 编排者 agent。负责 minimal intake、CR-first 调度、后续 evidence planning、复核 raw evidence、汇总残余风险并输出唯一总判定。
+- `qa-cr`：P0 quality-oriented code review evidence subagent。只查 `qa` 分配的 diff/touched files 及直接邻接风险；不修代码、不写测试、不下最终 verdict。
+- `qa-e2e`：hands-on e2e evidence worker。只在 CR 之后、需要真实浏览器/运行中应用/端到端流程时由 `qa` 直接派发；运行现有 UI/e2e 工具链，并优先用受控单命令或 `scripts/e2e-runner.mjs` 做一次有界执行后返回结构化证据。
 
-- **合规率低、声明与产出脱钩**：模型经常跳过被强制要求的表格/gate，或在 self-check 里声称"已评估矩阵"但报告里根本没有对应内容。一轮 5 案实测中，完整版报告的模板合规率只有约 20%（5 份里仅 1 份完全按模板产出）。
-- **结构越完善，探索反而越差**：大量"填表/命名 gate"给了模型一个更容易达成的替代目标（"把表填完"），挤占了真正开放式的"把问题找全"。在最难的 nextauth 案例上，精简版一次就做到了完整版五轮工程改造都没做到的发现。
-- **成本高**：SOP 的格式税（复述已知信息、填固定结构）消耗真实 token 与推理轮次，却不产生新调查。
-
-### 1.2 设计转向
-
-核心结论：**agent 的能力已经足够，问题不在"教它怎么做"，而在"给它方向和边界"。** 于是把 skill 从 SOP 重构为 **QA Prior（QA 先验）**——只定义"一个可信 QA 判定必须建立什么、绝不能越过什么边界、必须在哪里继续探索"，把"具体路径、深度、工具、报告结构"完全交给 agent。
-
-一轮受控 5 案对比（baseline / 旧完整版 / 旧精简版 / 新版）验证了这个方向：新版质量为项目历史最高，全部判定正确且均由亲历证据支撑，而体量只有旧版的约 3.6%。
+fixer、test-author、环境 provisioner 等只可能在 QA verdict 之后作为外部角色处理 FAIL、补测试或搭环境；它们不是 QA 流程本身。
 
 ---
 
-## 2. 目标
+## 2. 核心不变式
 
-在**不牺牲 QA 独立性与证据亲历性**的前提下，用尽量少的规则，让任意开发场景下的 agent 都能跑出一份可信、可交接的 QA 判定。
-
-核心结果：
-
-- **给方向不给步骤**：skill 只约束"什么是好的 QA、必须产出什么、守什么边界"，不规定编号步骤、固定模板、命名 gate。
-- **证据必须亲历**：每一条 PASS/FAIL 都由 agent 自己实际观察到的证据支撑（跑了命令、看到输出、复现了行为），不接受"看起来对"、未跑的测试、计划、或转述别人的结论。
-- **机制级只读**：只读与防越权由 opencode agent permission 焊死，而非靠散文求模型自觉。
-- **可编排、可闭环**：支持被任意开发 agent 调用，产出报告 + 测试用例设计，交回开发 agent 驱动"修复 -> 再验证"闭环；报告收尾自带一句 handoff 提示，使调用方即使未加载 `using-qa.md` 也知下一步。
-- **环境未就绪的交接（Plan B）**：某项因环境未就绪而 BLOCKED 时，QA 产出结构化 `environment-needed` 交接单（缺什么/跑什么/预期/谁能接），由主/开发 agent 在用户授权下搭好环境再回 QA 复验；QA 自身仍只读、不装依赖、不搭环境。
-- **可选跨 run 沉淀**：在项目显式启用（存在 `.qa/`）时，跨多次 QA 积累可复用的检查用例与团队约定；可沉淀"环境配方"供后续复用/CI 对接。
+- **给边界不给固定步骤**：SKILL 是 QA prior，不规定表格、gate、命名阶段或固定执行顺序。
+- **minimal intake**：收到 QA 任务后只确认 bounded target、diff/touched files、oracle/commitments 的最低必要信息。
+- **CR-first**：代码变更必须先过 P0 code-review evidence gate；如果 CR 都过不了，后续 e2e/API/重型 QA 没意义。
+- **证据优先**：PASS/FAIL 必须指向 raw evidence，例如命令、输出、日志、文件行、截图、trace、复现行为或 subagent 返回的证据。
+- **机制级只读**：`qa` 和 `qa-cr` 不改产品文件；`qa-e2e` 也不改产品文件，只可产生 runner/temp artifacts。
+- **唯一总判定**：只有 `qa` 输出 `Overall Status:`；subagent 只输出 `QA_EVIDENCE_RESULT`。
 
 ---
 
@@ -43,232 +33,194 @@
 
 ### 3.1 覆盖范围
 
-- 对**一个 bounded 变更**（一个需求、一处修复、一个 Diff/PR-change）做证据优先 QA。
-- **全项目 QA 模式**（条件加载 `references/full-qa.md`）：对整个项目 / 持续质量门禁 / 发版门禁 / 定期体检做 QA，切分为自然单元后逐单元跑六阶段再收口。
-- 六阶段思考框架：需求分析 -> 风险计划 -> 取证 -> 判定 -> 报告 -> 收尾。
-- 只读取证：跑已有测试；工具缺失时用项目已有 runtime 直接验或写一次性探针（不落仓）。
-- 按风险的可选编排：高风险/多面向变更时并行派发只读 facet 子 agent。
-- 可选跨 run 沉淀（`.qa/`）：客观用例自动沉淀、团队约定人工录入。
-- 三种调用入口：作 subagent 被 task 调用（推荐）、`@qa`、直接 Tab 切换。
+- 对一个 bounded 变更做证据优先 QA。
+- 当前值守闭环能力顺序：`qa -> minimal intake -> CR gate first -> qa-e2e if needed -> qa verdict`。
+- `qa` 可读代码、文档、diff、测试、日志和调用方提供的上下文。
+- `qa-cr` 为代码变更提供 P0 CR-first evidence gate；小 diff 可由 `qa` 内联做 CR-like review，复杂/有风险/上下文多的 diff 派 `qa-cr`。
+- `qa-e2e` 可在 CR 后运行项目已有 e2e/UI 工具链、启动本地 dev/preview server，并优先通过受控单命令或 `scripts/e2e-runner.mjs` 完成 start -> ready -> test -> cleanup 的一次有界执行。默认不安装浏览器/driver assets；缺失时先返回 BLOCKED + 安装建议。
+- 已存在 `.qa/` 时可做可选跨 run QA memory；不存在时保持 report-only，不静默创建。
 
 ### 3.2 不在范围
 
-- **不写产品代码、不写/改仓库测试文件**：QA 只读、只设计与建议用例，实现/落仓/维护由授权的建设者（开发 agent）在 QA 之后完成。
-- **不做发布/上线决定**：QA 只给判定，人决定是否 ship。
-- **不自动修复**：修复由开发 agent 在用户授意下驱动。
-- **不做团队级度量**：不产出覆盖率/缺陷密度仪表盘（那是团队级跨版本 QA 的范畴）。
-- **不主动联网**：默认关闭 webfetch/websearch；仅在环境已有 `gh` CLI / GitHub MCP 时可选读取 issue/PR 上下文。
-- **不主动创建 `.qa/`**：跨 run 沉淀是 opt-in，目录不存在则保持纯 report-only。
+- 不写产品代码，不修改/新增仓库测试、fixture、snapshot、配置或文档。
+- 不做发布/上线决定。
+- 不自动修复，不把 fixer/test-author 纳入 QA 编排。
+- 不主动安装应用依赖，不主动访问网络或生产/外部服务。
+- 不把 e2e 作为默认路径；只有真实 UI/e2e 风险无法被轻量证据覆盖时才使用。
+- 不提供泛化 shard worker；QA 范围/上下文过大时，先由 `qa` 用最小探查/通用代码定位能力缩小范围，或标 evidence-needed/`BLOCKED`。
+- 未来可有 API evidence worker，但当前分支不新增、不允许 dispatch，也不承诺存在。
 
 ---
 
-## 4. 角色与调用场景
+## 4. 角色表
 
-| 角色 | 场景 | 目标 |
+| 角色 | 所属流程 | 目标 |
 |---|---|---|
-| 开发 agent | 本地开发完一个变更，提 PR 前想验证 | 派 QA 拿到判定 + 用例设计，驱动修复闭环 |
-| 人（手动） | 想对某个改动做独立审查 | Tab 切 `qa` 或 `@qa`，拿一份带证据的判定 |
-| QA orchestrator（`qa`） | 被调用后执行 QA | 规划、（按需）派 facet、收口判定、出报告 |
-| QA facet worker（`qa-facet`） | 被 `qa` 派去查某一面向 | 亲历取证，回传带证据的发现，不下总判定 |
-| 建设者（开发 agent） | 拿到 QA 产物后 | 实现测试、修复 FAIL、再验证闭环 |
+| 人/调用方 | QA 入口 | 提供 bounded 目标、需求上下文、已有验证结果或环境限制 |
+| `qa` | QA 主编排 | minimal intake，CR-first 调度，后续 evidence planning，复核 raw evidence，输出唯一 `Overall Status:` |
+| `qa-cr` | QA CR evidence | 对 `qa` 给定的 diff/touched files 做质量导向 CR 取证，返回 `QA_EVIDENCE_RESULT` |
+| `qa-e2e` | QA e2e evidence | 在 CR 后对 `qa` 给定的 UI/e2e flow 运行现有工具链，返回 `QA_EVIDENCE_RESULT` |
+| fixer/test-author/provisioner | QA verdict 后的外部闭环 | 在用户授权下修复、补测试或搭环境；完成后可再次请求 QA 复验 |
 
 ---
 
-## 5. 核心流程
+## 5. 编排机制
 
-### 5.1 六阶段 QA 主流程（思考框架，非流水线）
+### 5.1 `qa` 的 CR-first 顺序
 
-1. **理解改动该做什么（重建 oracle）**：先判断是 bug 修复还是新需求，从主 agent 交接/PRD/PR/issue/commit/已有测试重建"预期行为"这个判 PASS/FAIL 的黄金标准；建"应兑现清单"对抗长上下文遗漏；缺权威需求则推断+标注，不阻断。
-2. **按风险规划验证**：想"这改动怎么坏"，深度随风险；风险启发清单为提示非必填；优先最轻的等价验证。
-3. **取真证据**：实际跑；工具缺失先换路子（已有 runtime/一次性探针）再谈 BLOCKED；应兑现清单逐条核；关键结论贴命令/输出。
-4. **校准判定**：四状态 `PASS / FAIL / BLOCKED / NEEDS_HUMAN_REVIEW` 之一；缺 oracle 按推断置信度决定能否 PASS；一份 QA 恰好一行 `Overall Status:` = 最坏子项。
-5. **出报告**：唯一硬格式是 `Overall Status:` 一行，其余按"建议骨架"自由组织，声明必须有对应证据。
-6. **收尾**：残余风险 + 给人的建议（测试用例草稿、需人工复核项）；有 `.qa/` 才走沉淀。
+- 收到 QA 任务后只做 minimal intake：bounded target、diff/touched files、oracle/commitments、明显风险和预算限制。
+- 对代码变更立即进入 CR gate。
+- 简单小 diff 可由 `qa` inline CR-like read-only review。
+- 复杂、高风险或上下文多的 diff 派 `qa-cr`。
+- 如果 `qa-cr` 返回 `status: FAIL` + `gate: stop_and_fail` 且 raw evidence 可复核，或 `qa` inline CR 发现明确 load-bearing FAIL，`qa` 直接输出 `Overall Status: FAIL` 并停止。
+- CR 通过或没有阻断代码质量风险后，才进行后续 QA evidence planning。
+- 需要真实 UI/e2e evidence 时派 `qa-e2e`。
 
-### 5.2 调用与闭环流程（开发 agent 视角）
+### 5.2 `qa-cr` 的安全定位
 
-1. 开发 agent 派 `qa`（推荐姿势）-> 拿到报告 + 测试用例设计。
-2. 开发 agent **向用户招询一次**：是否执行修复闭环。
-3. 用户确认后：按 QA 用例实现测试、跑、修复 FAIL 项（开发 agent 有写权限）。
-4. **再验证**：修复后再派一次 `qa` 确认 FAIL 转 PASS、无回归；修-验循环最多 1–2 轮，仍不过则交回用户，不无限修。
+`qa-cr` 是值守闭环 QA 内部的 P0 code-review evidence gate。它必须：
 
-### 5.3 编排流程（qa 视角，按风险）
+- 从 `qa` 的 bounded diff/touched-file assignment 工作，不重写 oracle。
+- 先查 assigned diff/touched files，默认只扩到直接调用方/被调用方、直接 contract/type/schema、直接共享状态/cache/data path、直接 test/docs。
+- 重点看 oracle/commitments 是否真实实现，以及回归、边界/错误、状态/并发/cache、API/contract、安全/权限/数据一致性、测试证明力和影响质量的维护性风险。
+- 找到 load-bearing FAIL 可立即返回 `gate: stop_and_fail`。
+- 证据不足时返回 BLOCKED/limits/recommended_next，不运行 shell，不无限探索。
+- 不改代码、不写测试、不做最终 verdict。
 
-- 默认不拆，一个 session 从头到尾。
-- 高风险/多面向时并行派 `qa-facet`；若因 depth 限制派不了，则在本 session 内串行覆盖同样面向（覆盖不丢，仅失去并行）。
-- 收口 = 校验各 facet 的带证据发现 + 逐条核对应兑现清单 + 出唯一一行 `Overall Status:`。
+### 5.3 `qa-e2e` 的安全定位
 
-### 5.4 跨 run 沉淀流程（可选，`.qa/` 存在时）
+`qa-e2e` 是 CR 后的 hands-on 浏览器/e2e 取证 worker。它必须：
 
-1. QA 前读 `.qa/` 复用相关用例/约定。
-2. QA 后沉淀本次所学：客观用例（有证据）自动沉淀；团队约定必须人工录入并标来源。
-3. 考虑代码链路影响到的关联模块，回归其已沉淀用例。
+- 从 `qa` 的 bounded post-CR flow/UI assignment 工作，不扩大成全项目 QA。
+- 使用项目已有 UI/e2e 工具链和本地 dev/preview server。
+- 优先用项目已有单命令或 `scripts/e2e-runner.mjs` 做受控单次执行，避免失控后台编排。
+- 默认不安装 runner browser/driver assets；缺失时返回 BLOCKED，由 `qa`/调用方决定是否另行准备后重试。不可安装/升级应用依赖。
+- 遵守 exit-code truth：非零 e2e exit code 是 failing evidence，除非该命令/spec 在运行前已被 QA scope 排除。
+- 只返回 evidence，不输出 `Overall Status:`。
 
-### 5.5 全项目 QA 流程（可选，条件加载 `references/full-qa.md`）
+### 5.4 范围过大时怎么处理
 
-触发：请求指向整个项目 / 持续质量门禁 / 发版门禁 / 定期项目级体检。普通 bounded QA 不加载此 reference；范围不明确时 agent 先向用户确认是单个改动还是整个项目。
-
-1. **切分**：按项目实际组织（模块/服务/业务域/目录）切成一组可独立验证的单元，切法由 agent 定。切完做完整性检查，确认单元覆盖整个项目，无代码静默落在所有单元之外；有遗漏则补入或明确标"未覆盖"。
-2. **逐单元验**：每个单元当 bounded 跑六阶段。oracle 优先级：`.qa/` 沉淀用例 > 已有测试 > 代码推断；找不到则标"无验证依据"（不退化成 Code Review）。深度随风险（涉钱/权限/数据/核心链路深验，其余轻扫）；发版等重要节点可选全深验。额外识别并验单元间关键集成/接口点，尤其跨服务边界（Feign/HTTP/RPC/MQ）。
-3. **收口 + exit**：出一份全量报告 = 单元状态表 + 高风险/FAIL 详情 + 单元间集成结果 + 一行全量 `Overall Status:`（= 所有单元最坏）。exit 判据：切分完整 + 每单元有明确交代（验了 / 无依据 / BLOCKED / NEEDS_HUMAN_REVIEW / 已标未覆盖），无静默跳过。诚实——全量是"覆盖 + 分级"，不是"穷尽验对"。
-4. **持续门禁增量**（`.qa/` 存在时）：读上次全量结果，这次只深验有新提交的变化单元 + 抽查稳定单元，省成本。
-
-性质：纯行为 QA，不是 Code Review（前置假设代码已过 CR）；撞见明显代码/安全问题顺手报并标注"此为 CR/代码层面发现"，但不以此替代行为证据。环境约束不变：只读、不装依赖、不联网、假设环境已就绪；搭不起动态验证则降级为静态 + 跑已有测试并标注哪些没动态验。
+如果 QA 范围或上下文太大，当前分支不使用泛化 shard worker。`qa` 应先用最小 read-only 探查、搜索、调用链/文件定位、调用方提供的证据，或运行时已有的通用 explore/recon 能力来缩小范围；不要新增 task permission 或依赖不存在的 agent。若仍无法把 required evidence 收敛到可验证范围，报告 evidence-needed、residual risk 或 `BLOCKED`。
 
 ---
 
-## 6. 产品需求
+## 6. 降低“不返回上层”风险的四件事
 
-### 6.1 QA 判定契约
+1. **direct child only**：`qa` 可以派直接子 QA subagent，即使 `qa` 自己是 dev/builder 的 subagent。关键是 `qa-cr` 或 `qa-e2e` 必须直接把 evidence 返回给 `qa`，且它们不能再派 agent。
+2. **bounded assignment**：每个 subagent assignment 必须有 diff/flow、oracle、out-of-scope 和证据目标；不得扩大成开放式全项目 QA。
+3. **budget/stop condition**：每个 assignment 都有预算和停止条件。CR load-bearing FAIL 可短路后续重型证据；证据不足就返回 BLOCKED/evidence-needed。
+4. **structured QA_EVIDENCE_RESULT + timeout/failure fallback**：所有 QA subagent 必须返回 `QA_EVIDENCE_RESULT`。dispatch 不可用、被拒、超时、失败或返回不完整时，`qa` 把对应证据标为 BLOCKED/evidence-needed/environment-needed 或 residual risk，不无限等待，不假 PASS。
 
-- 四状态，恰好一行 `Overall Status:`，等于最坏子项。
-- `PASS` 门槛：每条必需检查有亲历可复核证据、应兑现清单每条兑现、无未决 BLOCKED/NHR。
-- 缺权威 oracle：推断可靠+证据齐可 PASS（须标注"推断"）；连正确标准都推不出/涉业务主观 -> NEEDS_HUMAN_REVIEW。
+标准返回块：
 
-### 6.2 证据要求
-
-- 证据必须亲历，禁止"看起来对/未跑测试/计划/转述结论"。
-- 工具缺失时先换路子（已有 runtime 直接验、一次性探针）再谈 BLOCKED。
-- 探针只读、落临时目录、不进 git。
-
-### 6.3 报告要求
-
-- 唯一硬格式：`Overall Status:` 一行。
-- 其余用"建议骨架"（Scope / Commitments / Findings / Residual risk / Suggestions）自由组织，复杂度按需，禁止为凑格式硬填空标题。
-- 声明与产出对齐：凡"声称做过"的必须指得到证据。
-
-### 6.4 只读与职责边界
-
-- 产品源码/测试/fixture/快照/配置一律只读；唯一例外是 `.qa/` 目录（存在时可写）。
-- 不装依赖、不联网、不碰生产（除非人明确批准）。
-- QA 设计并建议测试用例（本职），但不写测试进仓库（SDET 职责，交建设者）。
-- QA 不做上线决定、不自动修。
-
-### 6.5 跨 run 沉淀要求
-
-- opt-in：`.qa/` 存在即启用，不存在则纯 report-only 且不主动创建；首次可用中性措辞陈述一句"未持久化，建 `.qa/` 可复用"。
-- 两类入口：客观用例自动沉淀；约定用例人工录入 + 标来源。
-- 最低字段：target / scenario / expected / kind(objective|convention) /（约定）source。不定死 schema、不写匹配工具。
-
----
-
-## 7. 验收标准
-
-### 7.1 主流程验收
-
-- 派 `qa` 或切 `qa` 后，能对一个 bounded 变更产出带 `Overall Status:` 的报告。
-- 报告的每条 PASS/FAIL 都有亲历证据（命令/输出/复现）。
-- 工具缺失（如 vitest/pytest 未装）时，能改用已有 runtime 或探针取证，而非直接 BLOCKED。
-- 高复杂度变更能自发派 facet；简单变更不拆。
-- 报告不出现"声称做过但无产出"的脱钩。
-
-### 7.2 调用与闭环验收
-
-- 开发 agent 能用 task 以 `subagent_type: "qa"` 派发 QA。
-- 拿到报告 + 用例设计后，开发 agent 会向用户招询是否执行闭环。
-- 确认后能实现测试、修复、再派 QA 验证，且循环不超过 1–2 轮。
-
-### 7.3 只读机制验收
-
-- QA 运行全程无 edit 产品文件、无 install 依赖记录。
-- 尝试改产品文件被 permission 拒绝；`.qa/` 写入（若存在）被允许。
-
-### 7.4 跨 run 沉淀验收（待专门场景验证）
-
-- 项目建 `.qa/` 后，QA 后能沉淀客观用例；无 `.qa/` 时纯 report-only。
-- 第二次 QA 关联模块时能读到并复用已沉淀用例。
-- 约定用例只在人明确提出后进库。
-
-> 注：跨 run 沉淀能力已实现但尚未做专门的跨 run 场景实测，7.4 为设计验收项。
-
----
-
-## 8. 技术实现
-
-### 8.1 目录结构
-
+```text
+QA_EVIDENCE_RESULT
+agent: qa-cr | qa-e2e
+scope: <bounded diff or flow actually checked>
+status: OK | FAIL | BLOCKED | NEEDS_HUMAN_REVIEW
+gate: continue | stop_and_fail | need_e2e | need_human | blocked
+evidence:
+  - <raw command/output/artifact/file-line/log/observed behavior>
+findings:
+  - <finding tied to evidence, or none>
+limits:
+  - <what was not checked and why>
+recommended_next:
+  - <next evidence/fix/human/environment step, or none>
+confidence: <high|medium|low plus reason>
+END_QA_EVIDENCE_RESULT
 ```
+
+---
+
+## 7. 目录结构
+
+```text
 qa-skill/
-├── SKILL.md                    # 六阶段 QA 先验（唯一主文档）
-├── references/
-│   ├── using-qa.md             # 开发 agent 调用指引 + 修复闭环（条件加载）
-│   ├── full-qa.md              # 全项目 QA 入口层（仅全量/门禁/发版 QA 时加载）
-│   └── qa-memory.md            # 跨 run 沉淀细则（仅 .qa/ 存在时加载）
-└── agents/
-    ├── qa.md                   # QA orchestrator（primary/subagent 皆可，只读焊死）
-    └── qa-facet.md             # 只读 facet 子 agent（隐藏，仅被 qa 程序化调用）
+├── SKILL.md                         # QA prior：边界、不变式、verdict 契约
+├── README.md                        # 当前开发说明
+├── agents/
+│   ├── qa.md                        # QA 编排者 agent
+│   ├── qa-cr.md                     # P0 quality-oriented CR evidence worker
+│   └── qa-e2e.md                    # bounded browser/e2e evidence worker
+├── scripts/
+│   └── e2e-runner.mjs               # 通用 start -> ready -> test 受控执行器
+└── references/
+    └── e2e-adapter.md               # qa 与 qa-e2e 的协作约束
 ```
 
-全局安装位置：
-- skill -> `~/.config/opencode/skills/qa-skill/`
-- agents -> `~/.config/opencode/agents/`
+如果把 `qa-skill` 安装/复制到别处使用，`scripts/e2e-runner.mjs` 也必须一起带上；`qa-e2e` 运行时应从已安装的 `qa-skill` 目录解析 runner 绝对路径，不要假设目标仓库内存在该脚本，也不要复制进目标仓库。
 
-### 8.2 agent 定义要点
+仓库中如存在其他历史 agent/reference 文件，本分支不把它们作为 QA 主路径或推荐产品路径。
 
-**`qa`（orchestrator）**
-- `mode: all`：三入口都开（task 调用 / `@qa` / Tab 切换）；推荐作 subagent 调用以保只读与独立性。
-- `permission.edit`：`"*": deny` + `".qa/**": allow`（产品文件只读，记忆目录可写）。
-- `permission.bash`：`"*": allow`，但黑名单禁 `*install*`、`git push/reset/checkout/clean/commit`。
+---
+
+## 8. Agent 定义要点
+
+### 8.1 `qa`
+
+- `mode: all`：可作为当前会话 agent、`@qa`，或被外层调用方指定运行。
+- `permission.edit`：`"*": deny`，仅 `".qa/**": allow`。
 - `permission.webfetch / websearch`：`deny`。
-- `permission.task`：`"*": deny` + `"qa-facet": allow`（只准派 facet，防越权委托给其他 agent）。
+- 不配置 shell 执行能力；需要动态证据时依赖已有 evidence、单会话可读证据，或直接派 `qa-e2e`。
+- `permission.task`：`"*": deny` + `"qa-cr": allow` + `"qa-e2e": allow`。
+- 对 dispatch unavailable/refused/timeout/incomplete result 必须 fallback 为 BLOCKED/evidence-needed/environment-needed/residual risk。
 
-**`qa-facet`（facet worker）**
-- `mode: subagent` + `hidden: true`（不出现在 @ 菜单，仅被 qa 调用）。
-- `permission.edit: deny`、`task: deny`（只读、不可再委托）。
-- bash 黑名单同 qa。
+### 8.2 `qa-cr`
 
-### 8.3 依赖的 opencode 机制
+- `mode: subagent` + `hidden: true`。
+- `permission.edit: deny`，`task: deny`，web deny。
+- read/grep/glob/codegraph only；不配置 bash。
+- 只做 assigned diff/touched files 及直接邻接的 quality-oriented CR evidence。
+- 必须足够早返回：FAIL 短路，OK 带 limits 返回，不无限探索。
+- 必须返回 `QA_EVIDENCE_RESULT`，不输出 `Overall Status:`。
 
-| 机制 | 用途 | 配置 |
-|---|---|---|
-| agent permission | 机制级只读、防越权委托、`.qa/` 写例外 | `qa.md` / `qa-facet.md` frontmatter |
-| `subagent_depth` | 允许 `开发agent -> qa -> qa-facet` 三层链 | 全局 `opencode.json` 设 `subagent_depth: 2` |
-| Task tool | 开发 agent 派 qa、qa 派 facet | `subagent_type` 参数 |
-| skill 条件加载 | reference 仅在需要时读，普通 QA 零额外成本（含全量模式 `full-qa.md`） | SKILL.md 内链接引用 |
+### 8.3 `qa-e2e`
 
-> `subagent_depth: 2` 是全局配置，会让任意 subagent 多嵌套一层。未设置时 qa 作 subagent 无法派 facet，会自适应降级为串行自查（覆盖不丢）。
+- `mode: subagent` + `hidden: true`。
+- `permission.edit: deny`，`task: deny`，web deny。
+- 可运行本地 e2e/browser 命令和项目已有 dev/preview server。
+- 可安装 runner browser/driver assets；不可安装/升级应用依赖。
+- 禁止 destructive git 操作，如 commit、push、reset、checkout、clean、rebase、merge。
+- 必须返回 `QA_EVIDENCE_RESULT`，不输出 `Overall Status:`。
 
-### 8.4 触发方式
+---
 
-```bash
-# CLI：作 orchestrator agent 运行
-opencode run --agent qa --dir <repo> "<QA 请求 + 需求上下文>"
+## 9. Verdict 契约
 
-# TUI：Tab 切到 qa，或对话中 @qa
+- **`PASS`**：每个必需 commitment 都有可复核证据，且无未决 FAIL/BLOCKED/NHR。
+- **`FAIL`**：证据与 oracle 冲突，或承诺项未兑现。
+- **`BLOCKED`**：必需检查无法得到客观证据，且已穷尽可行替代路径。
+- **`NEEDS_HUMAN_REVIEW`**：已有证据，但正确性取决于业务、安全、设计或主观判断，QA 不能代判。
 
-# 开发 agent 内部：Task 工具
-task(subagent_type: "qa", prompt: "<目标变更 + 预期行为 + repo 路径>")
+每份 QA 报告只能有一行：
+
+```text
+Overall Status: <PASS | FAIL | BLOCKED | NEEDS_HUMAN_REVIEW>
 ```
 
 ---
 
-## 9. 风险与限制
+## 10. 风险与限制
 
 | 风险/限制 | 影响 | 处理 |
 |---|---|---|
-| 需重编译的语言（Java/Maven 等）在只读+禁装依赖下难取动态证据 | 可能退化为静态审查 + 标注残余风险 | skill 已要求先换轻等价验证、如实标注残余风险；这是语言生态固有成本，非缺陷 |
-| `subagent_depth: 2` 是全局配置 | 所有 subagent 都能多嵌套一层 | 按需启用；不启用则 facet 自适应降级为串行 |
-| 与上层 agent 框架（如 oh-my-opencode）潜在冲突 | primary agent 位/权限可能相互影响 | 实测暂不冲突；如冲突可将 qa 改纯 subagent |
-| 默认不联网 | 无法自动读远程 GitHub issue/PR | 主场景（提 PR 前）需求多在本地上下文；如需可用 `gh` CLI / GitHub MCP |
-| 跨 run 沉淀未实测 | 沉淀能力可能有未发现的问题 | 需专门跨 run 场景验证后方可宣称可用 |
-| 全项目 QA 模式未实测 | 全量入口层能力可能有未发现的问题 | 已实现（`full-qa.md`），需专门全量场景验证后方可宣称可用 |
-| 开发 agent 自加载 skill 自查（姿势2） | 丢失只读机制与独立性 | 已在指引中标注为降级用法，不能替代独立 QA |
+| CR 都过不了 | 后续 e2e/API/重型 QA 没意义 | `qa` 复核 CR raw evidence 后直接 `Overall Status: FAIL` |
+| `qa` 自身不能执行 shell | 动态验证能力受限 | 使用已有证据、静态/轻量替代路径；必要时在 CR 后直接派 `qa-e2e` 或标注 residual risk/BLOCKED |
+| subagent 不是 `qa` 的 direct child | evidence 可能无法可靠回到 `qa` | 只派 direct child；`qa-cr`/`qa-e2e` 不再派 agent |
+| QA 范围/上下文太大 | 可能无法充分覆盖 | `qa` 先用最小探查/定位缩小范围；仍不可验证则 evidence-needed/residual risk/BLOCKED |
+| e2e 环境缺 service/secret/seed/browser asset | 无法证明 UI/e2e 行为 | `qa-e2e` 返回 not runnable 证据；`qa` 给 environment-needed handoff |
+| e2e 成本高且易受环境波动影响 | 简单变更可能过度验证 | 只有 CR 后仍有 load-bearing UI/e2e 风险需要时才派发 |
+| 默认不联网 | 无法自动读取远端 issue/PR 或外部服务状态 | 把调用方提供的上下文作为数据；缺关键 oracle 时标注 inferred 或 NHR |
+| 外部修复/补测试不在 QA 流程内 | QA 不直接闭环代码变更 | verdict 后由用户授权的外部角色处理，处理完再请求 QA 复验 |
 
 ---
 
-## 10. 后续方向
+## 11. 验收标准
 
-- **跨 run 沉淀实测**：构造"QA 模块 A -> 沉淀 -> QA 关联模块 B -> 复用"的最小场景，验证读取/复用/关联回归/约定录入闭环。
-- **全项目 QA 模式实测**：构造多模块/多服务项目，验证切分完整性、逐单元判定、单元间集成点（尤其跨服务边界）取证、全量收口 exit 判据，以及 `.qa/` 增量门禁。
-- **更大样本 / 重复跑验证**：当前主流程验证为 n=5 单跑，需更大样本 + 重复跑测方差以支撑更强结论。
-- **简单 case 成本优化**：低复杂度变更成本仍偏高（缺 turn-batching 指令），可评估补一条合并命令的成本指令。
-- **框架兼容**：如需与上层 agent 框架深度共存，评估将 qa 定为纯 subagent 的收益与代价。
-- **远端验证工作流对接**：若团队 QA 依赖远端 dev/CI 跑测试，评估 QA 如何读取/参考远端验证结果。
-
----
-
-## 附：验证记录
-
-- 主流程 5 案验证：见 `../QA-skills/docs/p8-prior-redesign-verify-20260814-results.md`（质量约 59，为项目历史最高，全部判定正确、均有亲历证据，约 1.44x baseline 成本）。
-- 三臂对比（baseline/完整版/精简版）：`../QA-skills/docs/p7-minimal-skill-3arm-20260814-results.md`。
-- 跨 run 沉淀设计记录：`../QA-skills/docs/p9-cross-run-memory-design-20260814.md`。
+- `qa` 能对 bounded 变更输出证据支持的 `Overall Status:`。
+- 代码变更必须 CR-first；复杂/有风险/上下文多的 diff 可派 `qa-cr`。
+- CR load-bearing FAIL 可让 `qa` 直接 FAIL 并停止后续重型 QA。
+- CR 后需要 UI/e2e 证据时，`qa` 可直接派 `qa-e2e`。
+- `qa-cr`、`qa-e2e` 都不输出 `Overall Status:`，都必须返回 `QA_EVIDENCE_RESULT`。
+- README/SKILL/agent 定义不把开发修复闭环、泛化 shard worker 或不存在的 API worker 作为 QA 产品路径。
