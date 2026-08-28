@@ -1,8 +1,10 @@
 # QA Skill 使用文档
 
-一个用于 opencode 的、面向单个 bounded 变更的证据优先 QA skill。它把标准 QA 流程沉淀为对 agent 的方向与边界约束（而非逐步 SOP），并用 opencode 的 agent permission 从机制层焊死只读与防越权。
+一个用于 opencode 日常开发的、面向单个 bounded 变更的证据优先 QA skill。主 agent / 开发 agent 可通过 `using-qa` 调用它，把标准 QA 流程沉淀为对 agent 的方向与边界约束（而非逐步 SOP），并用 opencode 的 agent permission 从机制层焊死只读与防越权。
 
 > 完整的设计与开发文档见仓库 docs/QA-skill开发文档-0813.md。本文只讲怎么用。
+
+> 当前迭代只收敛小任务预算并约束 bounded facet 必须返回；它仍是日常开发 QA / qa-check 风格基线。
 
 ## 它是什么 / 不是什么
 
@@ -55,7 +57,7 @@ opencode run --agent qa --dir <repo> "请为这个改动做 QA。<目标变更 +
 
 推荐让开发 agent 把 QA 作为一环调用（保只读与独立性），流程：
 
-1. 开发 agent 派 qa（task, subagent_type:"qa"）→ 拿到报告 + 测试用例设计。
+1. 开发 agent 派 qa（task, subagent_type:"qa"）-> 拿到报告 + 测试用例设计。
 2. 开发 agent 向你招询一次：是否执行修复闭环。
 3. 你确认后：开发 agent 按 QA 用例实现测试、跑、修复 FAIL 项（它有写权限，QA 没有）。
 4. 修完再派一次 qa 验证 FAIL 转 PASS、无回归；修-验循环最多 1-2 轮，仍不过则交回你，不无限修。
@@ -76,14 +78,25 @@ opencode run --agent qa --dir <repo> "请为这个改动做 QA。<目标变更 +
 5. 出报告：唯一硬格式是 Overall Status 一行，其余自由组织。
 6. 收尾：残余风险 + 给人的建议（测试用例草稿、需人工复核项）。
 
-高风险 / 多面向的变更，qa 会并行派 qa-facet 子 agent 分头取证再收口；简单变更一个 session 直接做完。
+高风险 / 多面向的变更，qa 可并行派 bounded `qa-facet` 子 agent 分头取证再收口；简单变更一个 session 直接做完。
+
+## 日常使用预算：lightweight / budget ladder
+
+QA 默认按风险收敛预算，而不是每次都跑满：
+
+- **Lightweight（小 diff / 低风险默认）**：一个 session 直接完成；不派 facet、不跑全项目、不追求全量覆盖。只做最能证明承诺点的窄验证（例如读 diff + 一个相关测试 / 直接调用 / 一次性探针），报告保持很短。
+- **Standard（普通任务）**：覆盖承诺清单、关键边界和一个相邻回归控制；优先已有的相关测试或轻量 runtime 验证，避免无关扫描。
+- **Deep（高风险 / 多面向）**：才考虑 bounded facet 并行、更重的集成 / 浏览器 / 构建检查；每个加深动作都要对应真实风险。
+
+停止条件：已有足够一手证据支撑 `Overall Status`，或明确记录无法继续的 limits / BLOCKED。不要为追求全量覆盖而无限探索。
 
 ## facet 并行与 subagent_depth
 
-开发Agent → qa → qa-facet 是三层链。opencode 默认 subagent_depth=1，subagent 不能再派 subagent，所以 qa 作 subagent 时默认派不了 facet。
+开发 Agent -> qa -> qa-facet 是三层链。opencode 默认 subagent_depth=1，subagent 不能再派 subagent，所以 qa 作 subagent 时默认派不了 facet。
 
-- 想让 qa 自动并行派 facet：在全局 opencode.json 设 subagent_depth: 2。代价是全局所有 subagent 都能多嵌套一层。
-- 不设（depth 1）：qa 作 subagent 时会自适应降级——在自己 session 内串行覆盖同样的面向（覆盖不丢，只是不并行）。或者你手动 Tab 切 qa 做 primary，那时它是第一层，depth 1 就能并行派 facet。
+- 想让 qa 在确有必要时并行派 facet：在全局 opencode.json 设 `subagent_depth: 2`。风险是这是全局设置，所有 subagent 都能多嵌套一层；只有需要并行 QA facet 时再开启。
+- 不设（depth 1）：qa 作 subagent 时会自适应降级，在自己 session 内串行覆盖值得覆盖的面向，或把无法覆盖的 required facet 标为 `BLOCKED` / limits。或者你手动 Tab 切 qa 做 primary，那时它是第一层，depth 1 就能并行派 facet。
+- 无论 depth 如何，`qa-facet` 都必须 bounded：prompt 明确 facet / scope / oracle / out-of-scope / 预算与停止条件；如果 facet dispatch 不可用、超时或返回不完整，qa 降级串行或在最终报告记录 `BLOCKED` / limits，不无限等待。
 
 ```json
 // ~/.config/opencode/opencode.json
