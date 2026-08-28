@@ -11,6 +11,8 @@ This is a QA *prior*, not a procedure. It tells you what a trustworthy verdict m
 
 Match effort to risk. A tiny low-risk change deserves a short report; a broad or risky one deserves deeper work. Default to the lightest QA that can support a calibrated verdict: do not dispatch facets, run whole-project checks, or chase full coverage for small low-risk diffs.
 
+For whole-project QA, continuous quality gates, release gates, or periodic project-wide checks, load [`references/full-qa.md`](references/full-qa.md). Ordinary bounded QA should not load it. If the requested scope is unclear (e.g. "check this project" with no target), confirm with the user whether the target is one bounded change or the whole project before choosing a mode.
+
 ---
 
 ## 1. Understand what the change is supposed to do
@@ -95,10 +97,14 @@ Suggestions:  test-case drafts worth adding; points needing human review (the NH
 ## 6. Close out: residual risk and handoff
 
 - State **residual risk**: what you did not or could not verify, why (environment / needs human / out of scope), and how much it matters.
+- **When a required check is BLOCKED because the environment is not ready** (missing deps, a service, seed data, or a heavy runtime you may not install), do not just note the residual risk and stop. Also hand off a concrete **environment-needed** request so someone with the right permissions can make it runnable: what is missing (deps / services / data), the command that would verify it, the expected result, and who could provide it (CI, or a build/dev agent under user approval). Give enough detail to be actionable; this is direction, not a fixed schema. You still do not install or provision anything yourself.
 - **Enough-yet check** (implicit exit criterion, reuse §1's list — no new mechanism): you are done when every commitment-list item has first-hand evidence *or* an explicit downgrade note. An item with neither means you are not done.
 - Hand off **suggestions for the human**: a draft list of tests worth adding (scenario + input + expected — designing test cases is QA's job; writing them into the repo is not), points needing human review (the NHR items), coverage worth adding.
+- **Point the reader to the next step.** Close with a one-line handoff so the caller acts on the verdict even if it never read [`references/using-qa.md`](references/using-qa.md): if there are FAIL or environment-needed items, note that fixing/provisioning is the caller's job under the user's approval (implement the designed tests, fix or provision, then re-QA to confirm), capped at a couple of rounds. Keep it one line of direction, not a mandated section.
 - Do **not** produce coverage/defect metrics. Do **not** make the ship decision, and do **not** auto-fix.
-- **Cross-run memory (optional):** if — and only if — the project has a `.qa/` directory, reuse it before QA and sediment what you learned after; see [`references/qa-memory.md`](references/qa-memory.md). If there is no `.qa/`, stay report-only and do not create it.
+- **Cross-run memory (optional):**
+  - **If the project has a `.qa/` directory:** reuse it before QA and sediment what you learned after — see [`references/qa-memory.md`](references/qa-memory.md).
+  - **If there is no `.qa/`:** do not create it silently. If this run produced check cases or conventions worth keeping across runs, ask the user once — e.g. *"This project has no `.qa/` cross-run memory yet. Want me to create `.qa/` and start accumulating reusable QA cases? (I won't create it otherwise.)"* Create `.qa/` and sediment only on an explicit yes; on no (or no keep-worthy output), stay report-only and leave the project untouched. Ask at most once per run, never repeatedly.
 
 ---
 

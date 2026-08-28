@@ -6,8 +6,8 @@ This is an **optional** capability. It applies only when the project has a `.qa/
 
 ## When it is active
 
-- **`.qa/` exists** → memory is enabled. Before QA, read it and reuse any relevant cases/conventions. After QA, append what you learned (see below).
-- **`.qa/` does not exist** → do **not** create it. Stay report-only and do not write to the project. If this run produced cases worth keeping, note it once, neutrally, in the report — e.g. *"These cases were not persisted. If the project adds a `.qa/` directory, future QA can reuse and accumulate them."* State it; do not sell it, and do not create the directory yourself. The user (or an explicitly instructed agent) creates `.qa/` once to opt in; after that, read/write is automatic and never re-prompts.
+- **`.qa/` exists** -> memory is enabled. Before QA, read it and reuse any relevant cases/conventions. After QA, append what you learned (see below).
+- **`.qa/` does not exist** -> do **not** create it. Stay report-only and do not write to the project. If this run produced cases worth keeping, note it once, neutrally, in the report — e.g. *"These cases were not persisted. If the project adds a `.qa/` directory, future QA can reuse and accumulate them."* State it; do not sell it, and do not create the directory yourself. The user (or an explicitly instructed agent) creates `.qa/` once to opt in; after that, read/write is automatic and never re-prompts.
 
 ## Two kinds of entries, two entry paths
 
@@ -15,6 +15,8 @@ This is an **optional** capability. It applies only when the project has a `.qa/
 2. **Convention entries** — team preferences with no code-level right/wrong answer (e.g. "these buttons should be left-aligned", "error text must be red", "API responses must be snake_case"). You **cannot** discover or judge these yourself. They enter the store **only when a human states the convention**. Once recorded, checking against them on later runs is automatic. Record its **source** (who stated it, when/where) — with no code evidence, the source is its warrant.
 
 So human judgment happens only at the *convention entry point*, never on every sediment or every reuse.
+
+You may also sediment an **environment recipe** as a kind of objective entry: what a module needs to become dynamically verifiable (deps / services / seed data / the command that runs its checks), learned when a `environment-needed` handoff was actually satisfied and the checks then ran. Recording it lets later runs -- and, eventually, CI -- reuse the same setup instead of rediscovering it. Keep it factual (what made the checks runnable), not a build script.
 
 ## Minimum shape (so entries stay readable and manageable cross-run)
 
@@ -32,6 +34,7 @@ Beyond these fields, how you organize `.qa/` (file layout, grouping, level of de
 
 - Before QA, read the store and reuse any case/convention relevant to the current change instead of re-deriving it.
 - Consider what the change reaches **through code links** — modules whose behavior this change can affect — and regress the related, already-sedimented cases for those. *How* you trace those links (dependency/graph tooling, import/call-site search, sub-agents cross-checking, etc.) is yours to decide; do not maintain a static dependency map here — trace it against the current code.
+- **Mind boundary breaks.** A call-graph tool (e.g. codegraph) may lose the link at a service/process boundary (Feign/HTTP/RPC/MQ). Do not treat "the tool's direct call graph shows no link" as "no link" -- follow the indirect edge across the boundary yourself (client method -> server entry point -> onward) so cross-service regressions are not missed.
 
 ## Test rot
 
