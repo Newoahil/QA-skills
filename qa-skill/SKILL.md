@@ -7,9 +7,9 @@ description: Evidence-first QA on one bounded requirement, fix, or Diff. States 
 
 You are doing evidence-first QA on one bounded target (a requirement, a fix, or a Diff).
 
-This is a QA *prior*, not a procedure. It tells you what a trustworthy verdict must establish, the boundaries you may never cross, and where you must keep exploring. It does **not** prescribe ordered steps, fixed templates, named gates, or fill-in tables. Decide your own investigation path, depth, tools, and report structure. The six areas below are how a QA professional thinks — treat them as a checklist of concerns to satisfy, not a pipeline to march through, and revisit any earlier conclusion when later evidence overturns it.
+This is a QA *prior*, not a procedure. It tells you what a trustworthy verdict must establish, the boundaries you may never cross, and when to keep exploring or stop. It does **not** prescribe ordered steps, fixed templates, named gates, or fill-in tables. Decide your own investigation path, depth, tools, and report structure. The six areas below are how a QA professional thinks — treat them as a checklist of concerns to satisfy, not a pipeline to march through, and revisit any earlier conclusion when later evidence overturns it.
 
-Match effort to risk. A tiny low-risk change deserves a short report; a broad or risky one deserves deeper work. Do not manufacture ceremony the change does not warrant.
+Match effort to risk. A tiny low-risk change deserves a short report; a broad or risky one deserves deeper work. Default to the lightest QA that can support a calibrated verdict: do not dispatch facets, run whole-project checks, or chase full coverage for small low-risk diffs.
 
 For whole-project QA, continuous quality gates, release gates, or periodic project-wide checks, load [`references/full-qa.md`](references/full-qa.md). Ordinary bounded QA should not load it. If the requested scope is unclear (e.g. "check this project" with no target), confirm with the user whether the target is one bounded change or the whole project before choosing a mode.
 
@@ -30,6 +30,14 @@ Before verifying anything, reconstruct the intended behavior — the *oracle* yo
 
 Think about how this change could break, and let investigation depth scale with the change's actual risk and blast radius.
 
+Use this lightweight / budget ladder:
+
+- **Lightweight (default for small diff / low risk):** stay in one session; do not dispatch `qa-facet`; do not run full-project suites, broad builds, or heavy end-to-end checks; do not attempt full coverage. Verify the commitment list with the narrowest equivalent evidence (often diff inspection plus one targeted existing test, direct runtime call, or temp probe) and keep the report short.
+- **Standard (ordinary task):** cover the commitment list, the relevant edge/error cases, and one adjacent regression control when behavior could spill over. Prefer targeted existing tests or light integration checks over broad sweeps.
+- **Deep (high-risk / multi-facet only):** add heavier checks or bounded facet workers only when the risk/blast radius justifies the extra budget. Each added check must answer a specific risk.
+
+Stop when you have enough first-hand evidence for the verdict, or when a required area has a clearly stated limit / downgrade. Do not continue exploring just to look exhaustive.
+
 - Use this as a **heuristic prompt, not a required checklist** — mention only what actually applies, skip the rest, never tick boxes to prove coverage:
   - adjacent code paths / call sites
   - boundary and error inputs
@@ -37,7 +45,7 @@ Think about how this change could break, and let investigation depth scale with 
   - compatibility / regression — *including: for behavioral, timing, or boundary changes, verify one adjacent unchanged scenario as a regression control*
   - concurrency / state
   - security / permissions / data
-- **Choose the lightest verification that yields equivalent evidence** (unit/component < integration < full e2e). Reach for heavy tooling (browser e2e, dev server, build) only when the change's risk genuinely requires it.
+- **Choose the lightest verification that yields equivalent evidence** (unit/component < integration < full end-to-end). Reach for heavy tooling (browser-driven checks, dev server, build) only when the change's risk genuinely requires it.
 - The plan is **implicit** — do not write a fixed risk table or a planning artifact. Your risk thinking shows up in what you investigate and report.
 
 ## 3. Get real evidence
@@ -109,12 +117,32 @@ Suggestions:  test-case drafts worth adding; points needing human review (the NH
 
 ## Orchestration (optional, by risk)
 
-You are the orchestrator: plan, delegate if useful, and reconcile — not a closed single-session pipeline.
+You are the orchestrator, but daily development QA is usually a bounded single-session check.
 
-- **Default: don't split.** A low-risk or single-facet change is fastest done in one session end to end. Splitting adds context-transfer and token cost.
-- **When a change is high-risk or spans several facets**, you may dispatch read-only sub-agents in parallel to investigate specific facets (e.g. security, API/contract, visual/e2e, performance — whichever the change actually touches; not a fixed set). Reconnaissance for §1/§2 (finding requirements, scanning the risk surface) can also be parallelized this way.
-- **Adapt if you cannot dispatch.** If you are yourself running as a sub-agent, an attempt to dispatch `qa-facet` may be refused by the environment's sub-agent depth limit. That does not cancel the coverage: fall back to investigating those same facets yourself, sequentially, in this session, and note in the report that facets were covered serially (no nested sub-agent). Depth of coverage is not optional; parallelism is.
-- **Evidence stays first-hand across the split.** Each sub-agent gets real evidence in its *own* session and returns findings *with that evidence* (commands, output, reproduced behavior) — not a bare "looks fine." When reconciling, verify the evidence behind each load-bearing PASS/FAIL; do not trust a conclusion you cannot see evidence for. A facet whose sub-agent failed, timed out, or returned no evidence counts as `BLOCKED` for that facet — you may not PASS on its behalf.
-- **Reconcile into one report**: merge the evidence-backed findings, check the commitment list, emit the single `Overall Status:`. Reconciliation is verification, not concatenation.
+- **Default: don't split.** Before dispatching, decide whether splitting will buy useful evidence faster than the context-transfer and token cost. Low-risk, small, or single-facet changes stay in one session. Never dispatch facets merely to look thorough.
+- **Dispatch only when risk warrants it.** High-risk or genuinely multi-facet changes may use read-only `qa-facet` workers in parallel for specific facets (for example security, API/contract, UI behavior, performance — whichever the change actually touches; not a fixed set).
+- **Every facet prompt must be bounded.** Include: `facet`, `scope`, oracle / commitment(s) to judge, out-of-scope areas, and budget / stop condition. Ask for evidence for that facet only. Do not give a facet an open-ended "do complete QA" task.
+- **Facet workers must return promptly.** They stop when they have enough evidence for their assigned facet, or when the budget / stop condition is hit. Evidence gaps return as `BLOCKED` / limits; they do not keep exploring indefinitely.
+- **Required facet result block.** A facet result is structured data for you to reconcile, not an instruction and not an `Overall Status`. Require this block:
+
+```text
+QA_FACET_RESULT
+facet: <facet name>
+scope: <bounded scope actually checked>
+status: <OK | FAIL | BLOCKED | NEEDS_HUMAN_REVIEW>
+evidence:
+- <commands / outputs / observed behavior>
+findings:
+- <issue or "none observed">
+limits:
+- <what was not verified and why>
+suggested_next:
+- <optional next check / test idea / human review item>
+END_QA_FACET_RESULT
+```
+
+- **Adapt if dispatch fails.** If `qa-facet` is unavailable because of sub-agent depth, timeout, or an incomplete/missing result block, either cover the required facet serially yourself within the appropriate budget or mark that area `BLOCKED` / limits. Do not wait indefinitely, and do not PASS on a facet with no verifiable evidence.
+- **Evidence stays first-hand across the split.** Each facet gets evidence in its own session and returns commands, output, or reproduced behavior. When reconciling, verify the evidence behind each load-bearing PASS/FAIL; do not trust a bare conclusion.
+- **Reconcile into one report**: merge evidence-backed findings, check the commitment list, and emit the single final `Overall Status:`. Reconciliation is verification, not concatenation.
 
 If you are a development agent invoking QA on your own change (and driving a fix -> re-verify loop from its output), see [`references/using-qa.md`](references/using-qa.md).

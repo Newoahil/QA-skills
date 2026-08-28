@@ -1,12 +1,12 @@
 # QA Skill
 
-一个用于 opencode 的、证据优先 QA skill。默认面向单个 bounded 变更（一个需求 / 一处修复 / 一个 Diff），并支持全项目 QA 模式（持续质量门禁 / 发版门禁 / 定期项目级体检，条件加载）。它把标准 QA 流程沉淀为对 agent 的方向与边界约束（而非逐步 SOP），并用 opencode 的 agent permission 从机制层焊死只读与防越权。
+一个用于 opencode 的、证据优先 QA skill。默认面向日常开发中的单个 bounded 变更（一个需求 / 一处修复 / 一个 Diff），可被主 agent / 开发 agent 通过 `using-qa` 调用，并支持全项目 QA 模式（持续质量门禁 / 发版门禁 / 定期项目级体检，条件加载）。它把标准 QA 流程沉淀为对 agent 的方向与边界约束（而非逐步 SOP），并用 opencode 的 agent permission 从机制层焊死只读与防越权。
 
-> 本仓库已于 2026-08 从"六组件流水线 SOP"重构为 QA Prior（QA 先验）。早期基于 using-qa / qa-triage / qa-lite / qa-plan / qa-execute / qa-conclude 多文件流水线的实现已整体退役。
+> 本仓库已于 2026-08 从"六组件流水线 SOP"重构为 QA Prior（QA 先验）。早期 qa-triage / qa-lite / qa-plan / qa-execute / qa-conclude 多文件流水线已整体退役；`using-qa` 保留为开发 agent 调用 QA 与修复闭环的指引。
 
 ## 它是什么 / 不是什么
 
-- 是：对一个 bounded 变更（默认）或整个项目（全量模式）做只读的、证据优先的质量验证，产出一份带判定的报告 + 测试用例设计。
+- 是：对日常开发中的一个 bounded 变更（默认）或整个项目（全量模式）做只读的、证据优先的质量验证，产出一份带判定的报告 + 测试用例设计。
 - 不是：测试框架、测试生成器、自动发布系统、Code Review。它不写产品代码、不改仓库测试文件、不做上线决定、不自动修复。全量模式是"覆盖 + 风险分级"，不是"穷尽验对整个项目"。
 
 核心理念：给方向不给步骤。Agent 的能力已经足够，skill 只约束"什么是好的 QA、必须产出什么、守什么边界"，把"具体路径、深度、工具、报告结构"交给 Agent。
@@ -187,18 +187,19 @@ qa 启动 ──[焊死: 只读 / 禁 install / 禁网络]
 ### 流程图 3: 高风险编排 (qa 派 qa-facet)
 
 ```
-qa 在六阶段第 3 步判定: 高风险 / 多面向变更
+qa 在六阶段第 3 步判定: 高风险 / 多面向变更, 且拆分值得其成本
   │
   ├── subagent_depth 足够 ──► 并行派 qa-facet 各查一面向
+  │        (每个 prompt 明确 facet/scope/oracle/out-of-scope/budget/stop)
   │        ┌─ qa-facet #1 (如 security)  ──[焊死: 只读, 不可再委托]─┐
   │        ├─ qa-facet #2 (如 API 契约)                             │ 各自独立 session
-  │        └─ qa-facet #3 (如 e2e/性能)                             │ 回传带证据发现
+  │        └─ qa-facet #3 (如 e2e/性能)                             │ 回传 QA_FACET_RESULT
   │                                                                  ▼
   │        qa 收口: 校验每个 facet 的证据 -> 合并 -> 一行 Overall Status:
-  │        (facet 无证据 = 该 facet BLOCKED, 不替它 PASS)
+  │        (facet 无证据/超时/返回不完整 = 串行补验或该 facet BLOCKED/limits, 不替它 PASS)
   │
   └── depth 不够 (qa 本身已是子 agent) ──► {降级}: qa 在本 session 串行覆盖同样面向
-           (覆盖不丢, 仅失去并行; 报告注明串行)
+           (若仍无法覆盖, 报告标 BLOCKED/limits; 不无限等待)
 ```
 
 ### 流程图 4: 全项目 QA (持续门禁 / 发版 / 定期体检)
@@ -259,8 +260,8 @@ QA 自身的只读边界是机制焊死的 (可信); 闭环、环境搭建、轮
 - **六阶段思考框架**：需求分析 -> 风险计划 -> 取证 -> 判定 -> 报告 -> 收尾（是概念框架，不是流水线）。
 - **证据必须亲历**：每条 PASS/FAIL 由 agent 实际观察到的证据支撑；工具缺失时用项目已有 runtime 直接验或写一次性探针，而非直接 BLOCKED。
 - **四状态判定**：PASS / FAIL / BLOCKED / NEEDS_HUMAN_REVIEW，一份 QA 恰好一行 `Overall Status:`。
-- **机制级只读**：产品文件 `edit: deny`，防越权委托由 permission 焊死，而非靠散文自觉。
-- **按风险编排**：高风险 / 多面向变更时并行派 `qa-facet` 子 agent 取证再收口；简单变更一个 session 直接做完。
+- **轻量预算阶梯**：小 diff / 低风险默认快速 QA，不派 facet、不跑全项目、不追求全量覆盖，报告保持短；普通任务适中；只有高风险 / 多面向才加深。
+- **按风险编排**：默认不拆；只有值得并行时才派 bounded `qa-facet` 取证再收口。facet 找到足够证据就返回，证据不足也返回 limits / BLOCKED，不开放式探索。
 - **可编排闭环**：开发 agent 派 QA -> 拿报告 + 用例设计 -> 招询 -> 修复 -> 再验证（1-2 轮上限）。报告收尾自带一句修复 handoff 提示，使调用方即使没加载 `using-qa.md` 也能得知下一步。
 - **环境未就绪的交接（Plan B）**：某项因环境未就绪（缺依赖/服务/数据）而 BLOCKED 时，QA 不止步于标注残余风险，还产出一张结构化 `environment-needed` 交接单（缺什么/跑什么/预期/谁能接）；由主/开发 agent 在用户授权下搭好环境，再回 QA 复验。QA 自身仍只读、不装依赖、不搭环境。
 - **可选跨 run 沉淀**：项目建 `.qa/` 后跨多次 QA 积累可复用的检查用例与团队约定（opt-in，不主动创建）；可沉淀"环境配方"供后续复用/CI 对接。
@@ -272,5 +273,6 @@ QA 自身的只读边界是机制焊死的 (可信); 闭环、环境搭建、轮
 - **回归复测（P12）**：当前版本再跑同 5 案 pre-fix 快照，5/5 判定正确、全部亲历证据、只读机制守住、确认加载新版；相较 baseline 未退化，fake-timers 一案更强。
 - **假阳性控制**：构造 nextauth post-fix（已修复）快照复验，正确判 PASS —— 说明 skill 能区分"有 bug"与"已修复"，非反射式判 FAIL。（n=1 单个控制。）
 - **调用闭环 / 报告 handoff / 环境交接（Plan B）/ 跨 run 沉淀 / 全项目 QA 模式**：均已实现并落地，尚未做专门的端到端 / 全量 / 跨 run 场景实测。
+- **当前迭代定位**：收敛小任务预算 + 约束 facet 必须有界返回；保持日常开发 QA / qa-check 风格基线。
 
 - 回归 harness 见 [`tests/regression/`](tests/regression/)。详见 `docs/p8-prior-redesign-verify-20260814-results.md`、`docs/p12-v3-regression-results.md` 等。

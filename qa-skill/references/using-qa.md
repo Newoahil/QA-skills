@@ -12,9 +12,24 @@ A development agent can load this skill and run the QA stages itself. This is a 
 
 Both are available (`qa` is `mode: all`). There is no mode to toggle — you simply choose which path by whether you dispatch `qa` or load the skill yourself. For anything you intend to ship, use path 1.
 
+## Daily-development budget expectations
+
+QA should scale to the change, not to a theoretical full test plan:
+
+- Small diff / low-risk change: expect a lightweight report, no facet dispatch, no full-project suite, and only the narrow checks needed to support the verdict.
+- Ordinary task: expect targeted checks for the commitment list, key edges, and relevant adjacent regression.
+- High-risk / multi-facet change: only then expect deeper checks or bounded `qa-facet` workers.
+
+When invoking `qa`, include the intended behavior, diff / files changed, known risks, and any checks already run. That lets QA stay bounded and avoids wasting budget rediscovering context.
+
 ## Facets and sub-agent depth
 
-When `qa` runs and the change is high-risk or multi-facet, it may dispatch parallel read-only `qa-facet` sub-agents. For `qa` (running as a sub-agent) to dispatch `qa-facet` (a further level), the environment needs `subagent_depth: 2` in `opencode.json`. If it is not set, `qa` falls back to covering those facets serially in its own session — coverage is preserved, only parallelism is lost. Setting `subagent_depth: 2` is a global config change (it lets any sub-agent nest one more level); enable it if you want QA's parallel facets.
+When `qa` runs and the change is high-risk or multi-facet, it may dispatch parallel read-only `qa-facet` sub-agents. For `qa` (running as a sub-agent) to dispatch `qa-facet` (a further level), the environment needs `subagent_depth: 2` in `opencode.json`.
+
+- Benefit: depth 2 can help parallelize truly independent facets.
+- Risk: it is a global config change; any sub-agent can nest one more level, so do not enable it just for small QA tasks.
+- Bound: even with depth 2, each `qa-facet` must receive a prompt with facet / scope / oracle / out-of-scope / budget and stop condition, and must return `QA_FACET_RESULT` promptly.
+- Fallback: if facet dispatch is unavailable, times out, or returns incomplete / evidence-free output, `qa` should cover the required facet serially if still within budget, or mark that area `BLOCKED` / limits. The development agent should not retry forever or wait indefinitely.
 
 ## Closing the loop (fix -> re-verify)
 
@@ -24,7 +39,7 @@ QA is read-only and stops at a verdict + test-case designs. It does **not** impl
 2. **Ask the user once** whether to run the fix loop — surface what QA found (the FAIL items) and that QA designed test cases, and ask if you should implement the tests and fix. Do not start fixing unprompted.
 3. On approval: implement the designed test cases, run them, and fix the FAIL items. (You have write permission for this; QA did not.) **If QA was BLOCKED because the environment was not ready**, this is also where you provision what QA's `environment-needed` handoff asked for -- install deps, start the service, seed data (you have the install/write permission QA lacks) -- so the previously unverifiable checks become runnable.
 4. **Re-verify:** after fixing, dispatch `qa` again to confirm the FAIL items are now PASS and no regression was introduced.
-   - Cap the fix->re-verify loop at **1–2 rounds**. If it still does not reach PASS, stop and hand the situation back to the user — do not loop indefinitely.
+   - Cap the fix -> re-verify loop at **1–2 rounds**. If it still does not reach PASS, stop and hand the situation back to the user — do not loop indefinitely.
    - The single ask in step 2 covers the whole loop including re-verification; do not re-prompt each round.
 
 This makes the loop a real cycle — QA -> fix -> re-QA — that ends either at PASS or back in the user's hands, never in an endless fix spiral.

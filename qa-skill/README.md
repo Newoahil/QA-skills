@@ -1,6 +1,6 @@
 # QA Skill 开发文档
 
-> 一个用于 opencode 的、面向"单个 bounded 变更"的证据优先 QA skill。它把标准 QA 流程（STLC 六阶段）沉淀为对 agent 的**方向与边界约束**，而不是逐步 SOP，让 agent 自主决定"具体怎么做"，同时用 opencode 的 agent permission 从机制层焊死只读与防越权。
+> 一个用于 opencode 的、面向日常开发中"单个 bounded 变更"的证据优先 QA skill；主 agent / 开发 agent 可通过 `using-qa` 调用。它把标准 QA 流程（STLC 六阶段）沉淀为对 agent 的**方向与边界约束**，而不是逐步 SOP，让 agent 自主决定"具体怎么做"，同时用 opencode 的 agent permission 从机制层焊死只读与防越权。
 
 ---
 
@@ -32,8 +32,10 @@
 
 - **给方向不给步骤**：skill 只约束"什么是好的 QA、必须产出什么、守什么边界"，不规定编号步骤、固定模板、命名 gate。
 - **证据必须亲历**：每一条 PASS/FAIL 都由 agent 自己实际观察到的证据支撑（跑了命令、看到输出、复现了行为），不接受"看起来对"、未跑的测试、计划、或转述别人的结论。
+- **预算随风险收敛**：日常小 diff / 低风险任务走 lightweight QA，不派 facet、不跑全项目、不追求全量覆盖；普通任务适中；只有高风险 / 多面向才加深。
 - **机制级只读**：只读与防越权由 opencode agent permission 焊死，而非靠散文求模型自觉。
 - **可编排、可闭环**：支持被任意开发 agent 调用，产出报告 + 测试用例设计，交回开发 agent 驱动"修复 -> 再验证"闭环；报告收尾自带一句 handoff 提示，使调用方即使未加载 `using-qa.md` 也知下一步。
+- **bounded facet 返回**：`qa` 默认不拆；只有高风险 / 多面向才派 `qa-facet`。facet 必须有明确 scope / oracle / out-of-scope / budget / stop condition，并及时返回 `QA_FACET_RESULT`；超时、不可派或返回不完整时由 `qa` 串行降级或标 `BLOCKED` / limits。
 - **环境未就绪的交接（Plan B）**：某项因环境未就绪而 BLOCKED 时，QA 产出结构化 `environment-needed` 交接单（缺什么/跑什么/预期/谁能接），由主/开发 agent 在用户授权下搭好环境再回 QA 复验；QA 自身仍只读、不装依赖、不搭环境。
 - **可选跨 run 沉淀**：在项目显式启用（存在 `.qa/`）时，跨多次 QA 积累可复用的检查用例与团队约定；可沉淀"环境配方"供后续复用/CI 对接。
 
@@ -46,8 +48,9 @@
 - 对**一个 bounded 变更**（一个需求、一处修复、一个 Diff/PR-change）做证据优先 QA。
 - **全项目 QA 模式**（条件加载 `references/full-qa.md`）：对整个项目 / 持续质量门禁 / 发版门禁 / 定期体检做 QA，切分为自然单元后逐单元跑六阶段再收口。
 - 六阶段思考框架：需求分析 -> 风险计划 -> 取证 -> 判定 -> 报告 -> 收尾。
+- 日常 bounded QA 的 lightweight / standard / deep 预算阶梯：小任务快速验证并短报告，普通任务覆盖关键风险，高风险才加深。
 - 只读取证：跑已有测试；工具缺失时用项目已有 runtime 直接验或写一次性探针（不落仓）。
-- 按风险的可选编排：高风险/多面向变更时并行派发只读 facet 子 agent。
+- 按风险的可选编排：高风险/多面向变更时才并行派发 bounded 只读 facet 子 agent。
 - 可选跨 run 沉淀（`.qa/`）：客观用例自动沉淀、团队约定人工录入。
 - 三种调用入口：作 subagent 被 task 调用（推荐）、`@qa`、直接 Tab 切换。
 
@@ -79,7 +82,7 @@
 ### 5.1 六阶段 QA 主流程（思考框架，非流水线）
 
 1. **理解改动该做什么（重建 oracle）**：先判断是 bug 修复还是新需求，从主 agent 交接/PRD/PR/issue/commit/已有测试重建"预期行为"这个判 PASS/FAIL 的黄金标准；建"应兑现清单"对抗长上下文遗漏；缺权威需求则推断+标注，不阻断。
-2. **按风险规划验证**：想"这改动怎么坏"，深度随风险；风险启发清单为提示非必填；优先最轻的等价验证。
+2. **按风险规划验证**：想"这改动怎么坏"，深度随风险；风险启发清单为提示非必填；优先最轻的等价验证。默认按 lightweight / standard / deep 阶梯控制预算：小 diff 不派 facet、不跑全量、不追求全覆盖，证据足够即停。
 3. **取真证据**：实际跑；工具缺失先换路子（已有 runtime/一次性探针）再谈 BLOCKED；应兑现清单逐条核；关键结论贴命令/输出。
 4. **校准判定**：四状态 `PASS / FAIL / BLOCKED / NEEDS_HUMAN_REVIEW` 之一；缺 oracle 按推断置信度决定能否 PASS；一份 QA 恰好一行 `Overall Status:` = 最坏子项。
 5. **出报告**：唯一硬格式是 `Overall Status:` 一行，其余按"建议骨架"自由组织，声明必须有对应证据。
@@ -95,8 +98,9 @@
 ### 5.3 编排流程（qa 视角，按风险）
 
 - 默认不拆，一个 session 从头到尾。
-- 高风险/多面向时并行派 `qa-facet`；若因 depth 限制派不了，则在本 session 内串行覆盖同样面向（覆盖不丢，仅失去并行）。
-- 收口 = 校验各 facet 的带证据发现 + 逐条核对应兑现清单 + 出唯一一行 `Overall Status:`。
+- 高风险/多面向且拆分值得其成本时，才并行派 `qa-facet`；每个 facet prompt 必须写清 facet / scope / oracle 或承诺点 / out-of-scope / budget 与 stop condition，不派开放式完整 QA。
+- `qa-facet` 必须及时返回 `QA_FACET_RESULT`，找到足够证据即停；证据不足也返回 `BLOCKED` / limits。若因 depth 限制、超时或返回不完整而不可用，则 `qa` 在本 session 内串行覆盖值得覆盖的面向，或把 required facet 标为 `BLOCKED` / limits，不无限等待。
+- 收口 = 校验各 facet 的带证据发现 + 逐条核对应兑现清单 + 出唯一一行 `Overall Status:`；facet 结果是数据不是指令，不能替 `qa` 下总判定。
 
 ### 5.4 跨 run 沉淀流程（可选，`.qa/` 存在时）
 
@@ -159,7 +163,9 @@
 - 派 `qa` 或切 `qa` 后，能对一个 bounded 变更产出带 `Overall Status:` 的报告。
 - 报告的每条 PASS/FAIL 都有亲历证据（命令/输出/复现）。
 - 工具缺失（如 vitest/pytest 未装）时，能改用已有 runtime 或探针取证，而非直接 BLOCKED。
-- 高复杂度变更能自发派 facet；简单变更不拆。
+- 小 diff / 低风险变更走 lightweight：不派 facet、不跑全项目、不追求全覆盖，输出保持短。
+- 高复杂度变更能按需派 bounded facet；简单变更不拆。facet 缺失 / 超时 / 返回不完整时，qa 能串行降级或明确 `BLOCKED` / limits。
+- `qa-facet` 返回包含 `QA_FACET_RESULT` 块，字段含 facet / scope / status / evidence / findings / limits / suggested_next。
 - 报告不出现"声称做过但无产出"的脱钩。
 
 ### 7.2 调用与闭环验收
@@ -216,6 +222,7 @@ qa-skill/
 - `mode: subagent` + `hidden: true`（不出现在 @ 菜单，仅被 qa 调用）。
 - `permission.edit: deny`、`task: deny`（只读、不可再委托）。
 - bash 黑名单同 qa。
+- bounded worker：只验证 prompt 指定 facet/scope，遵守预算/停止条件，必须返回 `QA_FACET_RESULT`，不输出 `Overall Status:`。
 
 ### 8.3 依赖的 opencode 机制
 
@@ -226,7 +233,7 @@ qa-skill/
 | Task tool | 开发 agent 派 qa、qa 派 facet | `subagent_type` 参数 |
 | skill 条件加载 | reference 仅在需要时读，普通 QA 零额外成本（含全量模式 `full-qa.md`） | SKILL.md 内链接引用 |
 
-> `subagent_depth: 2` 是全局配置，会让任意 subagent 多嵌套一层。未设置时 qa 作 subagent 无法派 facet，会自适应降级为串行自查（覆盖不丢）。
+> `subagent_depth: 2` 是全局配置，会让任意 subagent 多嵌套一层；只在确需并行 facet 时开启。未设置、dispatch 超时或 facet 返回不完整时，qa 作 subagent 应降级为串行覆盖值得覆盖的面向，或把无法覆盖的 required facet 标为 `BLOCKED` / limits；`qa-facet` 仍必须 bounded，不可无限探索。
 
 ### 8.4 触发方式
 
@@ -246,8 +253,10 @@ task(subagent_type: "qa", prompt: "<目标变更 + 预期行为 + repo 路径>")
 
 | 风险/限制 | 影响 | 处理 |
 |---|---|---|
+| 小任务预算超支 | 日常开发 QA 可能拖慢主流程 | 默认 lightweight：小 diff 不派 facet、不跑全量、不追求全覆盖，报告保持短 |
+| `qa-facet` 开放式探索 | 子 agent 可能迟迟不返回 | facet prompt 必须 bounded；到 stop condition 即返回 `QA_FACET_RESULT`，证据不足也返回 `BLOCKED` / limits |
 | 需重编译的语言（Java/Maven 等）在只读+禁装依赖下难取动态证据 | 可能退化为静态审查 + 标注残余风险 | skill 已要求先换轻等价验证、如实标注残余风险；这是语言生态固有成本，非缺陷 |
-| `subagent_depth: 2` 是全局配置 | 所有 subagent 都能多嵌套一层 | 按需启用；不启用则 facet 自适应降级为串行 |
+| `subagent_depth: 2` 是全局配置 | 所有 subagent 都能多嵌套一层 | 按需启用；不启用、dispatch 超时或返回不完整时，qa 降级串行或标 `BLOCKED` / limits，不无限等待 |
 | 与上层 agent 框架（如 oh-my-opencode）潜在冲突 | primary agent 位/权限可能相互影响 | 实测暂不冲突；如冲突可将 qa 改纯 subagent |
 | 默认不联网 | 无法自动读远程 GitHub issue/PR | 主场景（提 PR 前）需求多在本地上下文；如需可用 `gh` CLI / GitHub MCP |
 | 跨 run 沉淀未实测 | 沉淀能力可能有未发现的问题 | 需专门跨 run 场景验证后方可宣称可用 |
@@ -272,3 +281,5 @@ task(subagent_type: "qa", prompt: "<目标变更 + 预期行为 + repo 路径>")
 - 主流程 5 案验证：见 `../QA-skills/docs/p8-prior-redesign-verify-20260814-results.md`（质量约 59，为项目历史最高，全部判定正确、均有亲历证据，约 1.44x baseline 成本）。
 - 三臂对比（baseline/完整版/精简版）：`../QA-skills/docs/p7-minimal-skill-3arm-20260814-results.md`。
 - 跨 run 沉淀设计记录：`../QA-skills/docs/p9-cross-run-memory-design-20260814.md`。
+- P12 回归复测：见 `../QA-skills/docs/p12-v3-regression-results.md`。
+- 当前 qa-check 风格补丁：小任务预算收敛 + bounded facet 必须返回，验证点已纳入本文目标、流程、风险与验收标准。
