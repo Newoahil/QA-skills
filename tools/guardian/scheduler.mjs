@@ -239,6 +239,8 @@ async function tick(repoDir, config, logger, signal = null, runtime = createSche
     ? config.fallback_models.filter((m) => typeof m === 'string' && m)
     : [];
   const supervisor = opencodeClient ? createSupervisorExecutor({ repoDir }) : null;
+  let qaAudit = null;
+  let finalizationStarted = false;
   try {
   const decisions = await Promise.all(issues.map(async ({ taskRef, claim_source }) => ({
     ...(await pollTaskObservation({ repoDir, guardianDir, taskSource, taskRef, leaseMs, now, trustedAuthors })),
@@ -603,7 +605,7 @@ async function tick(repoDir, config, logger, signal = null, runtime = createSche
     }
 
     if (!isActiveRun()) return;
-    const qaAudit = auditQaVerdict(qaVerdict, {
+    qaAudit = auditQaVerdict(qaVerdict, {
       issue,
       branch: readState(guardianDir, issue)?.branch ?? undefined,
     });
@@ -614,6 +616,7 @@ async function tick(repoDir, config, logger, signal = null, runtime = createSche
 
     if (opencodeClient && investigationMode === 'enforced' && qaAudit.approved) {
       if (!isActiveRun()) return;
+      finalizationStarted = true;
       finalization = await supervisor.finalizeFix({ issue, plan: readArtifactPair(guardianDir, issue).plan, mode: investigationMode, isActiveRun });
       if (!isActiveRun()) return;
       const finalizedState = readState(guardianDir, issue) ?? afterRun;
@@ -707,7 +710,8 @@ async function tick(repoDir, config, logger, signal = null, runtime = createSche
     if (isActiveRun()) {
       const guardianDir = guardianDirOf(repoDir);
       const current = readState(guardianDir, issue) ?? { issue };
-      writeState(guardianDir, buildRunFailureState({ currentState: current, error }), { touch: false });
+      const phase = finalizationStarted && !finalization && qaAudit?.approved ? 'finalization' : 'run-error';
+      writeState(guardianDir, buildRunFailureState({ currentState: current, error, phase }), { touch: false });
     }
     logger.error('run.error', { issue, error_message: errorMessage });
     throw error;

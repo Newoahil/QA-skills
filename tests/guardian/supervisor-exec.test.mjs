@@ -212,6 +212,51 @@ test('pre-QA evidence omits Guardian-owned status and diff noise', () => {
   assert.equal(result.status, 0);
 });
 
+test('pre-QA evidence omits .omo runtime status and diff noise', () => {
+  const run = (file, argv) => {
+    if (argv[0] === 'status' && argv[1] === '--short') {
+      return {
+        status: 0,
+        stdout: ' M .omo/run-continuation/325.json\n M src/fix.mjs\n?? .omo/run-continuation/\n',
+        stderr: '',
+      };
+    }
+    if (argv[0] === 'diff') {
+      return {
+        status: 0,
+        stdout: [
+          'diff --git a/.omo/run-continuation/325.json b/.omo/run-continuation/325.json',
+          '--- a/.omo/run-continuation/325.json',
+          '+++ b/.omo/run-continuation/325.json',
+          '@@ -1 +1 @@',
+          '-old',
+          '+new',
+          'diff --git a/src/fix.mjs b/src/fix.mjs',
+          '--- a/src/fix.mjs',
+          '+++ b/src/fix.mjs',
+          '@@ -1 +1 @@',
+          '-bug',
+          '+fix',
+          '',
+        ].join('\n'),
+        stderr: '',
+      };
+    }
+    if (file === 'node') return { status: 0, stdout: 'focused pass\n', stderr: '' };
+    return { status: 0, stdout: '', stderr: '' };
+  };
+  const executor = createSupervisorExecutor({ repoDir: 'D:/repo', run });
+
+  const result = executor.preQaEvidence({
+    plan: { affected_files: ['src/fix.mjs'], test_commands: [['node', '--test', 'tests/guardian/fix.test.mjs']] },
+  });
+
+  assert.doesNotMatch(result.evidence.status_diff.stdout, /\.omo\/run-continuation/);
+  assert.match(result.evidence.status_diff.stdout, / M src\/fix\.mjs/);
+  assert.match(result.evidence.status_diff.stdout, /diff --git a\/src\/fix\.mjs b\/src\/fix\.mjs/);
+  assert.equal(result.status, 0);
+});
+
 test('finalization reuses the same validated test command plan after QA evidence', async () => {
   const calls = [];
   const run = (file, argv, options) => {
@@ -409,6 +454,32 @@ test('clean scoped finalization stages only the affected files and excludes code
   assert.equal(result.branch, 'fix/issue-211');
   assert.deepEqual(calls.find((call) => call.argv[0] === 'add').argv, ['add', '--', 'tools/guardian/foo.mjs']);
   assert.equal(calls.some((call) => call.argv.includes('.codegraph')), false);
+});
+
+test('finalization ignores .omo runtime changes during isolation and does not stage them', async () => {
+  const calls = [];
+  const run = (file, argv, options) => {
+    calls.push({ file, argv, options });
+    if (argv[0] === 'branch') return { status: 0, stdout: 'fix/issue-325\n', stderr: '' };
+    if (argv[0] === 'status' && argv[1] === '--porcelain=v1') {
+      return { status: 0, stdout: ' M src/fix.mjs\0 M .omo/run-continuation/325.json\0?? .omo/run-continuation/new.json\0', stderr: '' };
+    }
+    if (argv[0] === 'diff' && argv[1] === '--cached') return { status: 0, stdout: 'src/fix.mjs\n', stderr: '' };
+    if (argv[0] === 'diff') return { status: 0, stdout: 'diff\n', stderr: '' };
+    if (argv[0] === 'add') return { status: 0, stdout: '', stderr: '' };
+    return { status: 0, stdout: '', stderr: '' };
+  };
+  const executor = createSupervisorExecutor({ repoDir: 'D:/repo', run });
+
+  const result = await executor.finalizeFix({
+    issue: 325,
+    mode: 'enforced',
+    plan: { affected_files: ['src/fix.mjs'], test_commands: [['node', '--test', 'tests/guardian/foo.test.mjs']] },
+  });
+
+  assert.equal(result.branch, 'fix/issue-325');
+  assert.deepEqual(calls.find((call) => call.argv[0] === 'add').argv, ['add', '--', 'src/fix.mjs']);
+  assert.equal(calls.some((call) => call.argv.some((arg) => typeof arg === 'string' && arg.includes('.omo/run-continuation'))), false);
 });
 
 test('finalization normalizes annotated affected file paths before isolation and staging', async () => {

@@ -266,6 +266,12 @@ test('scheduler launcher preserves an active control branch on reuse', () => {
   assert.match(text, /Ensure-QaSnapshot \$TargetRepo \$qaRuntimeRepo \$base/);
 });
 
+test('scheduler launcher ignores .omo runtime churn in dirty-control checks and QA snapshot tracked diff copy', () => {
+  const text = readFileSync('tools/guardian/scheduler-start.ps1', 'utf8');
+  assert.match(text, /\.omo\/run-continuation\//);
+  assert.match(text, /:\(exclude\)\.omo\/\*/);
+});
+
 test('scheduler launcher ignores Guardian-owned state when checking control worktree cleanliness', () => {
   const text = readFileSync('tools/guardian/scheduler-start.ps1', 'utf8');
   const controlFunction = text.slice(text.indexOf('function Ensure-ControlWorktree'), text.indexOf('function Ensure-QaSnapshot'));

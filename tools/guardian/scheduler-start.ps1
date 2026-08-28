@@ -403,7 +403,7 @@ function Ensure-ControlWorktree([string]$SourceRepo, [string]$Destination, [stri
     # The remaining two status columns still occupy the first two characters.
     $line.Substring(2).Trim().Replace('\', '/')
   })
-  $unownedDirty = @($dirtyPaths | Where-Object { $_ -and -not ($_ -match '^(\.qa/guardian/|\.sybermem/|\.scheduler\.lock$|watch-state\.json$)') })
+  $unownedDirty = @($dirtyPaths | Where-Object { $_ -and -not ($_ -match '^(\.qa/guardian/|\.sybermem/|\.omo/|\.scheduler\.lock$|watch-state\.json$)') })
   if ($unownedDirty.Count -eq 0) { return }
 
   $branch = (Invoke-Git $Destination @('branch', '--show-current')).output
@@ -714,7 +714,7 @@ if ($InitOnly) {
 }
 
 $base = [string]$cfg.base_branch
-$guardianFacts = Assert-CleanAndUpstreamLatest $GuardianRepo 'Guardian tools repo' -SkipFetch:$DryRun -IgnorePathPrefixes @('.sybermem/')
+$guardianFacts = Assert-CleanAndUpstreamLatest $GuardianRepo 'Guardian tools repo' -SkipFetch:$DryRun -IgnorePathPrefixes @('.sybermem/', '.omo/run-continuation/')
 $bindingMode = [string]$binding.mode
 
 $targetFacts = $null
@@ -739,6 +739,7 @@ if ($bindingMode -eq 'strict') {
           'diff', 'HEAD', '--binary', "--output=$patchFile", '--',
           ':(exclude).qa/guardian/*',
           ':(exclude).sybermem/*',
+          ':(exclude).omo/*',
           ':(exclude).scheduler.lock',
           ':(exclude)watch-state.json'
         )

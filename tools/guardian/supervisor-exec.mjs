@@ -17,6 +17,7 @@ export const SUPERVISOR_OPERATIONS = Object.freeze([
 const GUARDIAN_ALLOWLIST = Object.freeze([
   /^\.qa\/guardian\//,
   /^\.sybermem\//,
+  /^\.omo\//,
   /^\.scheduler\.lock$/,
   /^watch-state\.json$/,
 ]);

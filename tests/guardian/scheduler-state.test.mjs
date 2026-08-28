@@ -181,6 +181,27 @@ test('post-QA supervisor stage failure becomes explicit handback instead of a fr
   assert.match(record.run_error_message, /pathspec/);
 });
 
+test('post-QA finalization isolation failure is classified as supervisor-stage-failed for commandless recovery', () => {
+  const currentState = {
+    ...newState(325),
+    state: STATES.INVESTIGATING,
+    branch: 'fix/issue-325',
+    qa_verdict_status: 'PASS',
+    qa_verdict_hash: 'sha256:qa',
+    last_phase: 'qa-passed',
+  };
+  const error = new Error('worktree has changes outside plan scope: .omo/run-continuation/325.json');
+
+  const record = buildRunFailureState({ currentState, error, phase: 'finalization' });
+
+  assert.equal(record.state, STATES.HANDED_BACK);
+  assert.equal(record.handed_back_reason, 'supervisor-run-failed');
+  assert.equal(record.last_error_class, 'supervisor-stage-failed');
+  assert.equal(record.last_phase, 'finalization');
+  assert.equal(record.qa_verdict_status, 'PASS');
+  assert.match(record.run_error_message, /outside plan scope/);
+});
+
 test('gate waiting SKIP does not rewrite authoritative state', () => {
   const original = { ...newState(9), state: STATES.GATE_2_WAIT, last_phase: 'pr-opened' };
   const store = fakeStore({ 9: original });

@@ -55,11 +55,12 @@ export function buildInvestigationFailureState({ failureState, investigationStat
 
 export function buildRunFailureState({ currentState, error, phase = 'run-error' }) {
   const message = error instanceof Error ? error.message : 'run failed';
+  const isPostQaFinalizationFailure = phase === 'finalization' && currentState?.qa_verdict_status === 'PASS';
   return {
     ...currentState,
     state: STATES.HANDED_BACK,
     handed_back_reason: 'supervisor-run-failed',
-    last_error_class: message.startsWith('stage failed:') ? 'supervisor-stage-failed' : 'supervisor-run-failed',
+    last_error_class: isPostQaFinalizationFailure || message.startsWith('stage failed:') ? 'supervisor-stage-failed' : 'supervisor-run-failed',
     last_phase: phase,
     run_error_message: message,
   };
