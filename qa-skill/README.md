@@ -1,18 +1,18 @@
 # QA Skill 开发文档
 
-> 当前分支聚焦 `qa` 这个 QA 编排者 agent，以及两个直接证据 subagent：`qa-cr` 和 `qa-e2e`。`qa-cr` 是 P0 CR-first 质量闸门；`qa-e2e` 在 CR 之后按需采集真实浏览器/端到端证据。两者都不输出总判定。
+> 当前分支聚焦 `qa` 这个 QA 编排者 agent，以及两个直接证据 subagent：`qa-cr` 和 `qa-e2e`。`qa-cr` 是 P0 CR-first 质量闸门；`qa-e2e` 通常在 CR 之后采集真实浏览器/端到端证据，但在建立 oracle/trigger/scope 必需时也可先做有界 runtime diagnostic。两者都不输出总判定。
 
 ---
 
 ## 1. 产品定位
 
-`qa-skill` 是面向单个 bounded requirement、fix、Diff/PR-change 的证据优先 QA prior。它定义 QA verdict 的边界和不变式，而不是固定 SOP：`qa` 先做 minimal intake，代码变更立即进入 CR gate；CR 过或无阻断代码风险后，才规划后续证据；最后由 `qa` 输出唯一 `Overall Status:`。
+`qa-skill` 是面向单个 bounded requirement、fix、Diff/PR-change 的证据优先 QA prior。它定义 QA verdict 的边界和不变式，而不是固定 SOP：`qa` 先做 focused start，代码变更默认进入 CR gate；只有在建立 oracle/trigger/scope 的最小证据确实缺失时，才允许先做 bounded diagnostic；CR 过或无阻断代码风险后，再规划后续证据；最后由 `qa` 输出唯一 `Overall Status:`。
 
 当前 agent 分工：
 
-- `qa`：QA 编排者 agent。负责 minimal intake、CR-first 调度、后续 evidence planning、复核 raw evidence、汇总残余风险并输出唯一总判定。
-- `qa-cr`：P0 quality-oriented code review evidence subagent。只查 `qa` 分配的 diff/touched files 及直接邻接风险；不修代码、不写测试、不下最终 verdict。
-- `qa-e2e`：hands-on e2e evidence worker。只在 CR 之后、需要真实浏览器/运行中应用/端到端流程时由 `qa` 直接派发；运行现有 UI/e2e 工具链，并优先用受控单命令或 `scripts/e2e-runner.mjs` 做一次有界执行后返回结构化证据。
+- `qa`：QA 编排者 agent。负责 focused start、CR-first 调度、后续 evidence planning、复核 raw evidence、汇总残余风险并输出唯一总判定。
+- `qa-cr`：P0 quality-oriented code review evidence subagent。以 `qa` 分配的 diff/touched files 为起点，沿有证据支持的相关关系扩展；不修代码、不写测试、不下最终 verdict。
+- `qa-e2e`：hands-on e2e evidence worker。通常在 CR 之后、需要真实浏览器/运行中应用/端到端流程时由 `qa` 直接派发；若 `qa` 无法在没有运行时观察时可靠建立 oracle/trigger/scope，也可先派发做 bounded diagnostic。它运行现有 UI/e2e 工具链，并优先用受控单命令或 `scripts/e2e-runner.mjs` 做一次有界执行后返回结构化证据。
 
 fixer、test-author、环境 provisioner 等只可能在 QA verdict 之后作为外部角色处理 FAIL、补测试或搭环境；它们不是 QA 流程本身。
 
@@ -21,7 +21,7 @@ fixer、test-author、环境 provisioner 等只可能在 QA verdict 之后作为
 ## 2. 核心不变式
 
 - **给边界不给固定步骤**：SKILL 是 QA prior，不规定表格、gate、命名阶段或固定执行顺序。
-- **minimal intake**：收到 QA 任务后只确认 bounded target、diff/touched files、oracle/commitments 的最低必要信息。
+- **focused start**：收到 QA 任务后只确认 bounded target、调用方已提供的 change identity、oracle/commitments 的最低必要信息。
 - **CR-first**：代码变更必须先过 P0 code-review evidence gate；如果 CR 都过不了，后续 e2e/API/重型 QA 没意义。
 - **证据优先**：PASS/FAIL 必须指向 raw evidence，例如命令、输出、日志、文件行、截图、trace、复现行为或 subagent 返回的证据。
 - **机制级只读**：`qa` 和 `qa-cr` 不改产品文件；`qa-e2e` 也不改产品文件，只可产生 runner/temp artifacts。
@@ -34,10 +34,10 @@ fixer、test-author、环境 provisioner 等只可能在 QA verdict 之后作为
 ### 3.1 覆盖范围
 
 - 对一个 bounded 变更做证据优先 QA。
-- 当前值守闭环能力顺序：`qa -> minimal intake -> CR gate first -> qa-e2e if needed -> qa verdict`。
+- 当前值守闭环能力顺序：`qa -> focused start -> CR gate first -> qa-e2e if needed -> qa verdict`。
 - `qa` 可读代码、文档、diff、测试、日志和调用方提供的上下文。
 - `qa-cr` 为代码变更提供 P0 CR-first evidence gate；小 diff 可由 `qa` 内联做 CR-like review，复杂/有风险/上下文多的 diff 派 `qa-cr`。
-- `qa-e2e` 可在 CR 后运行项目已有 e2e/UI 工具链、启动本地 dev/preview server，并优先通过受控单命令或 `scripts/e2e-runner.mjs` 完成 start -> ready -> test -> cleanup 的一次有界执行。默认不安装浏览器/driver assets；缺失时先返回 BLOCKED + 安装建议。
+- `qa-e2e` 可在 CR 后运行项目已有 e2e/UI 工具链、启动本地 dev/preview server，并优先通过受控单命令或 `scripts/e2e-runner.mjs` 完成 start -> ready -> test -> cleanup 的一次有界执行。建立 oracle/trigger/scope 必需时，也可先做 bounded diagnostic。默认不安装浏览器/driver assets；缺失时先返回 BLOCKED + 安装建议。
 - 已存在 `.qa/` 时可做可选跨 run QA memory；不存在时保持 report-only，不静默创建。
 
 ### 3.2 不在范围
@@ -57,7 +57,7 @@ fixer、test-author、环境 provisioner 等只可能在 QA verdict 之后作为
 | 角色 | 所属流程 | 目标 |
 |---|---|---|
 | 人/调用方 | QA 入口 | 提供 bounded 目标、需求上下文、已有验证结果或环境限制 |
-| `qa` | QA 主编排 | minimal intake，CR-first 调度，后续 evidence planning，复核 raw evidence，输出唯一 `Overall Status:` |
+| `qa` | QA 主编排 | focused start，CR-first 调度，后续 evidence planning，复核 raw evidence，输出唯一 `Overall Status:` |
 | `qa-cr` | QA CR evidence | 对 `qa` 给定的 diff/touched files 做质量导向 CR 取证，返回 `QA_EVIDENCE_RESULT` |
 | `qa-e2e` | QA e2e evidence | 在 CR 后对 `qa` 给定的 UI/e2e flow 运行现有工具链，返回 `QA_EVIDENCE_RESULT` |
 | fixer/test-author/provisioner | QA verdict 后的外部闭环 | 在用户授权下修复、补测试或搭环境；完成后可再次请求 QA 复验 |
@@ -68,10 +68,11 @@ fixer、test-author、环境 provisioner 等只可能在 QA verdict 之后作为
 
 ### 5.1 `qa` 的 CR-first 顺序
 
-- 收到 QA 任务后只做 minimal intake：bounded target、diff/touched files、oracle/commitments、明显风险和预算限制。
+- 收到 QA 任务后只做 focused start：bounded target、调用方已提供的 HEAD/ref/diff/touched files、oracle/commitments、明显风险和预算限制。
 - 对代码变更立即进入 CR gate。
 - 简单小 diff 可由 `qa` inline CR-like read-only review。
 - 复杂、高风险或上下文多的 diff 派 `qa-cr`。
+- 若没有运行时观察就无法可靠建立 oracle、trigger 或 bounded CR scope，可先取得最小必要 diagnostic evidence；它不替代 mandatory CR，也不免除后续 required verification。
 - 如果 `qa-cr` 返回 `status: FAIL` + `gate: stop_and_fail` 且 raw evidence 可复核，或 `qa` inline CR 发现明确 load-bearing FAIL，`qa` 直接输出 `Overall Status: FAIL` 并停止。
 - CR 通过或没有阻断代码质量风险后，才进行后续 QA evidence planning。
 - 需要真实 UI/e2e evidence 时派 `qa-e2e`。
@@ -81,7 +82,7 @@ fixer、test-author、环境 provisioner 等只可能在 QA verdict 之后作为
 `qa-cr` 是值守闭环 QA 内部的 P0 code-review evidence gate。它必须：
 
 - 从 `qa` 的 bounded diff/touched-file assignment 工作，不重写 oracle。
-- 先查 assigned diff/touched files，默认只扩到直接调用方/被调用方、直接 contract/type/schema、直接共享状态/cache/data path、直接 test/docs。
+- 先查 assigned diff/touched files，并沿有证据支持的相关关系逐步扩展；不设固定 hop 上限，也不做无依据全项目扫描。
 - 重点看 oracle/commitments 是否真实实现，以及回归、边界/错误、状态/并发/cache、API/contract、安全/权限/数据一致性、测试证明力和影响质量的维护性风险。
 - 找到 load-bearing FAIL 可立即返回 `gate: stop_and_fail`。
 - 证据不足时返回 BLOCKED/limits/recommended_next，不运行 shell，不无限探索。
@@ -89,9 +90,10 @@ fixer、test-author、环境 provisioner 等只可能在 QA verdict 之后作为
 
 ### 5.3 `qa-e2e` 的安全定位
 
-`qa-e2e` 是 CR 后的 hands-on 浏览器/e2e 取证 worker。它必须：
+`qa-e2e` 是通常在 CR 后使用的 hands-on 浏览器/e2e 取证 worker。它必须：
 
-- 从 `qa` 的 bounded post-CR flow/UI assignment 工作，不扩大成全项目 QA。
+- 从 `qa` 的 bounded assignment 工作，不扩大成全项目 QA。
+- 当 `qa` 无法在没有运行时观察时建立 oracle/trigger/scope 时，也可接受 bounded diagnostic assignment；但 diagnostic 不替代 CR。
 - 使用项目已有 UI/e2e 工具链和本地 dev/preview server。
 - 优先用项目已有单命令或 `scripts/e2e-runner.mjs` 做受控单次执行，避免失控后台编排。
 - 默认不安装 runner browser/driver assets；缺失时返回 BLOCKED，由 `qa`/调用方决定是否另行准备后重试。不可安装/升级应用依赖。
@@ -100,7 +102,7 @@ fixer、test-author、环境 provisioner 等只可能在 QA verdict 之后作为
 
 ### 5.4 范围过大时怎么处理
 
-如果 QA 范围或上下文太大，当前分支不使用泛化 shard worker。`qa` 应先用最小 read-only 探查、搜索、调用链/文件定位、调用方提供的证据，或运行时已有的通用 explore/recon 能力来缩小范围；不要新增 task permission 或依赖不存在的 agent。若仍无法把 required evidence 收敛到可验证范围，报告 evidence-needed、residual risk 或 `BLOCKED`。
+如果 QA 范围或上下文太大，当前分支不使用泛化 shard worker。`qa` 应先用最小 read-only 探查、搜索、传播关系定位、调用方提供的证据，或运行时已有的通用 explore/recon 能力来缩小范围；可以持续沿相关关系深挖，但不要新增 task permission，也不要做无依据全项目扫描。若仍无法把 required evidence 收敛到可验证范围，报告 evidence-needed、residual risk 或 `BLOCKED`。
 
 ---
 

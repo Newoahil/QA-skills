@@ -1,18 +1,23 @@
 # End-to-end evidence via `qa-e2e`
 
-This is an **optional post-CR** QA capability for conclusions that need a real browser and a running
-app. Most changes should be checked by the CR gate and lighter evidence first. Use e2e when the
-remaining risk is a user-facing flow, rendering/interaction regression, browser/server integration, or
-another behavior that mocks or direct calls cannot prove.
+This is an **optional** QA capability for conclusions that need a real browser and a running app. Most
+changes should still be checked by the CR gate and lighter evidence first. Use e2e when the remaining
+risk is a user-facing flow, rendering/interaction regression, browser/server integration, another
+behavior that mocks or direct calls cannot prove, or when `qa` needs a minimal runtime observation to
+establish the oracle, trigger, or bounded CR scope.
 
 `qa` is the QA orchestrator agent: it chooses what matters and decides the verdict. `qa-e2e` is the
 hands: it runs the browser/end-to-end checks and returns evidence. Do not split this into one agent per
 tool. The useful unit is the QA capability, not the vendor name.
 
-`qa-e2e` works from a bounded post-CR assignment from `qa`: target flow/UI behavior, expected
+`qa-e2e` works from a bounded assignment from `qa`: target flow/UI behavior, expected
 behavior/oracle, app URL/build context if known, useful evidence to collect, and explicit out-of-scope
 areas. The method is flexible; the mission is not. If the assignment is too vague to test, `qa-e2e`
 reports the missing scope/oracle instead of inventing one.
+
+The normal path is still CR-first. A bounded pre-CR diagnostic run is allowed only when runtime
+observation is the minimum evidence needed to establish what CR should judge. That diagnostic run does
+not replace CR and does not waive later required verification.
 
 ## Controlled runner for start -> ready -> test
 
@@ -109,7 +114,8 @@ END_E2E_RUN_RESULT
 
 These are hints, not routes. The agent should infer the right path from config files, package scripts,
 CI commands, dependencies, imports, and the QA scope. Existing project conventions win over generic
-defaults.
+defaults. Examples such as shared selectors, login screens, stateful buttons, network setup, or config
+fanout are only examples of how relevance can appear; they are not a mandatory checklist.
 
 ## Invariants that matter
 
