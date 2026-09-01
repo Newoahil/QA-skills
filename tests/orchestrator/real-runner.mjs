@@ -299,6 +299,9 @@ export function assertScenarioSpecifics(result) {
   if (scenario.expectedTaskTypes) {
     assertExactTaskTypes(result.events, scenario.expectedTaskTypes);
   }
+  for (const taskType of scenario.requiredTaskTypes ?? []) {
+    assert.equal(result.taskTypes.includes(taskType), true, `missing required task type ${taskType}; temp root: ${result.fixtureData.tempRoot}`);
+  }
   if (scenario.assertPortBindableAfterRun) {
     assertPortBindable(result.fixtureData.port);
   }
