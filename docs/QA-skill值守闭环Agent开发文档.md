@@ -10,9 +10,9 @@
 
 QA Skill 值守闭环 Agent 是一个面向 coding agent 值守修复、bounded PR / issue 复验和后续自动化 QA gate 的独立质量裁判能力层。这里的 `qa` 表示 QA 编排者 agent，`QA` 表示质量保障流程。它的目标不是参与开发实现，而是在 bounded 变更上提供证据优先、默认 CR-first、只读、可收口的 QA verdict。
 
-这一分支的建设重点，是把原有 `qa-skill` 从日常开发 QA 路径中拆出来，先沉淀成适合值守闭环场景的独立能力：上游可以是值守调用方、Supervisor、Guardian 或未来其他自动化 runtime，但当前能力层本身不依赖这些 runtime 已经接线完成。与旧的日常 qa-check / main 路线不同，本分支不使用 `using-qa` 作为产品主入口，而是围绕 `qa`、`qa-cr`、`qa-e2e` 三个角色建立可裁判、可短路、可追溯的闭环。
+这一分支的建设重点，是把原有 `qa-skill` 从日常开发 QA 路径中拆出来，先沉淀成适合值守闭环场景的独立能力：上游未来可以是值守调用方、Supervisor、Guardian 或其他自动化 runtime，但当前项目焦点仍是 `qa`、`qa-cr`、`qa-e2e` 这组三角色本身的 agent capability。与旧的日常 qa-check / main 路线不同，本分支不使用 `using-qa` 作为产品主入口，而是围绕 `qa`、`qa-cr`、`qa-e2e` 三个角色建立可裁判、可短路、可追溯的闭环。
 
-当前独立迭代分支为 `qa-orchestrator`，基于 `feature/guardian-extensibility` 演进；本阶段先稳定独立 agent capability layer，Guardian / Supervisor runtime 的正式接线留到后续迭代。
+`qa-orchestrator` 分支建立了这套能力基线，后续继续基于 `feature/guardian-extensibility` 演进；当前阶段先稳定独立 agent capability layer，Guardian / Supervisor runtime 的正式接线是未来消费方集成议题，不是当前 agent-capability 验证的下一目标。
 
 当前主流程是：
 
@@ -74,7 +74,7 @@ QA Skill 当前按已安装 skill + agents 分发，而不是把 runner 或脚�
 
 - **结构化 subagent 证据回收**：当前 QA subagent 统一返回 `QA_EVIDENCE_RESULT`，它是数据不是指令；`qa` 必须复核 raw evidence 后才可用于 PASS / FAIL 推理。
 
-- **post-CR e2e 证据能力**：`qa-e2e` 只在真实 UI / browser / end-to-end 行为成为 load-bearing 问题时启用，并适配项目已有 Cypress、Playwright、Selenium、WebdriverIO 或自定义脚本，而不是按工具拆 agent。
+- **post-CR e2e 证据能力**：`qa-e2e` 只在真实 UI / browser / end-to-end 行为成为 load-bearing 问题时启用，并适配项目已有 Cypress、Playwright、Selenium、WebdriverIO 或自定义脚本，而不是按工具拆 agent。真实 Playwright 基准消费的是调用方提供的现有模块路径，不为目标项目新增或安装 Playwright 应用依赖；模块不存在时应及早失败并如实回报环境缺口。
 
 - **受控 e2e-runner 执行**：`e2e-runner` 提供一次有界的 `start -> ready -> test -> cleanup` 执行模型，约束总预算、端口占用、进程回收和机器证据输出。
 
@@ -102,7 +102,7 @@ QA Skill 当前按已安装 skill + agents 分发，而不是把 runner 或脚�
 
 - 环境阻塞 handoff：当服务、浏览器资产、secret、seed data 不满足时，输出明确的 environment-needed 信息供外部角色处理。
 
-- 未来定时任务 / CI gate：当前能力层已经具备结构化输出、bounded runtime 和短路机制，后续可被 Supervisor、Guardian 或 CI runtime 接线复用。
+- 未来定时任务 / CI gate：当前能力层已经具备结构化输出、bounded runtime 和短路机制，后续可被 Supervisor、Guardian 或 CI runtime 接线复用，但这不等于当前项目已把完整生产 watchdog loop 纳入范围。
 
 ## 通用能力
 
@@ -176,40 +176,34 @@ QA Skill 当前仍是一个独立 agent capability layer，而不是已经完整
 
 - `e2e-runner` 自动化测试当前是 10 / 10 通过。
 
-- orchestrator 默认 suite 当前是 20 项，其中 15 项通过、5 项为 opt-in skip。
+- orchestrator 默认 suite 当前是 22 项，其中 17 项通过、5 项为 real-model opt-in skip、0 项失败。
 
-- 真实 paired eval 当前记录为：5 项通过、1 项 optional animation skip、0 项失败；已覆盖 `login-style-clean`、shared-selector、neutral helper multi-hop、linked worktree 等动态 scope / 边界场景。
+- 真实 paired eval 当前记录为：在 `QA_ORCHESTRATOR_REAL_RUNS=1` 且 `QA_E2E_PLAYWRIGHT_MODULE` 指向现有 Playwright `index.mjs` 时，6 项通过、0 项跳过、0 项失败；覆盖五个场景加 contract，并包含 `login-style-clean`、shared-selector、neutral helper multi-hop、linked worktree、`animation-duplicate-submit` 等动态 scope / 边界场景。
 
 - P0 PASS / FAIL / missing-oracle 行为已有覆盖；Playwright 路径已有通过记录并带 cleanup；Radix pre 记录为 3 / 4 FAIL，修复后复跑为 6 / 6 PASS，且都保留 cleanup 约束。
 
-- animation real browser fixture 仍是 optional / 未完成最终验收，不应把它表述成当前默认 acceptance gate。
+- `animation-duplicate-submit` 已是经过验证的真实 Playwright 场景，不再是 optional / unverified fixture。该场景可以稳定观察到 `duplicate-submit=2`、runner/test exit 1、cleanup=true、端口释放、以及 `qa-e2e` diagnostic -> mandatory `qa-cr` 的精确 task 顺序；最终 FAIL 会把 runtime 与 code-review 两类证据一起收口。
 
 ## 后续迭代方向
 
-QA Skill 后续应继续保持当前“已安装 skill + agents” 的分发方式，并优先补齐值守闭环真正依赖的 runtime 接线、协议稳定化和安装稳定性，而不是重新回到松散的开发期 QA 路径。
+QA Skill 后续应继续保持当前“已安装 skill + agents” 的分发方式，并继续围绕 agent capability 本身补齐协议稳定化、异常 fail-closed 和安装稳定性，而不是把 Guardian / Supervisor 接线或完整 watchdog loop 当作下一阶段验证目标，更不是重新回到松散的开发期 QA 路径。
 
 优先迭代方向：
 
-1. **Guardian / Supervisor 接线**
-   把当前独立 capability layer 接到真实值守 runtime，明确谁负责触发、预算传递、结果消费和失败回退。
+1. **QA_EVIDENCE_RESULT / runtime schema 校验与 fail-closed**
+   为 subagent 返回块和 runtime 结果补齐更稳定的 schema 校验，并覆盖 empty、refused、timed-out、malformed child result 等场景的 fail-closed 行为。
 
-2. **qa-api**
-   增加与 `qa-cr`、`qa-e2e` 并列的 API / integration evidence worker，但仍保持 verdict ownership 在 `qa`。
+2. **更广的 CR 风险 benchmark / 真实样本**
+   为 `qa-cr` 继续补充更系统的真实 diff / issue 样本，验证 stop_and_fail、动态扩展和证据质量在更复杂风险面上的表现。
 
-3. **optional animation real browser fixture**
-   把 animation 场景补成可选但可稳定复跑的真实浏览器 fixture，补齐其 oracle、cleanup 和 acceptance 边界。
+3. **e2e 异常终止与 cleanup 鲁棒性**
+   继续提升 abnormal termination、孤儿进程识别、cleanup 失败和端口释放异常场景下的恢复与证据表达能力。
 
-4. **runtime token / time budget 与 schema validator**
-   为 assignment、runner config、subagent 返回块补充更稳定的预算约束和 schema 校验。
-
-5. **Windows hard-kill watchdog / 进程回收增强**
-   提升外部中断、孤儿进程识别和异常 cleanup 场景下的恢复能力。
-
-6. **QA_EVIDENCE_RESULT 机器校验**
-   对 subagent 的结构化返回做稳定校验，降低“有格式但无证据”的假收口风险。
-
-7. **文档与安装稳定化**
+4. **文档与安装稳定化**
    继续收敛安装路径、skill 复制说明、runner 调用方式和对外文档，减少误装与误用。
 
-8. **能力成熟后下放到 qa-check / main**
+5. **按需再评估 qa-api**
+   只有当现有 `qa`、`qa-cr`、`qa-e2e` 组合已不足以覆盖真实 API / integration 证据需求时，再考虑增加 `qa-api`，同时仍保持 verdict ownership 在 `qa`。
+
+6. **能力成熟后下放到 qa-check / main**
    当前先在值守闭环场景把边界跑稳，后续再考虑把成熟能力迁回日常开发 QA 路线。

@@ -100,23 +100,155 @@ export const pairedScenarios = [
   {
     id: 'animation-duplicate-submit',
     expectedStatus: 'FAIL',
-    expectedTaskTypes: ['qa-e2e'],
-    optionalEnv: 'QA_ORCHESTRATOR_E2E_FIXTURE',
-    skipReason: 'set QA_ORCHESTRATOR_E2E_FIXTURE=1 to run the local runtime diagnostic/e2e fixture; this scenario still needs a real browser/runtime before it is an acceptance gate',
+    expectedTaskTypes: ['qa-e2e', 'qa-cr'],
+    requiresPlaywrightModule: true,
+    requireE2ERunnerResult: true,
+    expectedRunnerStatus: 'FAIL',
+    expectedRunnerTestExitCode: 1,
+    expectedRunnerCleanupOk: true,
+    assertPortBindableAfterRun: true,
+    requiredEvidenceTerms: ['E2E_RUN_RESULT', 'duplicate-submit=2', 'src/ui/submit.mjs', 'testExitCode', 'browser=chromium'],
+    requiredAnyEvidenceTerms: ['in-flight', 'lock', 'duplicate submit', 'second immediate submission', 'playwright-module=', 'url=http://127.0.0.1:'],
+    forbiddenToolInputTerms: ['.git', 'gitdir'],
     promptSummary: 'runtime-only duplicate submit requires bounded diagnostic before mandatory CR',
-    makeFixture: () => ({
+    makeFixture: ({ port, playwrightModulePath }) => ({
       baselineFiles: {
-        'src/ui/submit.ts': 'export function submitState() { return { locked: true, animationMs: 120 }; }\n',
-        'tests/runtime/duplicate-submit-note.txt': 'runtime diagnostic fixture required\n',
+        'server.mjs': `
+          import http from 'node:http';
+
+          const port = Number(process.env.E2E_PORT || ${port});
+          let submitCount = 0;
+
+          const indexHtml = await import('node:fs/promises').then((fs) => fs.readFile(new URL('./index.html', import.meta.url), 'utf8'));
+          const submitModule = await import('node:fs/promises').then((fs) => fs.readFile(new URL('./src/ui/submit.mjs', import.meta.url), 'utf8'));
+
+          const server = http.createServer(async (req, res) => {
+            const url = new URL(req.url, 'http://127.0.0.1');
+            if (req.method === 'GET' && url.pathname === '/healthz') {
+              res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' });
+              res.end('ok');
+              return;
+            }
+            if (req.method === 'GET' && url.pathname === '/') {
+              res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+              res.end(indexHtml);
+              return;
+            }
+            if (req.method === 'GET' && url.pathname === '/src/ui/submit.mjs') {
+              res.writeHead(200, { 'content-type': 'text/javascript; charset=utf-8' });
+              res.end(submitModule);
+              return;
+            }
+            if (req.method === 'POST' && url.pathname === '/submit') {
+              await new Promise((resolve) => setTimeout(resolve, 35));
+              submitCount += 1;
+              res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
+              res.end(JSON.stringify({ ok: true, submitCount }));
+              return;
+            }
+            if (req.method === 'GET' && url.pathname === '/count') {
+              res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
+              res.end(JSON.stringify({ submitCount }));
+              return;
+            }
+            res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });
+            res.end('not found');
+          });
+
+          server.listen(port, '127.0.0.1');
+        `,
+        'index.html': `
+          <!doctype html>
+          <html>
+            <head>
+              <meta charset="utf-8" />
+              <title>Duplicate Submit Fixture</title>
+              <style>
+                button { animation: pulse 120ms ease-in-out; }
+                @keyframes pulse { from { transform: scale(1); } to { transform: scale(1.02); } }
+              </style>
+            </head>
+            <body>
+              <button id="submit-button">Submit</button>
+              <script type="module">
+                import { createSubmitController } from '/src/ui/submit.mjs';
+                const button = document.getElementById('submit-button');
+                const controller = createSubmitController({
+                  send: () => fetch('/submit', { method: 'POST' }),
+                });
+                button.addEventListener('click', () => controller.handleClick());
+                window.__qaDoubleClickProbe = async () => {
+                  button.click();
+                  button.click();
+                  await new Promise((resolve) => setTimeout(resolve, 160));
+                };
+              </script>
+            </body>
+          </html>
+        `,
+        'src/ui/submit.mjs': `
+          export function createSubmitController({ send }) {
+            let inFlight = false;
+            return {
+              async handleClick() {
+                if (inFlight) return 'blocked';
+                inFlight = true;
+                try {
+                  await send();
+                  return 'submitted';
+                } finally {
+                  setTimeout(() => { inFlight = false; }, 120);
+                }
+              },
+            };
+          }
+        `,
+        'check-duplicate-submit.mjs': `
+          import { pathToFileURL } from 'node:url';
+
+          const modulePath = process.env.QA_E2E_PLAYWRIGHT_MODULE;
+          if (!modulePath) {
+            console.error('Missing QA_E2E_PLAYWRIGHT_MODULE');
+            process.exit(2);
+          }
+          const { chromium } = await import(pathToFileURL(modulePath).href);
+          const browser = await chromium.launch({ headless: true });
+          const page = await browser.newPage();
+          const baseUrl = 'http://127.0.0.1:' + (process.env.E2E_PORT || ${port});
+          await page.goto(baseUrl + '/');
+          await page.evaluate(async () => { await window.__qaDoubleClickProbe(); });
+          await page.waitForTimeout(220);
+          const countPayload = await page.evaluate(async (url) => fetch(url + '/count').then((response) => response.json()), baseUrl);
+          const count = Number(countPayload.submitCount);
+          console.log('browser=chromium');
+          console.log('playwright-module=' + modulePath);
+          console.log('url=' + baseUrl + '/');
+          console.log('duplicate-submit=' + count);
+          await browser.close();
+          process.exit(count === 1 ? 0 : 1);
+        `,
       },
       candidateFiles: {
-        'src/ui/submit.ts': 'export function submitState() { return { locked: false, animationMs: 120 }; }\n',
+        'src/ui/submit.mjs': `
+          export function createSubmitController({ send }) {
+            return {
+              async handleClick() {
+                await send();
+                return 'submitted';
+              },
+            };
+          }
+        `,
       },
       prompt: [
         'Requirement: animation timing must not allow duplicate submit.',
-        'If runtime observation is needed to establish the trigger, gather bounded diagnostic evidence first, then still complete CR.',
+        'Runtime observation is required to establish the trigger. First dispatch a bounded diagnostic qa-e2e, then still dispatch mandatory qa-cr; do not inline CR for this runtime/code relation.',
+        'Use the materialized .opencode runner with start command node server.mjs, readiness URL http://127.0.0.1:' + port + '/healthz, allowExisting false, and test command node check-duplicate-submit.mjs.',
+        'Pass E2E_PORT=' + port + ' and QA_E2E_PLAYWRIGHT_MODULE=' + playwrightModulePath + ' through config env, do not install anything, and keep the total runner budget practical and no more than 120000 ms.',
+        'Return raw E2E_RUN_RESULT plus Playwright/browser evidence, then reconcile that runtime evidence with qa-cr reasoning about src/ui/submit.mjs and the in-flight lock.',
       ],
-      touchedFiles: ['src/ui/submit.ts'],
+      touchedFiles: ['src/ui/submit.mjs'],
+      verifierCommand: ['node', 'check-duplicate-submit.mjs'],
     }),
   },
 ];

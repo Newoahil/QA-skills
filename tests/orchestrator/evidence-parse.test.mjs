@@ -3,8 +3,10 @@ import test from 'node:test';
 
 import {
   assertNoQaE2eAfterStop,
+  assertExactTaskTypes,
   classifySubagentResult,
   collectToolUseInputs,
+  extractE2ERunResults,
   extractCompletedQaEvidenceResults,
   extractFinalReport,
   extractTaskCalls,
@@ -110,4 +112,39 @@ test('serializeToolUseInputs exposes .git and gitdir markers for detector assert
   const serialized = serializeToolUseInputs(events);
   assert.match(serialized, /\.git/);
   assert.match(serialized, /gitdir/);
+});
+
+test('extractE2ERunResults parses raw runner result blocks from task output text', () => {
+  const canonical = extractE2ERunResults([
+    'log line',
+    'E2E_RUN_RESULT',
+    '{"status":"FAIL","testExitCode":1,"cleanup":{"ok":true}}',
+    'END_E2E_RUN_RESULT',
+  ].join('\n'));
+  assert.equal(canonical.length, 1);
+  assert.equal(canonical[0].status, 'FAIL');
+  assert.equal(canonical[0].testExitCode, 1);
+  assert.equal(canonical[0].cleanup.ok, true);
+
+  const inline = extractE2ERunResults('  - Raw E2E_RUN_RESULT: `{"status":"FAIL","testExitCode":1,"cleanup":{"ok":true}}`');
+  assert.equal(inline.length, 1);
+  assert.equal(inline[0].cleanup.ok, true);
+
+  const fenced = extractE2ERunResults([
+    'Raw `E2E_RUN_RESULT`:',
+    '```json',
+    '{"status":"FAIL","testExitCode":1,"cleanup":{"ok":true}}',
+    '```',
+  ].join('\n'));
+  assert.equal(fenced.length, 1);
+  assert.equal(fenced[0].testExitCode, 1);
+});
+
+test('assertExactTaskTypes validates ordered real task sequence', () => {
+  const events = parseJsonlEvents([
+    JSON.stringify({ type: 'tool_use', part: { tool: 'task', state: { status: 'completed', input: { subagent_type: 'qa-e2e' } } } }),
+    JSON.stringify({ type: 'tool_use', part: { tool: 'task', state: { status: 'completed', input: { subagent_type: 'qa-cr' } } } }),
+  ].join('\n'));
+  assert.doesNotThrow(() => assertExactTaskTypes(events, ['qa-e2e', 'qa-cr']));
+  assert.throws(() => assertExactTaskTypes(events, ['qa-cr', 'qa-e2e']));
 });
