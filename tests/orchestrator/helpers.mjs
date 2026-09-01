@@ -67,6 +67,35 @@ export function finalStepTokens(events) {
   return total;
 }
 
+export function extractE2ERunResults(text) {
+  const source = String(text ?? '');
+  const candidates = [
+    ...source.matchAll(/E2E_RUN_RESULT[^{}\r\n]*(\{[^\r\n]+\})/g),
+    ...source.matchAll(/E2E_RUN_RESULT[^\r\n]*\r?\n(?:```json\s*\r?\n)?(\{[^\r\n]+\})/g),
+  ].map((match) => match[1]);
+  return [...new Set(candidates)].map((candidate) => {
+    try {
+      return JSON.parse(candidate);
+    } catch {
+      return null;
+    }
+  }).filter(Boolean);
+}
+
+export function extractE2ERunResultsFromEvents(events) {
+  return extractCompletedTaskResultTexts(events)
+    .flatMap((entry) => extractE2ERunResults(entry.taskResultText).map((result) => ({
+      subagentType: entry.subagentType,
+      callID: entry.callID,
+      result,
+    })));
+}
+
+export function assertExactTaskTypes(events, expectedTaskTypes) {
+  const actual = extractTaskCalls(events).map((call) => call.subagentType).filter(Boolean);
+  assert.deepEqual(actual, expectedTaskTypes);
+}
+
 export function extractCompletedQaEvidenceResults(events) {
   return extractCompletedTaskResultTexts(events)
     .map((call) => {

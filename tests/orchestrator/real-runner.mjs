@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { copyFileSync, existsSync, mkdtempSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdtempSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -13,7 +13,9 @@ import {
 } from '../functional-validation/harness.mjs';
 import {
   assertNoQaE2eAfterStop,
+  assertExactTaskTypes,
   combinedEvidenceText,
+  extractE2ERunResultsFromEvents,
   extractTaskCalls,
   finalStepTokens,
   normalizePathLikeText,
@@ -64,6 +66,49 @@ function git(cwd, args) {
   return result.stdout || '';
 }
 
+function validatePlaywrightModulePath(modulePath) {
+  assert.equal(typeof modulePath, 'string', 'Missing environment prerequisite: set QA_E2E_PLAYWRIGHT_MODULE to an existing playwright/index.mjs path');
+  assert.equal(modulePath.length > 0, true, 'Missing environment prerequisite: QA_E2E_PLAYWRIGHT_MODULE is empty');
+  assert.equal(path.isAbsolute(modulePath), true, 'Missing environment prerequisite: QA_E2E_PLAYWRIGHT_MODULE must be an absolute path');
+  assert.equal(existsSync(modulePath), true, `Missing environment prerequisite: QA_E2E_PLAYWRIGHT_MODULE not found at ${modulePath}`);
+  assert.equal(statSync(modulePath).isFile(), true, `Missing environment prerequisite: QA_E2E_PLAYWRIGHT_MODULE is not a file at ${modulePath}`);
+}
+
+function reserveFreePort() {
+  const script = [
+    'import net from "node:net";',
+    'const server = net.createServer();',
+    'server.listen(0, "127.0.0.1", () => {',
+    '  const address = server.address();',
+    '  console.log(String(address.port));',
+    '  server.close(() => process.exit(0));',
+    '});',
+    'server.on("error", (error) => { console.error(String(error.message || error)); process.exit(1); });',
+  ].join(' ');
+  const result = spawnSync(process.execPath, ['--input-type=module', '--eval', script], { encoding: 'utf8' });
+  if (result.status !== 0) {
+    throw new Error(`failed to allocate free port: ${result.stderr || result.stdout}`);
+  }
+  const port = Number((result.stdout || '').trim());
+  if (!Number.isInteger(port) || port <= 0) throw new Error(`invalid reserved port: ${result.stdout}`);
+  return port;
+}
+
+function assertPortBindable(port) {
+  const script = [
+    'import net from "node:net";',
+    `const port = ${port};`,
+    'const server = net.createServer();',
+    'server.listen(port, "127.0.0.1", () => {',
+    '  console.log("bind-ok");',
+    '  server.close(() => process.exit(0));',
+    '});',
+    'server.on("error", (error) => { console.error(String(error.message || error)); process.exit(1); });',
+  ].join(' ');
+  const result = spawnSync(process.execPath, ['--input-type=module', '--eval', script], { encoding: 'utf8', timeout: 10_000 });
+  assert.equal(result.status, 0, `expected port ${port} to be bindable after run: ${result.stderr || result.stdout}`);
+}
+
 function materializeLocalAgentRuntime(projectRoot) {
   const opencodeRoot = path.join(projectRoot, '.opencode');
   const skillsRoot = path.join(opencodeRoot, 'skills', 'qa-skill');
@@ -83,7 +128,9 @@ function createRepoFixture(scenario) {
   const tempRoot = mkdtempSync(path.join(tmpdir(), `qa-orchestrator-${scenario.id}-`));
   const repoDir = path.join(tempRoot, 'repo');
   ensureDir(repoDir);
-  const fixture = scenario.makeFixture({});
+  const port = reserveFreePort();
+  const playwrightModulePath = process.env.QA_E2E_PLAYWRIGHT_MODULE || null;
+  const fixture = scenario.makeFixture({ port, playwrightModulePath });
   for (const [relativePath, content] of Object.entries(fixture.baselineFiles)) write(repoDir, relativePath, content);
   git(repoDir, ['init', '--quiet']);
   git(repoDir, ['add', '.']);
@@ -101,7 +148,7 @@ function createRepoFixture(scenario) {
   }
 
   materializeLocalAgentRuntime(runDir);
-  return { tempRoot, repoDir, runDir, fixture, head, diff, touchedFiles };
+  return { tempRoot, repoDir, runDir, fixture, head, diff, touchedFiles, port, playwrightModulePath };
 }
 
 function buildPrompt({ fixtureData, scenario }) {
@@ -139,6 +186,7 @@ export function runScenarioWithOpenCode(scenario) {
       ? resolveOpenCodeInvocation({ commandPath: path.join(process.env.APPDATA || '', 'npm', 'node_modules', 'opencode-ai', 'bin', 'opencode.exe') })
       : { command: 'opencode', shell: false, shellSafe: true, issues: [] });
   assert.equal(resolved.shellSafe, true, `opencode binary unavailable: ${(resolved.issues || []).join('; ')}`);
+  if (scenario.requiresPlaywrightModule) validatePlaywrightModulePath(process.env.QA_E2E_PLAYWRIGHT_MODULE);
 
   const fixtureData = createRepoFixture(scenario);
   const prompt = buildPrompt({ fixtureData, scenario });
@@ -168,6 +216,7 @@ export function runScenarioWithOpenCode(scenario) {
   const toolUseInputsText = serializeToolUseInputs(parsed.events);
   const evidenceText = combinedEvidenceText({ finalReport, events: parsed.events });
   const finalTokens = finalStepTokens(parsed.events);
+  const e2eRunResults = extractE2ERunResultsFromEvents(parsed.events);
 
   return {
     scenario,
@@ -187,6 +236,7 @@ export function runScenarioWithOpenCode(scenario) {
     toolUseInputsText,
     evidenceText,
     finalTokens,
+    e2eRunResults,
     durationMs,
   };
 }
@@ -231,12 +281,25 @@ export function assertScenarioSpecifics(result) {
   for (const term of scenario.forbiddenToolInputTerms ?? []) {
     assert.doesNotMatch(normalizedToolInputs, new RegExp(term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'), `unexpected tool input term ${term}; temp root: ${result.fixtureData.tempRoot}`);
   }
+  for (const term of scenario.forbiddenScopePaths ?? []) {
+    assert.doesNotMatch(normalizedEvidence, new RegExp(term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\\\//g, '[/\\\\]'), 'i'), `unexpected scope path ${term}; temp root: ${result.fixtureData.tempRoot}`);
+  }
   if (scenario.forbidQaE2e) {
     assert.equal(result.taskTypes.includes('qa-e2e'), false, `unexpected qa-e2e dispatch; temp root: ${result.fixtureData.tempRoot}`);
   }
   if (scenario.expectedTaskTypes) {
-    for (const expectedType of scenario.expectedTaskTypes) {
-      assert.equal(result.taskTypes.includes(expectedType), true, `missing expected task type ${expectedType}; temp root: ${result.fixtureData.tempRoot}`);
-    }
+    assertExactTaskTypes(result.events, scenario.expectedTaskTypes);
+  }
+  if (scenario.assertPortBindableAfterRun) {
+    assertPortBindable(result.fixtureData.port);
+  }
+  if (scenario.requireE2ERunnerResult) {
+    const qaE2eResults = result.e2eRunResults.filter((entry) => entry.subagentType === 'qa-e2e');
+    assert.equal(qaE2eResults.length > 0, true, `missing qa-e2e E2E_RUN_RESULT; temp root: ${result.fixtureData.tempRoot}`);
+    const runnerResult = qaE2eResults[qaE2eResults.length - 1].result;
+    if (scenario.expectedRunnerStatus) assert.equal(runnerResult.status, scenario.expectedRunnerStatus, `unexpected runner status; temp root: ${result.fixtureData.tempRoot}`);
+    if (scenario.expectedRunnerTestExitCode != null) assert.equal(runnerResult.testExitCode, scenario.expectedRunnerTestExitCode, `unexpected runner test exit code; temp root: ${result.fixtureData.tempRoot}`);
+    if (scenario.expectedRunnerCleanupOk != null) assert.equal(runnerResult.cleanup?.ok, scenario.expectedRunnerCleanupOk, `unexpected runner cleanup status; temp root: ${result.fixtureData.tempRoot}`);
+    if ('startedServerPid' in runnerResult) assert.equal(runnerResult.startedServerPid == null, false, `runner should record owned server pid when field is present; temp root: ${result.fixtureData.tempRoot}`);
   }
 }

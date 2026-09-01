@@ -6,9 +6,7 @@ import { pairedScenarios } from './paired-scenarios.mjs';
 import { assertScenarioOutcome, assertScenarioSpecifics, maybeCleanupScenarioResult, realRunEnabled, realRunSkipReason, runScenarioWithOpenCode } from './real-runner.mjs';
 
 for (const scenario of pairedScenarios) {
-  const skip = !realRunEnabled()
-    ? realRunSkipReason()
-    : (scenario.optionalEnv && process.env[scenario.optionalEnv] !== '1' ? scenario.skipReason : false);
+  const skip = !realRunEnabled() ? realRunSkipReason() : false;
 
   test(`real paired scenario: ${scenario.id}`, { skip }, async () => {
     const result = runScenarioWithOpenCode(scenario);
