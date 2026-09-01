@@ -103,6 +103,8 @@ the downstream `E2E_RUN_RESULT` block details as raw evidence, but still return 
 
 Return exactly one `QA_EVIDENCE_RESULT` block near the end of your response:
 
+That block must be your only result block and must be complete, coherent, honest about scope/limits, and backed by substantive re-checkable evidence rather than placeholder evidence.
+
 ```text
 QA_EVIDENCE_RESULT
 agent: qa-e2e

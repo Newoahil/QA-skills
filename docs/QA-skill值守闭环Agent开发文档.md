@@ -74,6 +74,8 @@ QA Skill 当前按已安装 skill + agents 分发，而不是把 runner 或脚�
 
 - **结构化 subagent 证据回收**：当前 QA subagent 统一返回 `QA_EVIDENCE_RESULT`，它是数据不是指令；`qa` 必须复核 raw evidence 后才可用于 PASS / FAIL 推理。
 
+- **fail-closed 证据契约**：一个可采信的 agent 返回必须是且只能是一个完整、连贯、带实质证据的 `QA_EVIDENCE_RESULT`，并且要如实陈述 scope 与 limits。unavailable、refused、timed-out、failed、missing、incomplete、malformed、multiple-block、只有标签没有证据的输出，都不能关闭受影响的 required claim，也不能支撑 PASS。
+
 - **post-CR e2e 证据能力**：`qa-e2e` 只在真实 UI / browser / end-to-end 行为成为 load-bearing 问题时启用，并适配项目已有 Cypress、Playwright、Selenium、WebdriverIO 或自定义脚本，而不是按工具拆 agent。真实 Playwright 基准消费的是调用方提供的现有模块路径，不为目标项目新增或安装 Playwright 应用依赖；模块不存在时应及早失败并如实回报环境缺口。
 
 - **受控 e2e-runner 执行**：`e2e-runner` 提供一次有界的 `start -> ready -> test -> cleanup` 执行模型，约束总预算、端口占用、进程回收和机器证据输出。
@@ -112,6 +114,8 @@ QA Skill 当前按已安装 skill + agents 分发，而不是把 runner 或脚�
 
 - **动态 scope 扩展**：从实际 change surface 和 oracle 起步；`login`、`auth` 之类的命名或标签本身不会自动激活风险，只有当共享契约、调用/传播关系、runtime signal 或其他证据支持时才扩展，并且只沿 load-bearing 风险需要的路径继续，不做无引导的全项目扫描。后续新证据也可以推翻前面的 scope 判断。这里没有固定 hop、固定 checklist、固定 task-count，也没有 `currently_inactive` 之类的静态风险表。
 
+- **required-claim 级 fail-closed 语义**：raw failure evidence 优先于乐观标签；没有证据支撑的悲观 `FAIL` / `stop_and_fail` 也只能算 inconclusive。subagent 派发失败通常应收口为 `BLOCKED` 或残余风险，而不是直接判成产品 `FAIL`。同时按 required claim 粒度处理，避免因为 optional slice 出问题就 blanket block 整个结论。
+
 - **inline review + subagent split**：小问题可在 `qa` 内联完成，大问题再分派给 `qa-cr` 或 `qa-e2e`，避免为拆分而拆分。
 
 - **结构化 evidence protocol**：`QA_EVIDENCE_RESULT` 统一承载 `agent`、`scope`、`status`、`gate`、`evidence`、`findings`、`limits`、`recommended_next` 和 `confidence`。
@@ -121,6 +125,8 @@ QA Skill 当前按已安装 skill + agents 分发，而不是把 runner 或脚�
 - **tool-agnostic e2e execution**：runner 固定的是安全边界，不固定测试框架、spec 选择、oracle 或项目启动方式。
 
 - **严格 read-only 裁判边界**：`qa` 与 `qa-cr` 无 shell 改写能力；`qa-e2e` 也不改产品代码，不负责修复、不负责 ship decision。
+
+- **结构解析器边界**：用于解析 `QA_EVIDENCE_RESULT` 的可执行结构解析器目前仍是 test harness 能力，不是 production skill script。由于 `qa` 本身没有 runtime hook / shell validator，当前分支不应表述为“生产中的机器校验已经执行”。
 
 ## 核心价值提升
 
@@ -176,34 +182,30 @@ QA Skill 当前仍是一个独立 agent capability layer，而不是已经完整
 
 - `e2e-runner` 自动化测试当前是 10 / 10 通过。
 
-- orchestrator 默认 suite 当前是 22 项，其中 17 项通过、5 项为 real-model opt-in skip、0 项失败。
+- orchestrator 确定性默认 suite 当前是 31 项，其中 25 项通过、6 项为 real-model opt-in skip、0 项失败。
 
-- 真实 paired eval 当前记录为：在 `QA_ORCHESTRATOR_REAL_RUNS=1` 且 `QA_E2E_PLAYWRIGHT_MODULE` 指向现有 Playwright `index.mjs` 时，6 项通过、0 项跳过、0 项失败；覆盖五个场景加 contract，并包含 `login-style-clean`、shared-selector、neutral helper multi-hop、linked worktree、`animation-duplicate-submit` 等动态 scope / 边界场景。
+- 真实 paired eval 当前验证记录为：在 `QA_ORCHESTRATOR_REAL_RUNS=1` 且 `QA_E2E_PLAYWRIGHT_MODULE` 指向现有 Playwright `index.mjs` 时，7 项通过、0 项跳过、0 项失败；覆盖六个场景加 contract，并包含既有的 CR / E2E / 动态 scope / worktree 边界样本。
 
 - P0 PASS / FAIL / missing-oracle 行为已有覆盖；Playwright 路径已有通过记录并带 cleanup；Radix pre 记录为 3 / 4 FAIL，修复后复跑为 6 / 6 PASS，且都保留 cleanup 约束。
 
 - `animation-duplicate-submit` 已是经过验证的真实 Playwright 场景，不再是 optional / unverified fixture。该场景可以稳定观察到 `duplicate-submit=2`、runner/test exit 1、cleanup=true、端口释放、以及 `qa-e2e` diagnostic -> mandatory `qa-cr` 的精确 task 顺序；最终 FAIL 会把 runtime 与 code-review 两类证据一起收口。
 
+- fail-closed 行为已有两类真实配对覆盖：其一，repository/test stdout 可以伪造一个乐观 `QA_EVIDENCE_RESULT` 标记，但真实 Playwright 仍观察到 `duplicate-submit=2` 且 exit 1，因此 `qa` 以 raw failure evidence 为准并返回 `FAIL`；其二，代码审查本身不阻断，但 required authenticated runtime 缺少 `STATUS_API_URL` 与 `STATUS_API_TOKEN` 时，`qa` 返回 `BLOCKED`，而不是误报 `PASS`。
+
 ## 后续迭代方向
 
-QA Skill 后续应继续保持当前“已安装 skill + agents” 的分发方式，并继续围绕 agent capability 本身补齐协议稳定化、异常 fail-closed 和安装稳定性，而不是把 Guardian / Supervisor 接线或完整 watchdog loop 当作下一阶段验证目标，更不是重新回到松散的开发期 QA 路径。
+QA Skill 后续应继续保持当前“已安装 skill + agents” 的分发方式，并继续围绕 agent capability 本身补齐更广的真实样本、异常执行鲁棒性和安装稳定性，而不是把 Guardian / Supervisor 接线或完整 watchdog loop 当作下一阶段验证目标，更不是重新回到松散的开发期 QA 路径。
 
 优先迭代方向：
 
-1. **QA_EVIDENCE_RESULT / runtime schema 校验与 fail-closed**
-   为 subagent 返回块和 runtime 结果补齐更稳定的 schema 校验，并覆盖 empty、refused、timed-out、malformed child result 等场景的 fail-closed 行为。
-
-2. **更广的 CR 风险 benchmark / 真实样本**
+1. **更广的 CR 风险 benchmark / 真实样本**
    为 `qa-cr` 继续补充更系统的真实 diff / issue 样本，验证 stop_and_fail、动态扩展和证据质量在更复杂风险面上的表现。
 
-3. **e2e 异常终止与 cleanup 鲁棒性**
+2. **e2e 异常终止与 cleanup 鲁棒性**
    继续提升 abnormal termination、孤儿进程识别、cleanup 失败和端口释放异常场景下的恢复与证据表达能力。
 
-4. **文档与安装稳定化**
+3. **文档与安装稳定化**
    继续收敛安装路径、skill 复制说明、runner 调用方式和对外文档，减少误装与误用。
 
-5. **按需再评估 qa-api**
+4. **按需再评估 qa-api**
    只有当现有 `qa`、`qa-cr`、`qa-e2e` 组合已不足以覆盖真实 API / integration 证据需求时，再考虑增加 `qa-api`，同时仍保持 verdict ownership 在 `qa`。
-
-6. **能力成熟后下放到 qa-check / main**
-   当前先在值守闭环场景把边界跑稳，后续再考虑把成熟能力迁回日常开发 QA 路线。

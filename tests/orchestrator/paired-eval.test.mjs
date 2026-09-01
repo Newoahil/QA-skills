@@ -24,6 +24,7 @@ for (const scenario of pairedScenarios) {
 }
 
 test('paired eval real runner contract is declared', () => {
-  assert.ok(pairedScenarios.length >= 5);
+  assert.ok(pairedScenarios.length >= 6);
   assert.ok(pairedScenarios.some((scenario) => scenario.id === 'animation-duplicate-submit'));
+  assert.ok(pairedScenarios.some((scenario) => scenario.id === 'required-runtime-unavailable'));
 });

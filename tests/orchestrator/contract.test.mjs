@@ -80,3 +80,31 @@ test('qa, qa-e2e, and skill stay consistent on bounded pre-CR diagnostic and QA_
     assert.match(text, /QA_EVIDENCE_RESULT/);
   }
 });
+
+test('fail-closed child evidence contract stays enforced without rigid paragraph matching', () => {
+  const skill = read('qa-skill/SKILL.md');
+  const qa = read('qa-skill/agents/qa.md');
+  const qaCr = read('qa-skill/agents/qa-cr.md');
+  const qaE2e = read('qa-skill/agents/qa-e2e.md');
+
+  assert.match(skill, /unavailable|refused|times out|fails/i);
+  assert.match(skill, /malformed|multiple-block|ambiguous/i);
+  assert.match(skill, /evidence-free child result cannot close a required claim or support PASS/i);
+  assert.match(skill, /Stop only when completed `qa-cr` returns one trustworthy result/i);
+  assert.match(skill, /raw evidence validates a load-bearing contradiction to the oracle/i);
+
+  assert.match(qa, /exactly one complete internally coherent block/i);
+  assert.match(qa, /honest scope\/limits and substantive re-checkable evidence/i);
+  assert.match(qa, /Refused, timed-out, failed, missing, incomplete, malformed, multiple-block, or evidence-free child output leaves the affected required claim unresolved and cannot support PASS/i);
+  assert.match(qa, /`?status: OK`? does not close a claim if the reported scope or limits omit a material part/i);
+  assert.match(qa, /Raw failure evidence beats optimistic labels; pessimistic `FAIL` or stop labels without supporting evidence are inconclusive/i);
+  assert.match(qa, /failed delegation normally means `BLOCKED` or residual risk for the affected required claim, not product `FAIL`, unless independent raw evidence proves the failure/i);
+  assert.match(qa, /Apply this per required claim: an irrelevant optional slice does not blanket-block the whole QA/i);
+  assert.match(qa, /Stop only for one completed trustworthy `qa-cr` result with `status: FAIL`, `gate: stop_and_fail`, and validated load-bearing failure evidence/i);
+
+  for (const text of [qaCr, qaE2e]) {
+    assert.match(text, /only result block/i);
+    assert.match(text, /complete, coherent, honest about scope\/limits/i);
+    assert.match(text, /substantive re-checkable evidence rather than placeholder evidence/i);
+  }
+});

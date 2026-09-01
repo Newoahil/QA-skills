@@ -15,6 +15,7 @@ import {
   assertNoQaE2eAfterStop,
   assertExactTaskTypes,
   combinedEvidenceText,
+  extractCompletedQaEvidenceResults,
   extractE2ERunResultsFromEvents,
   extractTaskCalls,
   finalStepTokens,
@@ -264,6 +265,8 @@ export function assertScenarioSpecifics(result) {
   const { scenario } = result;
   const normalizedEvidence = normalizePathLikeText(result.evidenceText);
   const normalizedToolInputs = normalizePathLikeText(result.toolUseInputsText);
+  const normalizedFinalReport = normalizePathLikeText(result.finalReport);
+  const completedQaEvidence = extractCompletedQaEvidenceResults(result.events);
 
   for (const term of scenario.requiredEvidenceTerms ?? []) {
     assert.match(normalizedEvidence, new RegExp(term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'), `missing required evidence term ${term}; temp root: ${result.fixtureData.tempRoot}`);
@@ -277,6 +280,12 @@ export function assertScenarioSpecifics(result) {
   }
   for (const term of scenario.forbiddenEvidenceTerms ?? []) {
     assert.doesNotMatch(normalizedEvidence, new RegExp(term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'), `unexpected evidence term ${term}; temp root: ${result.fixtureData.tempRoot}`);
+  }
+  for (const term of scenario.requiredFinalReportTerms ?? []) {
+    assert.match(normalizedFinalReport, new RegExp(term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'), `missing required final report term ${term}; temp root: ${result.fixtureData.tempRoot}`);
+  }
+  for (const term of scenario.forbiddenFinalReportTerms ?? []) {
+    assert.doesNotMatch(normalizedFinalReport, new RegExp(term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'), `unexpected final report term ${term}; temp root: ${result.fixtureData.tempRoot}`);
   }
   for (const term of scenario.forbiddenToolInputTerms ?? []) {
     assert.doesNotMatch(normalizedToolInputs, new RegExp(term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'), `unexpected tool input term ${term}; temp root: ${result.fixtureData.tempRoot}`);
@@ -301,5 +310,12 @@ export function assertScenarioSpecifics(result) {
     if (scenario.expectedRunnerTestExitCode != null) assert.equal(runnerResult.testExitCode, scenario.expectedRunnerTestExitCode, `unexpected runner test exit code; temp root: ${result.fixtureData.tempRoot}`);
     if (scenario.expectedRunnerCleanupOk != null) assert.equal(runnerResult.cleanup?.ok, scenario.expectedRunnerCleanupOk, `unexpected runner cleanup status; temp root: ${result.fixtureData.tempRoot}`);
     if ('startedServerPid' in runnerResult) assert.equal(runnerResult.startedServerPid == null, false, `runner should record owned server pid when field is present; temp root: ${result.fixtureData.tempRoot}`);
+  }
+  for (const expected of scenario.expectedChildEvidence ?? []) {
+    const matches = completedQaEvidence.filter((entry) => entry.subagentType === expected.subagentType);
+    assert.equal(matches.length > 0, true, `missing completed ${expected.subagentType} QA_EVIDENCE_RESULT; temp root: ${result.fixtureData.tempRoot}`);
+    const actual = matches[matches.length - 1].qaEvidence;
+    if (expected.status) assert.equal(actual.status, expected.status, `unexpected ${expected.subagentType} evidence status; temp root: ${result.fixtureData.tempRoot}`);
+    if (expected.gate) assert.equal(actual.gate, expected.gate, `unexpected ${expected.subagentType} evidence gate; temp root: ${result.fixtureData.tempRoot}`);
   }
 }
