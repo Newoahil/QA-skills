@@ -3,6 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "test:orchestrator": "node --test tests/orchestrator/*.test.mjs",
+    "test:e2e-runner": "node --test tests/e2e-runner.test.mjs",
     "test:guardian": "node --test tests/guardian/*.test.mjs",
     "guardian:start": "node tools/guardian/guardian-runtime.mjs",
     "guardian:dashboard": "node tools/guardian/dashboard.mjs",
