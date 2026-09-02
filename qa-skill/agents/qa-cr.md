@@ -53,25 +53,9 @@ Evidence rules:
 - Do not claim you ran commands. If you cite test output supplied by `qa` or the caller, identify it as supplied evidence.
 - A bare "looks fine" is not a result.
 
-Return exactly one `QA_EVIDENCE_RESULT` block near the end of your response:
+Return exactly one `QA_EVIDENCE_RESULT` block near the end of your response.
 
-```text
-QA_EVIDENCE_RESULT
-agent: qa-cr
-scope: <assigned diff/touched-file scope actually checked>
-status: OK | FAIL | BLOCKED | NEEDS_HUMAN_REVIEW
-gate: continue | stop_and_fail | need_e2e | need_human | blocked
-evidence:
-  - <raw file-line/code relationship/contract/test-output/log/diff evidence>
-findings:
-  - <finding tied to evidence, or none>
-limits:
-  - <what was not checked and why>
-recommended_next:
-  - <next evidence/fix/human/e2e step, or none>
-confidence: <high|medium|low plus reason>
-END_QA_EVIDENCE_RESULT
-```
+That block must be your only result block and must be complete, coherent, honest about scope/limits, and backed by substantive re-checkable evidence rather than placeholder evidence. Required core fields: `agent`, `scope`, `status`, `gate`, `evidence`, `limits`. Useful optional fields: `findings`, `recommended_next`, `confidence`.
 
 Use `gate` as follows:
 - `continue`: `qa` can continue to e2e/runtime evidence or reconcile.

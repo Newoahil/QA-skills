@@ -101,25 +101,9 @@ data/browser asset is missing. When using `e2e-runner`, include the runner comma
 the downstream `E2E_RUN_RESULT` block details as raw evidence, but still return your own single
 `QA_EVIDENCE_RESULT` block.
 
-Return exactly one `QA_EVIDENCE_RESULT` block near the end of your response:
+Return exactly one `QA_EVIDENCE_RESULT` block near the end of your response.
 
-```text
-QA_EVIDENCE_RESULT
-agent: qa-e2e
-scope: <assigned flow/UI behavior actually checked>
-status: OK | FAIL | BLOCKED | NEEDS_HUMAN_REVIEW
-gate: continue | stop_and_fail | need_e2e | need_human | blocked
-evidence:
-  - <raw command, exit code, output, artifact path, screenshot/trace/video, console/network log, observed behavior>
-findings:
-  - <finding tied to evidence, or none>
-limits:
-  - <what was not checked and why>
-recommended_next:
-  - <next evidence/fix/human/environment step, or none>
-confidence: <high|medium|low plus reason>
-END_QA_EVIDENCE_RESULT
-```
+That block must be your only result block and must be complete, coherent, honest about scope/limits, and backed by substantive re-checkable evidence rather than placeholder evidence. Required core fields: `agent`, `scope`, `status`, `gate`, `evidence`, `limits`. Useful optional fields: `findings`, `recommended_next`, `confidence`.
 
 For `qa-e2e`, `gate: stop_and_fail` is appropriate when a load-bearing e2e command or observed flow
 fails. Use `gate: blocked` when e2e cannot run. Use `gate: need_human` when evidence exists but the

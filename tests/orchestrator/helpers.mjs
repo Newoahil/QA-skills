@@ -18,13 +18,170 @@ export function extractTaskCalls(events) {
       input: event?.part?.state?.input ?? {},
       subagentType: event?.part?.state?.input?.subagent_type ?? null,
       output: event?.part?.state?.output ?? '',
+      error: summarizeTaskError(event?.part?.state?.error ?? null),
       callID: event?.part?.callID ?? null,
     }));
+}
+
+function summarizeTaskError(error) {
+  if (error == null) return null;
+  if (typeof error === 'string') return error;
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return String(error);
+  }
 }
 
 export function extractTaskResultText(output) {
   const match = /<task_result>\s*([\s\S]*?)\s*<\/task_result>/i.exec(String(output ?? ''));
   return match?.[1] ?? null;
+}
+
+const QA_RESULT_STATUSES = new Set(['OK', 'FAIL', 'BLOCKED', 'NEEDS_HUMAN_REVIEW']);
+const QA_RESULT_GATES = new Set(['continue', 'stop_and_fail', 'need_e2e', 'need_human', 'blocked']);
+const KNOWN_PLACEHOLDERS = new Set([
+  '<assigned scope>',
+  '<bounded slice or flow actually checked>',
+  '<assigned diff/touched-file scope actually checked>',
+  '<raw command/output/artifact/file-line/log/observed behavior>',
+  '<raw file-line/code relationship/contract/test-output/log/diff evidence>',
+  '<finding tied to evidence, or none>',
+  '<what was not checked and why>',
+  '<next evidence/fix/human step, or none>',
+  '<next evidence/fix/human/e2e step, or none>',
+  '<high|medium|low plus reason>',
+]);
+
+function isPlaceholderValue(value) {
+  const normalized = String(value ?? '').trim().toLowerCase();
+  return normalized.length === 0 || KNOWN_PLACEHOLDERS.has(normalized) || normalized === 'tbd' || normalized === 'todo';
+}
+
+function parseBulletSection(block, sectionName) {
+  const pattern = new RegExp(`^\\s*${sectionName}:\\s*$`, 'i');
+  const stopPattern = /^\s*(agent|scope|status|gate|evidence|findings|limits|recommended_next|confidence):/i;
+  const lines = block.split(/\r?\n/);
+  const values = [];
+  let inSection = false;
+  for (const line of lines) {
+    if (pattern.test(line)) {
+      inSection = true;
+      continue;
+    }
+    if (inSection && stopPattern.test(line)) {
+      inSection = false;
+    }
+    if (!inSection) continue;
+    const bullet = /^\s*-\s+(.+)$/.exec(line);
+    if (bullet) values.push(bullet[1]);
+  }
+  return values;
+}
+
+function parseScalarField(block, fieldName) {
+  return new RegExp(`^\\s*${fieldName}:\\s*(.+)$`, 'im').exec(block)?.[1]?.trim() ?? null;
+}
+
+function blockStructuralIssues(parsed) {
+  const issues = [];
+  if (isPlaceholderValue(parsed.agent)) issues.push('missing agent');
+  if (isPlaceholderValue(parsed.scope)) issues.push('missing scope');
+  if (!QA_RESULT_STATUSES.has(parsed.status)) issues.push('invalid status');
+  if (!QA_RESULT_GATES.has(parsed.gate)) issues.push('invalid gate');
+  if (parsed.limits.length === 0) issues.push('missing limits');
+  if (parsed.evidence.length === 0) {
+    issues.push('missing evidence');
+  } else if (parsed.evidence.every((value) => isPlaceholderValue(value) || /^none$/i.test(value.trim()))) {
+    issues.push('evidence is empty or placeholder');
+  }
+  return issues;
+}
+
+export function extractQaEvidenceBlocks(text) {
+  const source = String(text ?? '');
+  const matches = [...source.matchAll(/QA_EVIDENCE_RESULT\s*([\s\S]*?)END_QA_EVIDENCE_RESULT/g)];
+  return matches.map((match, index) => {
+    const block = match[1];
+    const parsed = {
+      agent: parseScalarField(block, 'agent'),
+      scope: parseScalarField(block, 'scope'),
+      status: parseScalarField(block, 'status'),
+      gate: parseScalarField(block, 'gate'),
+      evidence: parseBulletSection(block, 'evidence'),
+      findings: parseBulletSection(block, 'findings'),
+      limits: parseBulletSection(block, 'limits'),
+      recommended_next: parseBulletSection(block, 'recommended_next'),
+      confidence: parseScalarField(block, 'confidence'),
+    };
+    const structuralIssues = blockStructuralIssues(parsed);
+    return {
+      index,
+      raw: match[0],
+      body: block,
+      structuralIssues,
+      parsed,
+      usable: structuralIssues.length === 0,
+      substantiveEvidence: parsed.evidence.some((value) => !isPlaceholderValue(value) && !/^none$/i.test(value.trim())),
+    };
+  });
+}
+
+function extractReportSections(reportText) {
+  const lines = String(reportText ?? '').split(/\r?\n/);
+  const evidenceHeaderPattern = /^(?:#{1,6}\s*)?(?:[-*]\s*)?(?:(?:load-bearing|runtime|code-review)(?:\s+(?:runtime|code-review))?\s+)?evidence\s*[:：]|^(?:#{1,6}\s*)?(?:[-*]\s*)?(?:证据|关键证据|运行时证据|代码审查证据)\s*[:：]/i;
+  const findingsHeaderPattern = /^(?:#{1,6}\s*)?(?:findings?|发现|结论)\s*[:：]?/i;
+  const limitsHeaderPattern = /^(?:#{1,6}\s*)?(?:limits?|residual risk|限制|残余风险|未覆盖)\s*[:：]?/i;
+  const recommendationHeaderPattern = /^(?:#{1,6}\s*)?(?:recommended_next|recommendations?|建议)\s*[:：]?/i;
+  const stopPattern = /^(?:#{1,6}\s*)?(?:findings?|发现|结论|limits?|residual risk|限制|残余风险|未覆盖|recommended_next|recommendations?|建议)\s*[:：]?/i;
+  const evidenceSections = [];
+  const concreteEvidenceLines = [];
+
+  const concreteEvidencePattern = /(`[^`]+`|\b[a-zA-Z0-9_./\\-]+\.[a-zA-Z0-9]+\b|\bfile\s*:\s*[^\s]+|\bline\s+\d+\b|\bHEAD\b|\bdiff\b|https?:\/\/|\bexit code\b|\bobserved\b|\bstdout\b|\bstderr\b)/i;
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index].trim();
+    if (!evidenceHeaderPattern.test(line)) continue;
+
+    const sectionLines = [line];
+    for (let next = index + 1; next < lines.length; next += 1) {
+      const candidateRaw = lines[next];
+      const candidate = candidateRaw.trim();
+      if (candidate.length === 0) {
+        sectionLines.push(candidate);
+        continue;
+      }
+      if (stopPattern.test(candidate)) break;
+      if (/^(?:#{1,6}\s*)/.test(candidate) && !/^(?:[-*]\s*)/.test(candidate)) break;
+      sectionLines.push(candidateRaw);
+    }
+    evidenceSections.push(sectionLines.join('\n').trim());
+  }
+
+  let inBlockedSection = false;
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (line.length === 0) continue;
+    if (stopPattern.test(line)) {
+      inBlockedSection = true;
+      continue;
+    }
+    if (/^(?:#{1,6}\s*)/.test(line) && !stopPattern.test(line)) {
+      inBlockedSection = false;
+    }
+    if (inBlockedSection) continue;
+    if (evidenceHeaderPattern.test(line) || concreteEvidencePattern.test(line)) {
+      concreteEvidenceLines.push(line);
+    }
+  }
+
+  return {
+    evidenceSections,
+    concreteEvidenceLines,
+    hasFindingsSection: lines.some((line) => findingsHeaderPattern.test(line.trim())),
+    hasLimitsSection: lines.some((line) => limitsHeaderPattern.test(line.trim())),
+    hasRecommendationSection: lines.some((line) => recommendationHeaderPattern.test(line.trim())),
+  };
 }
 
 export function extractCompletedTaskResultTexts(events) {
@@ -67,6 +224,35 @@ export function finalStepTokens(events) {
   return total;
 }
 
+export function extractE2ERunResults(text) {
+  const source = String(text ?? '');
+  const candidates = [
+    ...source.matchAll(/E2E_RUN_RESULT[^{}\r\n]*(\{[^\r\n]+\})/g),
+    ...source.matchAll(/E2E_RUN_RESULT[^\r\n]*\r?\n\s*(?:```json\s*\r?\n\s*)?(\{[^\r\n]+\})/g),
+  ].map((match) => match[1]);
+  return [...new Set(candidates)].map((candidate) => {
+    try {
+      return JSON.parse(candidate);
+    } catch {
+      return null;
+    }
+  }).filter(Boolean);
+}
+
+export function extractE2ERunResultsFromEvents(events) {
+  return extractCompletedTaskResultTexts(events)
+    .flatMap((entry) => extractE2ERunResults(entry.taskResultText).map((result) => ({
+      subagentType: entry.subagentType,
+      callID: entry.callID,
+      result,
+    })));
+}
+
+export function assertExactTaskTypes(events, expectedTaskTypes) {
+  const actual = extractTaskCalls(events).map((call) => call.subagentType).filter(Boolean);
+  assert.deepEqual(actual, expectedTaskTypes);
+}
+
 export function extractCompletedQaEvidenceResults(events) {
   return extractCompletedTaskResultTexts(events)
     .map((call) => {
@@ -105,57 +291,111 @@ export function extractOverallStatus(reportText) {
 }
 
 export function validateFinalReport(reportText) {
+  const options = arguments[1] ?? {};
   const status = extractOverallStatus(reportText);
-  const nonEmptyLines = String(reportText ?? '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-  const evidenceLike = /(evidence|command|exit code|observed|artifact)/i.test(reportText ?? '');
-  const findingsLike = /(findings?|limits?|residual risk|none)/i.test(reportText ?? '');
+  const lines = String(reportText ?? '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const sections = extractReportSections(reportText);
+  const evidenceText = [...sections.evidenceSections, ...sections.concreteEvidenceLines].join('\n');
+  const findingsLike = sections.hasFindingsSection || sections.hasLimitsSection;
+  const requiredClaimEvidence = options.requiredClaimEvidence ?? options.requiredClaims ?? [];
+  const missingRequiredClaims = requiredClaimEvidence.filter((claim) => {
+    const pattern = claim instanceof RegExp ? claim : new RegExp(String(claim), 'i');
+    return !pattern.test(evidenceText);
+  });
   return {
     status,
-    ok: Boolean(status && nonEmptyLines.length > 1 && evidenceLike && findingsLike),
+    ok: Boolean(status && lines.length > 1 && (sections.evidenceSections.length > 0 || sections.concreteEvidenceLines.length > 0) && findingsLike && !(status === 'PASS' && missingRequiredClaims.length > 0)),
+    missingRequiredClaims,
+    evidenceSections: sections.evidenceSections,
+    concreteEvidenceLines: sections.concreteEvidenceLines,
     reasons: [
       !status ? 'missing Overall Status' : null,
-      nonEmptyLines.length <= 1 ? 'status-only report' : null,
-      !evidenceLike ? 'missing load-bearing evidence summary' : null,
+      lines.length <= 1 ? 'status-only report' : null,
+      (sections.evidenceSections.length === 0 && sections.concreteEvidenceLines.length === 0) ? 'missing load-bearing evidence summary' : null,
       !findingsLike ? 'missing findings or limits summary' : null,
+      status === 'PASS' && missingRequiredClaims.length > 0 ? `missing required claims: ${missingRequiredClaims.map(String).join(', ')}` : null,
     ].filter(Boolean),
   };
 }
 
 export function parseQaEvidenceResult(text) {
-  const match = /QA_EVIDENCE_RESULT\s*([\s\S]*?)END_QA_EVIDENCE_RESULT/.exec(text ?? '');
-  if (!match) return null;
-  const block = match[1];
-  const status = /status:\s*(OK|FAIL|BLOCKED|NEEDS_HUMAN_REVIEW)/i.exec(block)?.[1] ?? null;
-  const gate = /gate:\s*(continue|stop_and_fail|need_e2e|need_human|blocked)/i.exec(block)?.[1] ?? null;
-  const lines = block.split(/\r?\n/);
-  const evidence = [];
-  let inEvidence = false;
-  for (const line of lines) {
-    if (/^\s*evidence:\s*$/i.test(line)) {
-      inEvidence = true;
-      continue;
-    }
-    if (/^\s*(findings|limits|recommended_next|confidence|status|gate|scope|agent):/i.test(line)) {
-      inEvidence = false;
-    }
-    if (inEvidence) {
-      const bullet = /^\s*-\s+(.+)$/.exec(line);
-      if (bullet) evidence.push(bullet[1]);
-    }
-  }
-  return { raw: block, status, gate, evidence };
+  const classified = classifySubagentResult(text);
+  if (classified.kind !== 'usable') return null;
+  const block = classified.blocks[0];
+  return {
+    raw: block.body,
+    status: block.parsed.status,
+    gate: block.parsed.gate,
+    evidence: block.parsed.evidence,
+  };
 }
 
-export function classifySubagentResult(text) {
-  const parsed = parseQaEvidenceResult(text);
-  if (!parsed) return { kind: 'missing', actionable: false };
-  if (parsed.evidence.length === 0) return { kind: 'inconclusive', actionable: false, parsed };
-  return { kind: 'usable', actionable: true, parsed };
+export function classifySubagentResult(input, options = {}) {
+  const expectedAgent = options.expectedAgent ?? null;
+  if (input && typeof input === 'object' && 'status' in input && 'output' in input) {
+    const errorText = summarizeTaskError(input.error ?? '');
+    if (input.status === 'timed_out' || /timed\s*out|timeout/i.test(errorText)) {
+      return { kind: 'timed_out', actionable: false, raw: input.output ?? '', error: input.error ?? null };
+    }
+    if (/refused|denied|rejected|not available|unavailable/i.test(errorText)) {
+      return { kind: 'refused', actionable: false, raw: input.output ?? '', error: input.error ?? null };
+    }
+    if (input.status === 'error' || input.status === 'failed' || input.error) {
+      return { kind: 'failed', actionable: false, raw: input.output ?? '', error: input.error ?? null };
+    }
+    if (input.status !== 'completed') return { kind: 'incomplete', actionable: false, raw: input.output ?? '' };
+    const taskResultText = extractTaskResultText(input.output);
+    if (!taskResultText) return { kind: 'missing', actionable: false, raw: input.output ?? '', wrapperMissing: true };
+    return classifySubagentResult(taskResultText, options);
+  }
+
+  const blocks = extractQaEvidenceBlocks(input);
+  if (blocks.length === 0) return { kind: 'missing', actionable: false, raw: String(input ?? ''), blockCount: 0 };
+  if (blocks.length > 1) {
+    return {
+      kind: 'ambiguous',
+      actionable: false,
+      raw: String(input ?? ''),
+      blocks,
+      blockCount: blocks.length,
+    };
+  }
+  const [block] = blocks;
+  if (expectedAgent && block.parsed.agent !== expectedAgent) {
+    return { kind: 'malformed', actionable: false, raw: String(input ?? ''), blocks, issues: ['wrong agent'] };
+  }
+  if (block.structuralIssues.length > 0) {
+    const evidenceFreeOnly = block.structuralIssues.every((issue) => issue === 'missing evidence' || issue === 'evidence is empty or placeholder');
+    return {
+      kind: evidenceFreeOnly ? 'evidence_free' : 'malformed',
+      actionable: false,
+      raw: String(input ?? ''),
+      blocks,
+      issues: block.structuralIssues,
+      substantiveEvidence: block.substantiveEvidence,
+    };
+  }
+
+  return {
+    kind: 'usable',
+    actionable: true,
+    raw: String(input ?? ''),
+    blocks,
+    parsed: block.parsed,
+    substantiveEvidence: block.substantiveEvidence,
+  };
 }
 
 export function assertNoQaE2eAfterStop(events) {
   const completed = extractCompletedQaEvidenceResults(events);
-  const stop = completed.find((call) => call.subagentType === 'qa-cr' && call.qaEvidence?.gate === 'stop_and_fail');
+  const stop = completed.find((call) => {
+    if (call.subagentType !== 'qa-cr') return false;
+    const classified = classifySubagentResult(call, { expectedAgent: 'qa-cr' });
+    return classified.kind === 'usable'
+      && classified.parsed.status === 'FAIL'
+      && classified.parsed.gate === 'stop_and_fail'
+      && classified.substantiveEvidence;
+  });
   if (!stop) return;
 
   const taskCalls = extractTaskCalls(events);
