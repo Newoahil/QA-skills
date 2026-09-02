@@ -14,8 +14,10 @@ import {
 import {
   assertNoQaE2eAfterStop,
   assertExactTaskTypes,
+  classifySubagentResult,
   combinedEvidenceText,
   extractCompletedQaEvidenceResults,
+  extractCompletedTaskResultTexts,
   extractE2ERunResultsFromEvents,
   extractTaskCalls,
   finalStepTokens,
@@ -26,6 +28,56 @@ import {
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, '..', '..');
+
+function escapeRegExp(text) {
+  return String(text).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function textHasTerm(text, term) {
+  return new RegExp(escapeRegExp(term), 'i').test(text);
+}
+
+function assertTermsInText(text, terms, messagePrefix) {
+  for (const term of terms ?? []) {
+    assert.match(text, new RegExp(escapeRegExp(term), 'i'), `${messagePrefix}: missing required term ${term}`);
+  }
+}
+
+function assertAnyTermsInText(text, terms, messagePrefix) {
+  if (!terms?.length) return;
+  assert.equal(
+    terms.some((term) => textHasTerm(text, term)),
+    true,
+    `${messagePrefix}: missing any-of terms ${terms.join(', ')}`,
+  );
+}
+
+function assertAnyTermGroupsInText(text, groups, messagePrefix) {
+  for (const group of groups ?? []) {
+    assert.equal(
+      group.some((term) => textHasTerm(text, term)),
+      true,
+      `${messagePrefix}: missing evidence group (${group.join(' OR ')})`,
+    );
+  }
+}
+
+function assertAnyRequiredFinalReportClaims(reportText, claims, messagePrefix) {
+  if (!claims?.length) return;
+  assert.equal(
+    claims.some((claim) => validateFinalReport(reportText, { requiredClaimEvidence: [claim] }).missingRequiredClaims.length === 0),
+    true,
+    `${messagePrefix}: missing any-of final report evidence claims ${claims.join(', ')}`,
+  );
+}
+
+function getLatestUsableChildEvidence(events, subagentType) {
+  const completedTasks = extractCompletedTaskResultTexts(events)
+    .filter((call) => call.subagentType === subagentType)
+    .map((call) => ({ call, classified: classifySubagentResult(call, { expectedAgent: subagentType }) }))
+    .filter((entry) => entry.classified.kind === 'usable');
+  return completedTasks[completedTasks.length - 1] ?? null;
+}
 
 function ensureDir(target) {
   mkdirSync(target, { recursive: true });
@@ -120,7 +172,7 @@ function materializeLocalAgentRuntime(projectRoot) {
   copyTree(path.join(repoRoot, 'qa-skill', 'references'), path.join(skillsRoot, 'references'));
   copyTree(path.join(repoRoot, 'qa-skill', 'scripts'), path.join(skillsRoot, 'scripts'));
   copyFileSync(path.join(repoRoot, 'qa-skill', 'SKILL.md'), path.join(skillsRoot, 'SKILL.md'));
-  for (const file of ['qa.md', 'qa-cr.md', 'qa-e2e.md']) {
+  for (const file of ['qa.md', 'qa-cr.md', 'qa-e2e.md', 'qa-api.md']) {
     copyFileSync(path.join(repoRoot, 'qa-skill', 'agents', file), path.join(agentsRoot, file));
   }
 }
@@ -278,11 +330,25 @@ export function assertScenarioSpecifics(result) {
       `missing any-of evidence terms ${scenario.requiredAnyEvidenceTerms.join(', ')}; temp root: ${result.fixtureData.tempRoot}`,
     );
   }
+  for (const group of scenario.requiredEvidenceAnyGroups ?? []) {
+    assert.equal(
+      group.some((term) => new RegExp(term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i').test(normalizedEvidence)),
+      true,
+      `missing evidence group (${group.join(' OR ')}); temp root: ${result.fixtureData.tempRoot}`,
+    );
+  }
   for (const term of scenario.forbiddenEvidenceTerms ?? []) {
     assert.doesNotMatch(normalizedEvidence, new RegExp(term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'), `unexpected evidence term ${term}; temp root: ${result.fixtureData.tempRoot}`);
   }
   for (const term of scenario.requiredFinalReportTerms ?? []) {
     assert.match(normalizedFinalReport, new RegExp(term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'), `missing required final report term ${term}; temp root: ${result.fixtureData.tempRoot}`);
+  }
+  if (scenario.requiredAnyFinalReportTerms?.length) {
+    assert.equal(
+      scenario.requiredAnyFinalReportTerms.some((term) => new RegExp(term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i').test(normalizedFinalReport)),
+      true,
+      `missing any-of final report terms ${scenario.requiredAnyFinalReportTerms.join(', ')}; temp root: ${result.fixtureData.tempRoot}`,
+    );
   }
   for (const term of scenario.forbiddenFinalReportTerms ?? []) {
     assert.doesNotMatch(normalizedFinalReport, new RegExp(term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'), `unexpected final report term ${term}; temp root: ${result.fixtureData.tempRoot}`);
@@ -302,13 +368,17 @@ export function assertScenarioSpecifics(result) {
   for (const taskType of scenario.requiredTaskTypes ?? []) {
     assert.equal(result.taskTypes.includes(taskType), true, `missing required task type ${taskType}; temp root: ${result.fixtureData.tempRoot}`);
   }
+  for (const taskType of scenario.forbiddenTaskTypes ?? []) {
+    assert.equal(result.taskTypes.includes(taskType), false, `unexpected task type ${taskType}; temp root: ${result.fixtureData.tempRoot}`);
+  }
   if (scenario.assertPortBindableAfterRun) {
     assertPortBindable(result.fixtureData.port);
   }
   if (scenario.requireE2ERunnerResult) {
-    const qaE2eResults = result.e2eRunResults.filter((entry) => entry.subagentType === 'qa-e2e');
-    assert.equal(qaE2eResults.length > 0, true, `missing qa-e2e E2E_RUN_RESULT; temp root: ${result.fixtureData.tempRoot}`);
-    const runnerResult = qaE2eResults[qaE2eResults.length - 1].result;
+    const runnerResultSubagentType = scenario.runnerResultSubagentType || 'qa-e2e';
+    const runnerResults = result.e2eRunResults.filter((entry) => entry.subagentType === runnerResultSubagentType);
+    assert.equal(runnerResults.length > 0, true, `missing ${runnerResultSubagentType} E2E_RUN_RESULT; temp root: ${result.fixtureData.tempRoot}`);
+    const runnerResult = runnerResults[runnerResults.length - 1].result;
     if (scenario.expectedRunnerStatus) assert.equal(runnerResult.status, scenario.expectedRunnerStatus, `unexpected runner status; temp root: ${result.fixtureData.tempRoot}`);
     if (scenario.expectedRunnerTestExitCode != null) assert.equal(runnerResult.testExitCode, scenario.expectedRunnerTestExitCode, `unexpected runner test exit code; temp root: ${result.fixtureData.tempRoot}`);
     if (scenario.expectedRunnerCleanupOk != null) assert.equal(runnerResult.cleanup?.ok, scenario.expectedRunnerCleanupOk, `unexpected runner cleanup status; temp root: ${result.fixtureData.tempRoot}`);
@@ -320,5 +390,45 @@ export function assertScenarioSpecifics(result) {
     const actual = matches[matches.length - 1].qaEvidence;
     if (expected.status) assert.equal(actual.status, expected.status, `unexpected ${expected.subagentType} evidence status; temp root: ${result.fixtureData.tempRoot}`);
     if (expected.gate) assert.equal(actual.gate, expected.gate, `unexpected ${expected.subagentType} evidence gate; temp root: ${result.fixtureData.tempRoot}`);
+  }
+  for (const expected of scenario.requiredUsableChildEvidence ?? []) {
+    const usable = getLatestUsableChildEvidence(result.events, expected.subagentType);
+    assert.notEqual(usable, null, `missing usable completed ${expected.subagentType} QA_EVIDENCE_RESULT; temp root: ${result.fixtureData.tempRoot}`);
+    const normalizedChildEvidenceText = normalizePathLikeText((usable.classified.parsed.evidence ?? []).join('\n'));
+    const messagePrefix = `${expected.subagentType} child evidence; temp root: ${result.fixtureData.tempRoot}`;
+    if (expected.status) assert.equal(usable.classified.parsed.status, expected.status, `unexpected ${expected.subagentType} usable evidence status; temp root: ${result.fixtureData.tempRoot}`);
+    if (expected.gate) assert.equal(usable.classified.parsed.gate, expected.gate, `unexpected ${expected.subagentType} usable evidence gate; temp root: ${result.fixtureData.tempRoot}`);
+    assertTermsInText(normalizedChildEvidenceText, expected.requiredTerms, messagePrefix);
+    assertAnyTermsInText(normalizedChildEvidenceText, expected.requiredAnyTerms, messagePrefix);
+    assertAnyTermGroupsInText(normalizedChildEvidenceText, expected.requiredAnyGroups, messagePrefix);
+  }
+  assertAnyRequiredFinalReportClaims(
+    result.finalReport,
+    scenario.requiredAnyFinalReportEvidenceClaims,
+    `temp root: ${result.fixtureData.tempRoot}`,
+  );
+  if (scenario.requireQaCrBeforeFormalQaApi) {
+    const firstQaCr = result.taskCalls.find((call) => call.subagentType === 'qa-cr');
+    const firstQaApiAfterCr = firstQaCr
+      ? result.taskCalls.find((call) => call.subagentType === 'qa-api' && call.index > firstQaCr.index)
+      : null;
+    assert.notEqual(firstQaCr, undefined, `missing qa-cr task for CR-before-API contract; temp root: ${result.fixtureData.tempRoot}`);
+    assert.notEqual(firstQaApiAfterCr, undefined, `missing formal qa-api task after qa-cr; temp root: ${result.fixtureData.tempRoot}`);
+
+    const preCrQaApiCalls = firstQaCr
+      ? result.taskCalls.filter((call) => call.subagentType === 'qa-api' && call.index < firstQaCr.index)
+      : [];
+    if (preCrQaApiCalls.length > 0) {
+      const exceptionPrefix = `pre-CR qa-api diagnostic exception; temp root: ${result.fixtureData.tempRoot}`;
+      const usableDiagnostic = preCrQaApiCalls
+        .map((call) => ({ call, classified: classifySubagentResult(call, { expectedAgent: 'qa-api' }) }))
+        .find((entry) => entry.classified.kind === 'usable');
+      assert.notEqual(usableDiagnostic, undefined, `${exceptionPrefix}: missing usable qa-api evidence for pre-CR diagnostic call`);
+      assertAnyTermsInText(
+        normalizedEvidence,
+        scenario.preCrQaApiDiagnosticExceptionTerms ?? ['diagnostic', 'oracle', 'trigger', 'scope', 'before cr', 'before code review', 'pre-cr'],
+        exceptionPrefix,
+      );
+    }
   }
 }

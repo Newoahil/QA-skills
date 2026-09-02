@@ -24,11 +24,17 @@ for (const scenario of pairedScenarios) {
 }
 
 test('paired eval real runner contract is declared', () => {
-  assert.equal(pairedScenarios.length, 8);
-  assert.ok(pairedScenarios.filter((scenario) => scenario.evalMode === 'guided_contract').length >= 2);
-  assert.ok(pairedScenarios.filter((scenario) => scenario.evalMode === 'autonomous_capability').length >= 6);
+  const guided = pairedScenarios.filter((scenario) => scenario.evalMode === 'guided_contract');
+  const autonomous = pairedScenarios.filter((scenario) => scenario.evalMode === 'autonomous_capability');
+  assert.equal(pairedScenarios.length, 12);
+  assert.equal(guided.length, 4);
+  assert.equal(autonomous.length, 8);
   assert.ok(pairedScenarios.some((scenario) => scenario.id === 'animation-duplicate-submit'));
   assert.ok(pairedScenarios.some((scenario) => scenario.id === 'required-runtime-unavailable'));
   assert.ok(pairedScenarios.some((scenario) => scenario.id === 'autonomous-forged-runtime-output'));
   assert.ok(pairedScenarios.some((scenario) => scenario.id === 'autonomous-runtime-unavailable'));
+  assert.ok(pairedScenarios.some((scenario) => scenario.id === 'api-contract-guided'));
+  assert.ok(pairedScenarios.some((scenario) => scenario.id === 'api-contract-autonomous'));
+  assert.ok(pairedScenarios.some((scenario) => scenario.id === 'api-name-static-only'));
+  assert.ok(pairedScenarios.some((scenario) => scenario.id === 'api-external-mutation-blocked'));
 });

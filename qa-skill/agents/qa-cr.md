@@ -10,6 +10,7 @@ permission:
   grep: allow
   glob: allow
   codegraph: allow
+  bash: deny
   webfetch: deny
   websearch: deny
   task: deny
@@ -53,9 +54,11 @@ Evidence rules:
 - Do not claim you ran commands. If you cite test output supplied by `qa` or the caller, identify it as supplied evidence.
 - A bare "looks fine" is not a result.
 
-Return exactly one `QA_EVIDENCE_RESULT` block near the end of your response.
+Return exactly one outer result block near the end of your response.
 
-That block must be your only result block and must be complete, coherent, honest about scope/limits, and backed by substantive re-checkable evidence rather than placeholder evidence. Required core fields: `agent`, `scope`, `status`, `gate`, `evidence`, `limits`. Useful optional fields: `findings`, `recommended_next`, `confidence`.
+That only outer block must start with a line `QA_EVIDENCE_RESULT` and end with a line `END_QA_EVIDENCE_RESULT`. It must be your only result block.
+
+Inside that outer block, keep the compact contract only: required core fields `agent`, `scope`, `status`, `gate`, `evidence`, `limits`, plus optional auxiliaries such as `findings`, `recommended_next`, and `confidence`. The block must be complete, coherent, honest about scope/limits, and backed by substantive re-checkable evidence rather than placeholder evidence.
 
 Use `gate` as follows:
 - `continue`: `qa` can continue to e2e/runtime evidence or reconcile.
