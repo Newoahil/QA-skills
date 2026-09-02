@@ -2,9 +2,8 @@
 
 This is an **optional** QA capability for conclusions that need a real browser and a running app. Most
 changes should still be checked by the CR gate and lighter evidence first. Use e2e when the remaining
-risk is a user-facing flow, rendering/interaction regression, browser/server integration, another
-behavior that mocks or direct calls cannot prove, or when `qa` needs a minimal runtime observation to
-establish the oracle, trigger, or bounded CR scope.
+risk is a user-facing flow, rendering/interaction regression, browser/server integration, or another
+behavior that mocks or direct calls cannot prove.
 
 `qa` is the QA orchestrator agent: it chooses what matters and decides the verdict. `qa-e2e` is the
 hands: it runs the browser/end-to-end checks and returns evidence. Do not split this into one agent per
@@ -16,8 +15,9 @@ areas. The method is flexible; the mission is not. If the assignment is too vagu
 reports the missing scope/oracle instead of inventing one.
 
 The normal path is still CR-first. A bounded pre-CR diagnostic run is allowed only when runtime
-observation is the minimum evidence needed to establish what CR should judge. That diagnostic run does
-not replace CR and does not waive later required verification.
+observation is the minimum evidence needed to establish the oracle, trigger, or bounded CR scope. That
+diagnostic run does not replace CR and does not waive later required verification. Once CR finds a
+validated load-bearing failure, stop and do not continue to heavier runtime evidence.
 
 ## Controlled runner for start -> ready -> test
 
@@ -98,7 +98,8 @@ END_E2E_RUN_RESULT
 ```
 
 - Runner exit code: `0` for `OK`, `1` for `FAIL`, `2` for `BLOCKED`.
-- A missing browser asset remains a caller/environment decision. The runner does not auto-install it.
+- A missing browser asset remains a caller/environment decision by default. Install only with explicit
+  assignment authorization when needed; never install target app dependencies.
 - The target repository remains read-only. The runner reads and executes existing commands only.
 
 ## Tool adaptation, not tool worship
@@ -143,8 +144,9 @@ Keep ownership clear: `qa` decides the quality question and verdict; `qa-e2e` ch
 browser route and returns evidence tied to that question.
 
 Dispatch safety still matters: `qa-e2e` must be a direct child of `qa` and must return evidence to
-`qa`. It may be used even when a dev/builder invoked `qa` as a subagent, but only after the CR gate has
-not found a blocking code-quality failure. Because it runs commands and browsers, `qa` should judge
+`qa`. Formal e2e verification runs only after the CR gate has not found a blocking code-quality
+failure. A narrowly bounded diagnostic may run earlier solely when runtime observation is required to
+establish the oracle, trigger, or CR scope; it does not replace mandatory CR. Because it runs commands and browsers, `qa` should judge
 runtime budget, server lifecycle, and likely task duration before dispatch. If dispatch is
 unavailable/refused, times out, fails, or returns incomplete evidence, `qa` records `BLOCKED`, evidence-needed,
 environment-needed, or residual risk instead of waiting indefinitely or assuming PASS.
@@ -159,12 +161,15 @@ status: OK | FAIL | BLOCKED | NEEDS_HUMAN_REVIEW
 gate: continue | stop_and_fail | need_e2e | need_human | blocked
 evidence:
   - <raw command, exit code, output, artifact path, screenshot/trace/video, console/network log, observed behavior>
-findings:
-  - <finding tied to evidence, or none>
 limits:
   - <what was not checked and why>
+findings:
+  - <optional finding tied to evidence>
 recommended_next:
-  - <next evidence/fix/human/environment step, or none>
-confidence: <high|medium|low plus reason>
+  - <optional next evidence/fix/human/environment step>
+confidence: <optional high|medium|low plus reason>
 END_QA_EVIDENCE_RESULT
 ```
+
+Required fields are `agent`, `scope`, `status`, `gate`, `evidence`, and `limits`. `findings`,
+`recommended_next`, and `confidence` are optional helpers, not validity requirements.
