@@ -1,0 +1,266 @@
+{
+  "schemaVersion": "qa-cr-maturity-manifest-v1",
+  "manifestId": "qa-cr-phase-a-seed-v1",
+  "manifestKind": "seed",
+  "scoringEligible": false,
+  "scopeContract": {
+    "version": "qa-cr-maturity-scope-v1",
+    "path": "docs/qa-cr-maturity-scope-v1.md"
+  },
+  "target": {
+    "agent": "qa-cr",
+    "agentPath": "qa-skill/agents/qa-cr.md",
+    "baseCommit": "801cd123afcf569d6564fc6c57128ad96f7af97e"
+  },
+  "runPolicy": {
+    "primaryAttempt": 1,
+    "retryPolicy": "none",
+    "retainPrimaryEvidence": true
+  },
+  "holdoutPolicy": {
+    "requiredForGraduation": true,
+    "minimumRatio": 0.2,
+    "enforcedForThisSeed": false
+  },
+  "cases": [
+    {
+      "id": "seed-defect-auth-guard-small",
+      "title": "Small known defect: auth guard removed on admin path",
+      "caseKind": "defect",
+      "controlType": null,
+      "partition": "development",
+      "evaluationMode": "autonomous",
+      "scoringEligible": false,
+      "complexity": {
+        "tier": "small",
+        "facts": [
+          "bounded to one route handler and one auth helper",
+          "oracle is a direct missing-permission regression"
+        ],
+        "rationale": "One propagation hop is visible but the review remains tightly bounded to the touched auth guard path."
+      },
+      "categories": [
+        "CR-C4"
+      ],
+      "severity": "high",
+      "oracle": {
+        "authority": "project-internal-seed",
+        "summary": "Admin-only route must preserve explicit permission enforcement on the write path.",
+        "sourceRef": "seed-oracles/auth-guard/admin-write-path"
+      },
+      "expectedDisposition": {
+        "status": "FAIL",
+        "gate": "stop_and_fail",
+        "rationale": "Known defect seed expects a direct static contradiction to the frozen auth oracle.",
+        "primaryFindingId": "finding-auth-guard-missing"
+      },
+      "provenance": {
+        "sourceType": "project-internal",
+        "sourceRef": "seed-cases/auth-guard-small",
+        "license": "SEE-REPO-LICENSE",
+        "commitIdentity": null,
+        "treeIdentity": null
+      }
+    },
+    {
+      "id": "seed-clean-contract-small",
+      "title": "Small clean control: schema rename in comments only",
+      "caseKind": "control",
+      "controlType": "clean",
+      "partition": "development",
+      "evaluationMode": "autonomous",
+      "scoringEligible": false,
+      "complexity": {
+        "tier": "small",
+        "facts": [
+          "bounded to documentation and generated type comments",
+          "no runtime or call-chain implication in touched files"
+        ],
+        "rationale": "The changed surface is local and designed as a false-positive control."
+      },
+      "categories": [
+        "CR-C10"
+      ],
+      "severity": "low",
+      "oracle": {
+        "authority": "project-internal-seed",
+        "summary": "Comment-only rename must not be escalated as a product defect when the executable contract is unchanged.",
+        "sourceRef": "seed-oracles/comment-only-schema-rename"
+      },
+      "expectedDisposition": {
+        "status": "OK",
+        "gate": "continue",
+        "rationale": "Clean control should remain passable and must not trigger unsupported stop behavior.",
+        "primaryFindingId": "finding-no-material-defect"
+      },
+      "provenance": {
+        "sourceType": "synthetic",
+        "sourceRef": "seed-cases/clean-contract-small",
+        "license": "CC0-1.0",
+        "commitIdentity": null,
+        "treeIdentity": null
+      }
+    },
+    {
+      "id": "seed-fixed-cache-medium",
+      "title": "Medium fixed control: cache invalidation patch restored read-after-write consistency",
+      "caseKind": "control",
+      "controlType": "fixed",
+      "partition": "development",
+      "evaluationMode": "autonomous",
+      "scoringEligible": false,
+      "complexity": {
+        "tier": "medium",
+        "facts": [
+          "touches service layer plus cache adapter",
+          "requires one cross-module propagation check"
+        ],
+        "rationale": "The review spans multiple files with one meaningful propagation path but remains bounded to a single consistency claim."
+      },
+      "categories": [
+        "CR-C2",
+        "CR-C5"
+      ],
+      "severity": "medium",
+      "oracle": {
+        "authority": "project-internal-seed",
+        "summary": "The post-fix snapshot should invalidate stale cache entries on the same entity update flow.",
+        "sourceRef": "seed-oracles/cache-invalidation-post-fix"
+      },
+      "expectedDisposition": {
+        "status": "OK",
+        "gate": "continue",
+        "rationale": "Fixed control should be accepted when the bounded static evidence matches the repair oracle.",
+        "primaryFindingId": "finding-fix-confirmed"
+      },
+      "provenance": {
+        "sourceType": "project-internal",
+        "sourceRef": "seed-cases/fixed-cache-medium",
+        "license": "SEE-REPO-LICENSE",
+        "commitIdentity": "seed-fixed-cache-medium-post",
+        "treeIdentity": null
+      }
+    },
+    {
+      "id": "seed-ambiguous-retry-medium",
+      "title": "Medium ambiguous control: retry semantics unclear across mixed config and code evidence",
+      "caseKind": "control",
+      "controlType": "ambiguous",
+      "partition": "development",
+      "evaluationMode": "autonomous",
+      "scoringEligible": false,
+      "complexity": {
+        "tier": "medium",
+        "facts": [
+          "touches retry config plus fallback error mapping",
+          "oracle intentionally leaves one conflicting interpretation unresolved"
+        ],
+        "rationale": "The bounded slice is moderate in size and designed to require an honest need-human classification rather than an optimistic close."
+      },
+      "categories": [
+        "CR-C7",
+        "CR-C8"
+      ],
+      "severity": "medium",
+      "oracle": {
+        "authority": "project-internal-seed",
+        "summary": "Static evidence is insufficient to decide whether retry-on-timeout is safe without a product-owner contract clarification.",
+        "sourceRef": "seed-oracles/retry-timeout-ambiguity"
+      },
+      "expectedDisposition": {
+        "status": "NEEDS_HUMAN_REVIEW",
+        "gate": "need_human",
+        "rationale": "Ambiguous control must freeze as human review rather than FAIL or optimistic OK.",
+        "primaryFindingId": "finding-contract-ambiguity"
+      },
+      "provenance": {
+        "sourceType": "synthetic",
+        "sourceRef": "seed-cases/ambiguous-retry-medium",
+        "license": "CC0-1.0",
+        "commitIdentity": null,
+        "treeIdentity": null
+      }
+    },
+    {
+      "id": "seed-blocked-env-large",
+      "title": "Large environment-blocked control: provider matrix requires runtime evidence outside qa-cr scope",
+      "caseKind": "control",
+      "controlType": "environment-blocked",
+      "partition": "development",
+      "evaluationMode": "autonomous",
+      "scoringEligible": false,
+      "complexity": {
+        "tier": "large",
+        "facts": [
+          "spans config, provider adapter, and fallback compatibility documentation",
+          "bounded static evidence cannot resolve the required provider/runtime matrix behavior"
+        ],
+        "rationale": "The slice is materially wider and explicitly blocked on runtime/environment evidence that Phase A qa-cr must not execute."
+      },
+      "categories": [
+        "CR-C3",
+        "CR-C8"
+      ],
+      "severity": "low",
+      "oracle": {
+        "authority": "project-internal-seed",
+        "summary": "The review should stop as blocked because provider-specific behavior requires runtime verification outside static review authority.",
+        "sourceRef": "seed-oracles/provider-matrix-runtime-required"
+      },
+      "expectedDisposition": {
+        "status": "BLOCKED",
+        "gate": "need_e2e",
+        "rationale": "Environment-blocked control is expected to route to runtime follow-up without claiming static closure.",
+        "primaryFindingId": "finding-runtime-evidence-required"
+      },
+      "provenance": {
+        "sourceType": "project-internal",
+        "sourceRef": "seed-cases/blocked-env-large",
+        "license": "SEE-REPO-LICENSE",
+        "commitIdentity": null,
+        "treeIdentity": "tree-blocked-env-large"
+      }
+    },
+    {
+      "id": "seed-defect-callchain-large",
+      "title": "Large known defect: cross-module contract propagation drops required field",
+      "caseKind": "defect",
+      "controlType": null,
+      "partition": "development",
+      "evaluationMode": "autonomous",
+      "scoringEligible": false,
+      "complexity": {
+        "tier": "large",
+        "facts": [
+          "requires tracing request model through mapper, queue payload, and consumer schema",
+          "multiple evidence sources are needed to prove the required field is dropped"
+        ],
+        "rationale": "The bounded claim is still specific, but the proof requires multi-module propagation and contract comparison across a larger static surface."
+      },
+      "categories": [
+        "CR-C2",
+        "CR-C3",
+        "CR-C9"
+      ],
+      "severity": "critical",
+      "oracle": {
+        "authority": "project-internal-seed",
+        "summary": "A required consumer field must survive the full static call chain from producer input to downstream schema payload.",
+        "sourceRef": "seed-oracles/required-field-propagation"
+      },
+      "expectedDisposition": {
+        "status": "FAIL",
+        "gate": "stop_and_fail",
+        "rationale": "Known large defect must stop when bounded propagation evidence shows the contract break.",
+        "primaryFindingId": "finding-required-field-dropped"
+      },
+      "provenance": {
+        "sourceType": "project-internal",
+        "sourceRef": "seed-cases/defect-callchain-large",
+        "license": "SEE-REPO-LICENSE",
+        "commitIdentity": "seed-defect-callchain-large",
+        "treeIdentity": "tree-defect-callchain-large"
+      }
+    }
+  ]
+}

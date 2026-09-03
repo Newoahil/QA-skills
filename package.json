@@ -3,7 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test:orchestrator": "node --test tests/orchestrator/*.test.mjs",
+    "test:orchestrator": "node --test tests/orchestrator/*.test.mjs tests/orchestrator/maturity/*.test.mjs",
+    "test:orchestrator:maturity": "node --test tests/orchestrator/maturity/*.test.mjs",
     "test:e2e-runner": "node --test tests/e2e-runner.test.mjs",
     "test:guardian": "node --test tests/guardian/*.test.mjs",
     "guardian:start": "node tools/guardian/guardian-runtime.mjs",
