@@ -1,6 +1,6 @@
 ---
 description: Read-only QA Guardian official-docs specialist. Confirms version-specific library/framework behavior through Context7.
-model: cpa/deepseek-v4-flash:0731
+model: cpa/gpt-5.6-sol
 mode: all
 temperature: 0.1
 permission:

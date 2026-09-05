@@ -5,6 +5,7 @@ docs/qa-workflow-skill-research-and-dev-plan.md
 
 # Dependencies and build artifacts
 node_modules/
+packages/qa-opencode-plugin/dist/
 coverage/
 test-result/
 test-results/

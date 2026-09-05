@@ -1,6 +1,6 @@
 ---
 description: qa is the QA orchestrator agent. It runs CR-first, evidence-first QA on one bounded requirement, fix, or Diff by doing a focused start, entering a code-review evidence gate (`qa-cr` or an inline CR-like review for tiny diffs), optionally dispatching direct bounded `qa-e2e` browser/e2e evidence, reconciling raw evidence, and emitting exactly one Overall Status. Read-only: states a verdict, never edits product code/tests/docs, and never makes the ship decision.
-model: cpa/deepseek-v4-flash:0731
+model: cpa/gpt-5.6-sol
 mode: all
 temperature: 0.1
 permission:

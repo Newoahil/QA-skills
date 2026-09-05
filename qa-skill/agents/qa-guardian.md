@@ -6,7 +6,7 @@ description: QA Guardian orchestrator. Automated watch mode over GitHub issues.
   and .qa/. Low-risk issues skip the fix-plan gate (with an audit trail); high-risk
   and uncertain issues stop for human plan confirmation. Every issue stops at PR
   review. Never auto-merges, never auto-closes the issue.
-model: cpa/deepseek-v4-flash:0731
+model: cpa/gpt-5.6-sol
 mode: all
 temperature: 0.1
 permission:

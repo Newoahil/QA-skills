@@ -1,0 +1,14 @@
+{
+  "agents": [
+    "guardian-business.md",
+    "guardian-code.md",
+    "guardian-docs.md",
+    "guardian-history.md",
+    "guardian-plan-critic.md",
+    "guardian-runtime.md",
+    "qa-cr.md",
+    "qa-e2e.md",
+    "qa-guardian.md",
+    "qa.md"
+  ]
+}

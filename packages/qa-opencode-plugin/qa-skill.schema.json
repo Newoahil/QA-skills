@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://qa-skill.local/qa-skill.schema.json",
+  "title": "qa-skill OpenCode preset config",
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "$schema": { "type": "string" },
+    "preset": { "type": "string" },
+    "compactSidebar": { "type": "boolean" },
+    "sidebar": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "title": { "type": "string" },
+        "agents": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "presets": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": {
+          "anyOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "additionalProperties": true,
+              "properties": {
+                "model": { "type": ["string", "null"] },
+                "variant": { "type": ["string", "null"] }
+              }
+            }
+          ]
+        }
+      }
+    }
+  }
+}

@@ -43,6 +43,7 @@ $ErrorActionPreference = "Stop"
 $GuardianRepo = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 $AgentsSrc    = Join-Path $GuardianRepo "qa-skill\agents"
 $SkillSrc     = Join-Path $GuardianRepo "qa-skill"
+$ManifestPath = Join-Path $AgentsSrc "install-manifest.json"
 $OpencodeHome = Join-Path $env:USERPROFILE ".config\opencode"
 $AgentsDst    = Join-Path $OpencodeHome "agents"
 $SkillDst     = Join-Path $OpencodeHome "skills\qa-skill"
@@ -80,18 +81,38 @@ if (-not (Test-Path -LiteralPath $TargetRepo)) { throw "TargetRepo does not exis
 # --- 2. Install agents globally -------------------------------------------------------
 Write-Step "Installing QA agents -> $AgentsDst"
 New-Item -ItemType Directory -Force -Path $AgentsDst | Out-Null
-foreach ($a in @("qa-guardian.md","qa.md","qa-facet.md","guardian-code.md","guardian-business.md","guardian-runtime.md","guardian-docs.md")) {
-  $src = Join-Path $AgentsSrc $a
-  if (-not (Test-Path -LiteralPath $src)) { throw "missing agent source: $src" }
-  Copy-Item -Force -LiteralPath $src -Destination (Join-Path $AgentsDst $a)
-  Write-Ok "agent installed: $a"
+$agentSync = @'
+const fs = require('fs');
+const path = require('path');
+const [manifestPath, agentsSrc, agentsDst] = process.argv.slice(1);
+const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+for (const file of manifest.agents || []) {
+  const src = path.join(agentsSrc, file);
+  const dst = path.join(agentsDst, file);
+  if (!fs.existsSync(src)) throw new Error('missing agent source: ' + src);
+  fs.copyFileSync(src, dst);
+  console.log('OK agent installed: ' + file);
 }
+for (const stale of ['qa-facet.md', 'fixer-agent.md']) {
+  const stalePath = path.join(agentsDst, stale);
+  if (fs.existsSync(stalePath)) {
+    fs.unlinkSync(stalePath);
+    console.log('OK removed stale agent: ' + stale);
+  }
+}
+'@
+& node -e $agentSync $ManifestPath $AgentsSrc $AgentsDst | ForEach-Object { Write-Ok ($_ -replace '^OK ', '') }
 
 # --- 3. Install skill globally --------------------------------------------------------
 Write-Step "Installing qa-skill -> $SkillDst"
 New-Item -ItemType Directory -Force -Path $SkillDst | Out-Null
 Copy-Item -Force -Recurse -Path (Join-Path $SkillSrc "*") -Destination $SkillDst
 Write-Ok "qa-skill installed"
+
+Write-Step "Installing OpenCode QA plugin/config registration"
+& node (Join-Path $GuardianRepo "tools\opencode\install-qa-plugin.mjs") --repo-root $GuardianRepo
+if ($LASTEXITCODE -eq 0) { Write-Ok "qa plugin/config registration ensured" }
+else { throw "qa plugin/config registration failed" }
 
 # --- 4. Ensure subagent_depth >= 2 ----------------------------------------------------
 # Guardian -> qa -> qa-facet is a 3-level chain; opencode needs subagent_depth >= 2.

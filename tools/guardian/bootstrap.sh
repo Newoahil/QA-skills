@@ -29,6 +29,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 GUARDIAN_REPO="$(cd "$SCRIPT_DIR/../.." && pwd)"
 AGENTS_SRC="$GUARDIAN_REPO/qa-skill/agents"
 SKILL_SRC="$GUARDIAN_REPO/qa-skill"
+MANIFEST_PATH="$AGENTS_SRC/install-manifest.json"
 OPENCODE_HOME="${XDG_CONFIG_HOME:-$HOME/.config}/opencode"
 AGENTS_DST="$OPENCODE_HOME/agents"
 SKILL_DST="$OPENCODE_HOME/skills/qa-skill"
@@ -59,17 +60,36 @@ fi
 # --- 2. Install agents ----------------------------------------------------------------
 cyan "Installing QA agents -> $AGENTS_DST"
 mkdir -p "$AGENTS_DST"
-for a in qa-guardian.md qa.md qa-facet.md guardian-code.md guardian-business.md guardian-runtime.md guardian-docs.md; do
-  [ -f "$AGENTS_SRC/$a" ] || { echo "missing agent source: $AGENTS_SRC/$a"; exit 1; }
-  cp -f "$AGENTS_SRC/$a" "$AGENTS_DST/$a"
-  ok "agent installed: $a"
-done
+node - "$MANIFEST_PATH" "$AGENTS_SRC" "$AGENTS_DST" <<'NODE'
+const fs = require('fs');
+const path = require('path');
+const [manifestPath, agentsSrc, agentsDst] = process.argv.slice(2);
+const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+for (const file of manifest.agents || []) {
+  const src = path.join(agentsSrc, file);
+  const dst = path.join(agentsDst, file);
+  if (!fs.existsSync(src)) throw new Error('missing agent source: ' + src);
+  fs.copyFileSync(src, dst);
+  console.log('    [ok] agent installed: ' + file);
+}
+for (const stale of ['qa-facet.md', 'fixer-agent.md']) {
+  const stalePath = path.join(agentsDst, stale);
+  if (fs.existsSync(stalePath)) {
+    fs.unlinkSync(stalePath);
+    console.log('    [ok] removed stale agent: ' + stale);
+  }
+}
+NODE
 
 # --- 3. Install skill -----------------------------------------------------------------
 cyan "Installing qa-skill -> $SKILL_DST"
 mkdir -p "$SKILL_DST"
 cp -Rf "$SKILL_SRC/." "$SKILL_DST/"
 ok "qa-skill installed"
+
+cyan "Installing OpenCode QA plugin/config registration"
+node "$GUARDIAN_REPO/tools/opencode/install-qa-plugin.mjs" --repo-root "$GUARDIAN_REPO"
+ok "qa plugin/config registration ensured"
 
 # --- 4. subagent_depth >= 2 (patched via node, JSON-safe) -----------------------------
 cyan "Ensuring subagent_depth >= 2 in target repo opencode.json"
