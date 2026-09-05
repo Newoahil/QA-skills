@@ -2,7 +2,12 @@
   "name": "qa-guardian-tools",
   "private": true,
   "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
+    "build:qa-plugin": "npm run build --workspace qa-skill-opencode-plugin",
+    "test:qa-plugin": "npm run build --workspace qa-skill-opencode-plugin && node --test tests/qa-plugin-*.test.mjs",
     "test:orchestrator": "node --test tests/orchestrator/*.test.mjs",
     "test:e2e-runner": "node --test tests/e2e-runner.test.mjs",
     "test:guardian": "node --test tests/guardian/*.test.mjs",

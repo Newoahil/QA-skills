@@ -1,0 +1,29 @@
+{
+  "$schema": "./qa-skill.schema.json",
+  // Active preset name. Falls back to "default".
+  "preset": "default",
+  "compactSidebar": true,
+  "sidebar": {
+    "title": "QA-Agents",
+    "agents": ["qa", "qa-cr", "qa-e2e", "guardian-code"]
+  },
+  "presets": {
+    "default": {
+      "qa": { "model": "cpa/gpt-5.6-sol" },
+      "qa-cr": { "model": "cpa/gpt-5.5" },
+      "qa-e2e": { "model": "cpa/gpt-5.5" },
+      "qa-guardian": { "model": "cpa/gpt-5.6-sol" },
+      "guardian-business": { "model": "cpa/gpt-5.5" },
+      "guardian-code": { "model": "cpa/gpt-5.5" },
+      "guardian-docs": { "model": "cpa/gpt-5.6-sol" },
+      "guardian-history": { "model": "cpa/gpt-5.5" },
+      "guardian-plan-critic": { "model": "cpa/gpt-5.5" },
+      "guardian-runtime": { "model": "cpa/gpt-5.5" }
+    },
+    "fast": {
+      "qa": { "model": "cpa/gpt-5.6-sol", "variant": null },
+      "qa-cr": { "model": "cpa/gpt-5.5" },
+      "qa-e2e": null
+    }
+  }
+}
