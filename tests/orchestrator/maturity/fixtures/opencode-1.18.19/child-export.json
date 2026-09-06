@@ -1,0 +1,86 @@
+{
+  "info": {
+    "id": "ses_01K4A7ZB8N2D5F7H9J1K3M5P7R",
+    "projectID": "pro_01K4A7Z000000000000000000",
+    "directory": "[redacted]",
+    "title": "qa-cr child export fixture",
+    "version": "1.18.19",
+    "parentID": "ses_01K4A7Z7P3V4P6M9Q8R2S1T0U",
+    "time": {
+      "created": 1725404401500,
+      "updated": 1725404402410
+    }
+  },
+  "messages": [
+    {
+      "info": {
+        "id": "msg_01K4A82A4Q6W8E0R2T4Y6U8I0O",
+        "role": "user",
+        "sessionID": "ses_01K4A7ZB8N2D5F7H9J1K3M5P7R",
+        "time": {
+          "created": 1725404401500
+        },
+        "agent": "qa-cr",
+        "model": {
+          "providerID": "cpa",
+          "modelID": "gpt-5.5"
+        }
+      },
+      "parts": [
+        {
+          "type": "text",
+          "text": "Inspect the relative fixture inventory and return evidence only."
+        }
+      ]
+    },
+    {
+      "info": {
+        "id": "msg_01K4A82B7W0R3E5T7Y9U1I3O5P",
+        "role": "assistant",
+        "sessionID": "ses_01K4A7ZB8N2D5F7H9J1K3M5P7R",
+        "parentID": "msg_01K4A82A4Q6W8E0R2T4Y6U8I0O",
+        "time": {
+          "created": 1725404401700,
+          "completed": 1725404402410
+        },
+        "modelID": "gpt-5.5",
+        "providerID": "cpa",
+        "mode": "qa-cr",
+        "agent": "qa-cr",
+        "path": {
+          "cwd": "[redacted]",
+          "root": "[redacted]"
+        },
+        "cost": 0.22,
+        "tokens": {
+          "input": 80,
+          "output": 30,
+          "reasoning": 12,
+          "cache": {
+            "read": 4,
+            "write": 2
+          }
+        }
+      },
+      "parts": [
+        {
+          "type": "step-finish",
+          "id": "stp_01K4A82B7W0R3E5T7Y9U1I3O5P",
+          "sessionID": "ses_01K4A7ZB8N2D5F7H9J1K3M5P7R",
+          "messageID": "msg_01K4A82B7W0R3E5T7Y9U1I3O5P",
+          "reason": "stop",
+          "tokens": {
+            "input": 80,
+            "output": 30,
+            "reasoning": 12,
+            "cache": {
+              "read": 4,
+              "write": 2
+            }
+          },
+          "cost": 0.22
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,133 @@
+{
+  "info": {
+    "id": "ses_01K4A7Z7P3V4P6M9Q8R2S1T0U",
+    "projectID": "pro_01K4A7Z000000000000000000",
+    "directory": "[redacted]",
+    "title": "Parent export reconciliation fixture",
+    "version": "1.18.19",
+    "time": {
+      "created": 1725404400000,
+      "updated": 1725404405198
+    }
+  },
+  "messages": [
+    {
+      "info": {
+        "id": "msg_01K4A8099S1D3F5G7H9J1K3L5M",
+        "role": "user",
+        "sessionID": "ses_01K4A7Z7P3V4P6M9Q8R2S1T0U",
+        "time": {
+          "created": 1725404400000
+        },
+        "agent": "qa",
+        "model": {
+          "providerID": "cpa",
+          "modelID": "gpt-5.5"
+        }
+      },
+      "parts": [
+        {
+          "type": "text",
+          "text": "Review the candidate diff and reconcile any completed qa-cr evidence against exported session data."
+        }
+      ]
+    },
+    {
+      "info": {
+        "id": "msg_01K4A81A6V9E2T4Y6U8I0O2P4A",
+        "role": "assistant",
+        "sessionID": "ses_01K4A7Z7P3V4P6M9Q8R2S1T0U",
+        "parentID": "msg_01K4A8099S1D3F5G7H9J1K3L5M",
+        "time": {
+          "created": 1725404400512,
+          "completed": 1725404405198
+        },
+        "modelID": "gpt-5.5",
+        "providerID": "cpa",
+        "mode": "qa",
+        "agent": "qa",
+        "path": {
+          "cwd": "[redacted]",
+          "root": "[redacted]"
+        },
+        "cost": 0.3,
+        "tokens": {
+          "input": 120,
+          "output": 55,
+          "reasoning": 15,
+          "cache": {
+            "read": 6,
+            "write": 4
+          }
+        }
+      },
+      "parts": [
+        {
+          "type": "step-start",
+          "id": "stp_01K4A81A6V9E2T4Y6U8I0O2P4A",
+          "sessionID": "ses_01K4A7Z7P3V4P6M9Q8R2S1T0U",
+          "messageID": "msg_01K4A81A6V9E2T4Y6U8I0O2P4A"
+        },
+        {
+          "type": "tool",
+          "id": "tool_01K4A81T0Q2W4E6R8T0Y2U4I6O",
+          "sessionID": "ses_01K4A7Z7P3V4P6M9Q8R2S1T0U",
+          "messageID": "msg_01K4A81A6V9E2T4Y6U8I0O2P4A",
+          "callID": "call_01K4A81T0Q2W4E6R8T0Y2U4I6O",
+          "tool": "task",
+          "state": {
+            "status": "completed",
+            "input": {
+              "subagent_type": "qa-cr",
+              "cwd": ".",
+              "prompt": "Inspect the relative fixture inventory and return evidence only."
+            },
+            "metadata": {
+              "sessionId": "ses_01K4A7ZB8N2D5F7H9J1K3M5P7R"
+            },
+            "output": "<task_result>\nQA_EVIDENCE_RESULT\nagent: qa-cr\nscope: parent export reconciliation\nstatus: OK\ngate: continue\nevidence:\n- child export observed\nfindings:\n- no blocking defects recorded\nlimits:\n- native step timing unavailable\nrecommended_next:\n- reconcile parent export with JSONL\nconfidence: medium\nEND_QA_EVIDENCE_RESULT\n</task_result>",
+            "title": "qa-cr task",
+            "time": {
+              "start": 1725404402114,
+              "end": 1725404403114
+            }
+          }
+        },
+        {
+          "type": "step-finish",
+          "id": "stp_01K4A81A6V9E2T4Y6U8I0O2P4A",
+          "sessionID": "ses_01K4A7Z7P3V4P6M9Q8R2S1T0U",
+          "messageID": "msg_01K4A81A6V9E2T4Y6U8I0O2P4A",
+          "reason": "tool-calls",
+          "tokens": {
+            "input": 100,
+            "output": 40,
+            "reasoning": 10,
+            "cache": {
+              "read": 5,
+              "write": 3
+            }
+          },
+          "cost": 0.12
+        },
+        {
+          "type": "step-finish",
+          "id": "stp_01K4A81Z1X3C5V7B9N1M3Q5W7E",
+          "sessionID": "ses_01K4A7Z7P3V4P6M9Q8R2S1T0U",
+          "messageID": "msg_01K4A81A6V9E2T4Y6U8I0O2P4A",
+          "reason": "stop",
+          "tokens": {
+            "input": 120,
+            "output": 55,
+            "reasoning": 15,
+            "cache": {
+              "read": 6,
+              "write": 4
+            }
+          },
+          "cost": 0.18
+        }
+      ]
+    }
+  ]
+}

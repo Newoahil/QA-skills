@@ -860,7 +860,7 @@ export function buildAgentTopologyEvidence({ parentSessionId, childSessionIds, n
   };
 }
 
-function exportNestedSession({ sessionId, projectRoot, env, invocation }) {
+export function exportNestedSession({ sessionId, projectRoot, env, invocation }) {
   if (!invocation.shellSafe) {
     return { status: null, stdout: '', stderr: '', error: invocation.issues.join('; '), json: null };
   }

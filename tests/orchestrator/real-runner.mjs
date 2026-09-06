@@ -110,7 +110,7 @@ function assertPortBindable(port) {
   assert.equal(result.status, 0, `expected port ${port} to be bindable after run: ${result.stderr || result.stdout}`);
 }
 
-function materializeLocalAgentRuntime(projectRoot) {
+export function materializeLocalAgentRuntime(projectRoot) {
   const opencodeRoot = path.join(projectRoot, '.opencode');
   const skillsRoot = path.join(opencodeRoot, 'skills', 'qa-skill');
   const agentsRoot = path.join(opencodeRoot, 'agents');

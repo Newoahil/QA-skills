@@ -1,0 +1,93 @@
+{
+  "schemaID": "qa-cr-b2-probe-v2",
+  "probeID": "qa-cr-b2-parent-export-v2",
+  "version": "2.0.0",
+  "title": "QA-CR B2 parent export v2 contract fixture",
+  "phase": "V2-A",
+  "public": true,
+  "scoringEligible": false,
+  "retryPolicy": "none",
+  "primaryAttempt": 1,
+  "manifestID": "qa-cr-phase-a-seed-v1",
+  "manifestSchemaID": "qa-cr-maturity-manifest-v1",
+  "scopeID": "qa-cr-maturity-scope-v1",
+  "scoreInputFactsSchemaID": "qa-cr-score-input-facts-v2",
+  "telemetrySchemaID": "qa-cr-run-telemetry-v2",
+  "evidenceEnvelopeSchemaID": "qa-cr-evidence-envelope-v2",
+  "runtimePinSchemaID": "qa-cr-runtime-pin-v1",
+  "attemptAuthorizationSchemaID": "qa-cr-real-attempt-authorization-v1",
+  "runtime": {
+    "directExecutableVersion": "1.18.19",
+    "providerID": "cpa",
+    "modelID": "gpt-5.5",
+    "parentAgent": "qa",
+    "childAgent": "qa-cr"
+  },
+  "expectedObservations": {
+    "parentRunCount": 1,
+    "parentExportCount": 1,
+    "completedQaCrChildCount": 1,
+    "childExportCount": 1,
+    "sameEnvironmentRequired": true,
+    "sameWorkingDirectoryRequired": true,
+    "exportsAreObservationOnly": true
+  },
+  "fixture": {
+    "directory": "tests/orchestrator/maturity/fixtures/opencode-1.18.19",
+    "parentJsonl": "tests/orchestrator/maturity/fixtures/opencode-1.18.19/parent-events.jsonl",
+    "parentExport": "tests/orchestrator/maturity/fixtures/opencode-1.18.19/parent-export.json",
+    "childExports": [
+      "tests/orchestrator/maturity/fixtures/opencode-1.18.19/child-export.json"
+    ]
+  },
+  "sourceProvenance": {
+    "officialTag": "v1.18.19",
+    "officialCommit": "2b72179c663cadcb54f54d9f19221b3fb3d11fb6",
+    "repositoryURL": "https://github.com/anomalyco/opencode",
+    "sources": [
+      {
+        "label": "run.ts",
+        "path": "packages/opencode/src/cli/cmd/run.ts",
+        "url": "https://github.com/anomalyco/opencode/blob/v1.18.19/packages/opencode/src/cli/cmd/run.ts"
+      },
+      {
+        "label": "export.ts",
+        "path": "packages/opencode/src/cli/cmd/export.ts",
+        "url": "https://github.com/anomalyco/opencode/blob/v1.18.19/packages/opencode/src/cli/cmd/export.ts"
+      },
+      {
+        "label": "generated JS types",
+        "path": "packages/sdk/js/src/gen/types.gen.ts",
+        "url": "https://github.com/anomalyco/opencode/blob/v1.18.19/packages/sdk/js/src/gen/types.gen.ts"
+      }
+    ]
+  },
+  "constraints": {
+    "emitTimestampsDiagnosticOnly": true,
+    "nativeStepTimingAvailable": false,
+    "partTimeSynthesisForbidden": true,
+    "canonicalTotalsSource": "unique-exported-step-finish-parts-only",
+    "parentChildLinkageSource": "child-export-top-level-info.parentID",
+    "phaseAManifestUnchanged": true,
+    "phaseAScopeUnchanged": true,
+    "qaPromptUnchanged": true,
+    "qaCrPromptUnchanged": true
+  },
+  "forbiddenClaims": [
+    "step-timing-authoritative",
+    "jsonl-emit-time-authoritative",
+    "scoring-eligible",
+    "retry-permitted",
+    "replacement-run-equivalent",
+    "package-metadata-runtime-pin",
+    "defect-accuracy-claim",
+    "graduation-readiness-claim"
+  ],
+  "authorization": {
+    "attempt": 1,
+    "retry": "none",
+    "authorizationArtifactRequiredLater": true,
+    "executableHashDeferred": true,
+    "artifactRootIdentityDeferred": true
+  }
+}
