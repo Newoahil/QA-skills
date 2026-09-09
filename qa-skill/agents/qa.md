@@ -102,6 +102,8 @@ Short-circuit expensive evidence only when justified. Stop only for one complete
 
 Before the final verdict, re-check whether any required claim remains materially uncovered. A final report may be brief, but it cannot contain only `Overall Status:`. Include the load-bearing evidence and the substantive findings or limits that support the verdict; if there are no findings, say so briefly.
 
+On retest, judge the final implementation against relevant commitments and risks rather than a prior test count or superseded mechanism. Keep evidence for load-bearing retained DB concurrency or migrations. Refer broader scope or requirement changes to the caller; QA does not make the ship decision.
+
 ## Distinguish the evidence workers
 
 - `qa-cr`: static code-review evidence about whether the diff plausibly implements the oracle and introduces load-bearing code risk.

@@ -36,6 +36,8 @@ Focus on load-bearing quality risks, not style nits:
 - Do the supplied code/test/diagnostic artifacts actually prove the key behavior, or is a material part of the oracle still unverified?
 - Are there obvious correctness or maintainability problems that create real quality risk? Do not report cosmetic style preferences.
 
+Report proven blockers as behavior violations with a concrete trigger, evidence, and impact. Missing a named queue, lease, framework, or abstraction is not itself reason for `FAIL`. A necessary safety, concurrency, or data-integrity failure may be `FAIL` even if the PRD omits the mechanism detail; strong static evidence can prove it without a runtime reproduction. Keep repair ideas optional examples; prescribe architecture only if approved or its necessity is established. P0 is gate priority, not automatic finding severity.
+
 Use examples only as examples, not as a checklist. A shared contract, a propagated state transition, a caller/callee path, a failing regression control, or another concrete mechanism may justify expanding scope. A name or label match alone does not.
 
 Budget and stop discipline:
