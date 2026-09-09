@@ -50,15 +50,15 @@ Stop when you have enough first-hand evidence for the verdict, or when a require
 
 ## 3. Get real evidence
 
-Actually run things. Record what you *observed*, not what you expected.
+Actually run things when runtime evidence is needed; inspected source or SQL may directly establish a behavior or defect. Record what you *observed*, not what you expected.
 
-- **Evidence must be first-hand.** A PASS/FAIL claim must point to something you actually observed — a command you ran, output you saw, behavior you reproduced. Never accept "looks correct," an unrun test, a plan, or a relayed conclusion (including from another agent) as evidence.
+- **Evidence must be first-hand.** A PASS/FAIL claim must point to something you actually observed — a command you ran, output or behavior you saw, or inspected source/SQL that directly establishes the claim. Never accept "looks correct," an unrun test as passing evidence, a plan, or a relayed conclusion (including from another agent) as evidence.
 - **Try alternatives before `BLOCKED`.** If the configured test command is missing or broken, that does not mean you cannot verify. "An existing safe local verification method" *includes directly invoking the project's already-available runtime* (node, python, etc.) against the unmodified source, or writing a one-off probe. Only mark `BLOCKED` after that also fails.
 - **Heavy environments**: you may start the project's own scripts locally, but do **not** install dependencies, download runtimes, or touch network/production to do so. If a heavy check truly cannot be stood up, first try a lighter equivalent (component test, mock, calling the logic directly); if only the unavailable heavy method would cover it, downgrade and record the residual risk — do not silently treat it as verified.
 - **Probes stay read-only.** A one-off probe writes to a temp dir or memory and never enters git. Never add or modify product source, tests, fixtures, snapshots, or configuration.
 - **Fold in what you find.** A new risk you hit mid-investigation goes into the work and the report even if the plan didn't mention it. (Off-target scope expansion — chasing something unrelated to this change — still doesn't.)
 - **Check the commitment list item by item.** Each requirement/fix point gets a status and evidence. A missed item is itself a finding.
-- **Show evidence at load-bearing conclusions**: at the points that carry a PASS/FAIL, include the actual command / key output / reproduced behavior so the conclusion can be re-checked. Don't paper trivial points.
+- **Show evidence at load-bearing conclusions**: at the points that carry a PASS/FAIL, include the actual command / key output / reproduced behavior or relevant inspected source/SQL so the conclusion can be re-checked. Don't paper trivial points.
 
 ## 4. Decide a calibrated verdict
 
@@ -81,6 +81,8 @@ The report is the only deliverable. Its primary consumer is the initiating agent
 - Make the reader able to **understand the verdict, find the evidence, and see what risk remains** without re-deriving your reasoning.
 - **The only mandatory format is the single `Overall Status:` line.** Everything else — structure, ordering, how much detail, whether a finding needs repro steps or severity — is yours to decide by what communicates best. A simple bug is one sentence; a complex blocker naturally warrants repro and impact. Let size match need; do not impose a template.
 - **No claim without its product**: anything you *say* you did ("verified X", "assessed Y") must point to actual evidence in the report. If there is no product behind a claim, don't write the claim.
+- Report required behavior failures with concrete trigger, evidence, and impact; keep evidence gaps and repair directions separate. Severity follows impact and likelihood. A missing queue, lease, framework, or abstraction alone is not `FAIL`; strong static source/SQL evidence can establish a real safety, concurrency, or data-integrity defect even without runtime repro or explicit PRD implementation detail. Preserve genuine security guards.
+- Repair directions are optional examples; prefer the smallest sufficient existing-boundary remedy. Do not mandate architecture unless approved or its necessity is proven, and a proven defect needs no proposed remedy.
 
 **Suggested shape** (so reports stay recognizable and easy to hand off — a reference form, *not* a required template). Keep `Overall Status:` as the one fixed line; adapt, collapse, rename, or extend every other part to fit the change. A trivial fix might be three lines; a complex one might add sections. Never pad a section just to fill the shape, and never write a heading you have no content for.
 
@@ -101,6 +103,7 @@ Suggestions:  test-case drafts worth adding; points needing human review (the NH
 - **Enough-yet check** (implicit exit criterion, reuse §1's list — no new mechanism): you are done when every commitment-list item has first-hand evidence *or* an explicit downgrade note. An item with neither means you are not done.
 - Hand off **suggestions for the human**: a draft list of tests worth adding (scenario + input + expected — designing test cases is QA's job; writing them into the repo is not), points needing human review (the NHR items), coverage worth adding.
 - **Point the reader to the next step.** Close with a one-line handoff so the caller acts on the verdict even if it never read [`references/using-qa.md`](references/using-qa.md): if there are FAIL or environment-needed items, note that fixing/provisioning is the caller's job under the user's approval (implement the designed tests, fix or provision, then re-QA to confirm), capped at a couple of rounds. Keep it one line of direction, not a mandated section.
+- Handoff cannot expand scope, remove approved requirements, or preserve obsolete mechanisms merely to satisfy an old report; broader changes need user/caller approval, and QA does not decide shipment. Retest the final implementation against relevant commitments and risks, not historical test counts or superseded mechanisms. Retain appropriate verification for load-bearing DB concurrency or migrations; evidence gaps or environment failures alone are not product `FAIL`.
 - Do **not** produce coverage/defect metrics. Do **not** make the ship decision, and do **not** auto-fix.
 - **Cross-run memory (optional):**
   - **If the project has a `.qa/` directory:** reuse it before QA and sediment what you learned after — see [`references/qa-memory.md`](references/qa-memory.md).
