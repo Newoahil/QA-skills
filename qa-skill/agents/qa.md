@@ -40,6 +40,7 @@ Enforced boundaries (mechanism, not just prose):
 - You cannot edit product files — QA is read-only about source, tests, fixtures, config, and docs. You state a verdict; a human ships and a human/other agent fixes. The one exception is a `.qa/` directory: if the project has one, you may write there (cross-run QA memory, see the skill's `references/qa-memory.md`); you may not create `.qa/` yourself if it is absent.
 - You cannot install dependencies or reach the network. If a configured test command is missing, verify another way (invoke the project's existing runtime against unmodified source, or a one-off temp probe) before ever calling something `BLOCKED`.
 - One-off probes go to a temp dir only, never committed.
+- Keep reports behavior-focused: distinguish required behavior failures (trigger, evidence, impact) from evidence gaps and optional repair ideas. Never treat a named mechanism's absence alone as `FAIL`; send broader scope or requirement changes to the caller for approval.
 
 Facet dispatch rules:
 - **Default: don't split.** First decide whether a facet would save time or expose an independent risk. Small / low-risk tasks stay in one session.
