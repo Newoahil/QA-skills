@@ -255,6 +255,42 @@ test('QA handoff and retest boundaries preserve approved scope and fixed protoco
   assert.match(qaCr, /required core fields `agent`, `scope`, `status`, `gate`, `evidence`, `limits`/i);
 });
 
+test('QA blocks only reachable material risks and keeps fix re-review bounded', () => {
+  const skill = read('qa-skill/SKILL.md');
+  const qa = read('qa-skill/agents/qa.md');
+  const qaCr = read('qa-skill/agents/qa-cr.md');
+
+  assert.match(skill, /Keep commitments stable/i);
+  assert.match(skill, /new concern blocks only when it violates one or proves reachable, material/i);
+  assert.match(skill, /synthetic input alone is not a blocker/i);
+  assert.match(skill, /actual project\/framework\/domain contract/i);
+  assert.match(skill, /material sink, realistic trigger, and impact/i);
+  assert.match(skill, /Static source, code, SQL, contract, or dependency evidence is sufficient/i);
+  assert.match(skill, /continue required verification/i);
+  assert.match(skill, /one status; distinguish functional results/i);
+  assert.match(skill, /not parallel verdicts/i);
+  assert.match(skill, /original finding plus immediate blast-radius regressions/i);
+  assert.match(skill, /without new fuzz variants unless evidence connects them to a reachable path/i);
+
+  assert.doesNotMatch(qa, /caller\/Supervisor/i);
+  assert.match(qa, /Prefer caller-supplied HEAD\/ref\/diff\/touched files/i);
+  assert.match(qa, /ignore superseded assumptions and prior fuzzing without new reachable-path evidence/i);
+  assert.match(qa, /Accept `stop_and_fail` only for direct oracle failure or reachable, material/i);
+  assert.match(qa, /must not short-circuit required `qa-api` or `qa-e2e` evidence/i);
+
+  assert.match(qaCr, /plausible source under the actual project\/framework\/domain contract/i);
+  assert.match(qaCr, /Static code, SQL, contract, or dependency evidence suffices/i);
+  assert.match(qaCr, /project\/domain contracts outrank generic heuristics/i);
+  assert.match(qaCr, /server idempotency or interface contracts/i);
+  assert.match(qaCr, /Use `stop_and_fail` only for direct oracle contradiction or reachable, material/i);
+  assert.match(qaCr, /Hardening must not stop required runtime or e2e evidence/i);
+  assert.match(qaCr, /do not reopen that risk class with new fuzz variants absent reachable-path evidence/i);
+
+  const taskSection = /task:\s*([\s\S]*?)---/.exec(qa)?.[1] ?? '';
+  const taskAllow = [...taskSection.matchAll(/"([^"]+)":\s*allow/g)].map((match) => match[1]);
+  assert.deepEqual(taskAllow, ['qa-api', 'qa-cr', 'qa-e2e']);
+});
+
 test('fail-closed child evidence contract stays enforced without rigid paragraph matching', () => {
   const skill = read('qa-skill/SKILL.md');
   const qa = read('qa-skill/agents/qa.md');
