@@ -42,11 +42,10 @@
 - 作为子 agent：派发 `qa`
 
 更多说明见 [`qa-skill/README.md`](qa-skill/README.md)。
-设计与值守闭环开发文档见 [`docs/QA-skill值守闭环Agent开发文档.md`](docs/QA-skill值守闭环Agent开发文档.md)。
 
 ## 当前验证状态
 
-- 当前验证证据：**61 total = 49 pass + 12 opt-in skipped**。
+- 当前验证证据：**75 total = 63 pass + 12 opt-in skipped**。
 - `e2e-runner`：**10 / 10** 通过。
 - 已有 **12 个 opt-in real paired scenarios**，且都带预期 outcome。
 - real model evals **依赖环境**，不是所有环境都保证直接稳定复现。

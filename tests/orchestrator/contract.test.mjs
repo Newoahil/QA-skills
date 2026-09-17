@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -22,6 +22,22 @@ function assertHasCompactMarkers(text) {
   assert.match(text, /end with a line `END_QA_EVIDENCE_RESULT`/i);
   assert.match(text, /only outer block/i);
 }
+
+test('active package exposes only the four-agent QA framework', () => {
+  const agents = readdirSync(path.join(root, 'qa-skill', 'agents')).sort();
+  assert.deepEqual(agents, ['qa-api.md', 'qa-cr.md', 'qa-e2e.md', 'qa.md']);
+  assert.equal(existsSync(path.join(root, 'tools', 'guardian')), false);
+  assert.equal(existsSync(path.join(root, 'tests', 'guardian')), false);
+
+  const pkg = JSON.parse(read('package.json'));
+  assert.equal(pkg.name, 'qa-skills');
+  assert.deepEqual(pkg.scripts, {
+    test: 'node --test tests/orchestrator/*.test.mjs tests/e2e-runner.test.mjs',
+    'test:orchestrator': 'node --test tests/orchestrator/*.test.mjs',
+    'test:e2e-runner': 'node --test tests/e2e-runner.test.mjs',
+  });
+  assert.equal(pkg.dependencies, undefined);
+});
 
 test('qa/qa-cr stay mechanically no-shell, qa task allowlist stays exact, and workers keep bounded permissions', () => {
   const qa = read('qa-skill/agents/qa.md');

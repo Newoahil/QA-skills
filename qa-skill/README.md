@@ -35,7 +35,7 @@ fixer、test-author、环境 provisioner 等只可能在 QA verdict 之后作为
 ### 3.1 覆盖范围
 
 - 对一个 bounded 变更做证据优先 QA。
-- 当前值守闭环能力顺序：`qa -> focused start -> CR gate first -> qa-api if needed -> qa-e2e if needed -> qa verdict`。
+- 当前 QA 框架能力顺序：`qa -> focused start -> CR gate first -> qa-api if needed -> qa-e2e if needed -> qa verdict`。
 - `qa` 可读代码、文档、diff、测试、日志和调用方提供的上下文。
 - `qa-cr` 为代码变更提供 P0 CR-first evidence gate；小 diff 可由 `qa` 内联做 CR-like review，复杂/有风险/上下文多的 diff 派 `qa-cr`。
 - `qa-api` 可在 CR 后运行项目已有本地服务或受控 bash 命令，对有界 HTTP/API claim 采集 status/header/body/timing/auth/read-after-write 等运行时证据；行为上默认只访问 localhost/127.0.0.1，外部 target 需人工明确批准和测试身份；默认 GET/HEAD/OPTIONS，mutation 需显式 method+endpoint/data/cleanup 许可；不编辑产品文件，但可产生 temp/ignored artifacts。
@@ -97,7 +97,7 @@ fixer、test-author、环境 provisioner 等只可能在 QA verdict 之后作为
 
 ### 5.3 `qa-cr` 的安全定位
 
-`qa-cr` 是值守闭环 QA 内部的 P0 code-review evidence gate。它必须：
+`qa-cr` 是 QA 框架内部的 P0 code-review evidence gate。它必须：
 
 - 从 `qa` 的 bounded diff/touched-file assignment 工作，不重写 oracle。
 - 先查 assigned diff/touched files，并沿有证据支持的相关关系逐步扩展；不设固定 hop 上限，也不做无依据全项目扫描。
@@ -252,7 +252,7 @@ Overall Status: <PASS | FAIL | BLOCKED | NEEDS_HUMAN_REVIEW>
 
 ### 11.1 当前验证/基准证据
 
-- `npm run test:orchestrator` 已通过：共 61 项；确定性模式下 49 项通过，12 个 opt-in real scenarios 跳过。
+- `npm test` 已通过：共 75 项；确定性模式下 63 项通过，12 个 opt-in real scenarios 跳过（包含 orchestrator 与 e2e-runner）。
 - `npm run test:e2e-runner` 已通过（10/10）。
 - 12 个 opt-in real paired scenarios 已有通过结果：包括 `qa-api` guided contract `FAIL`、autonomous API `PASS`（含本地实际响应证据）、static-only API-name `PASS`（无不必要 runtime）、external mutation `BLOCKED`（`qa-api` 子证据明确报告未执行请求）、runtime-unavailable `BLOCKED`。
 - real model evals 为 opt-in 且依赖环境，不是默认 CI。
