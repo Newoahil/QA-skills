@@ -209,6 +209,88 @@ test('qa evidence schema stays six-core-fields only and qa remains sole Overall 
   }
 });
 
+test('QA reporting distinguishes proven outcome failures from optional repair advice', () => {
+  const skill = read('qa-skill/SKILL.md');
+  const qaCr = read('qa-skill/agents/qa-cr.md');
+
+  assert.match(skill, /behavior violations with concrete trigger, evidence, and impact/i);
+  assert.match(skill, /separate them from evidence gaps and optional repair advice/i);
+  assert.match(skill, /Severity follows impact and likelihood/i);
+  assert.match(skill, /P0 CR priority does not make each finding P0/i);
+  assert.match(skill, /smallest sufficient existing-boundary fix/i);
+  assert.match(skill, /prescribe architecture only when approved or proven necessary/i);
+  assert.match(skill, /proven defect needs no repair recommendation/i);
+
+  assert.match(qaCr, /Missing a named queue, lease, framework, or abstraction is not itself reason for `FAIL`/i);
+  assert.match(qaCr, /necessary safety, concurrency, or data-integrity failure may be `FAIL`/i);
+  assert.match(qaCr, /PRD omits the mechanism detail/i);
+  assert.match(qaCr, /strong static evidence can prove it without a runtime reproduction/i);
+  assert.match(qaCr, /repair ideas optional examples/i);
+  assert.match(qaCr, /P0 is gate priority, not automatic finding severity/i);
+});
+
+test('QA handoff and retest boundaries preserve approved scope and fixed protocol', () => {
+  const skill = read('qa-skill/SKILL.md');
+  const qa = read('qa-skill/agents/qa.md');
+  const qaCr = read('qa-skill/agents/qa-cr.md');
+
+  assert.match(skill, /cannot expand scope, remove approved requirements, or retain mechanisms merely to satisfy an earlier report/i);
+  assert.match(skill, /broader changes need user\/caller approval/i);
+  assert.match(skill, /Do not frame this as QA deciding shipment/i);
+  assert.match(skill, /final implementation against relevant commitments and risks, not fixed historical test totals or superseded mechanisms/i);
+  assert.match(skill, /load-bearing retained DB concurrency or migrations/i);
+  assert.match(skill, /evidence gap or environment failure is not automatically product FAIL/i);
+  assert.match(qa, /final implementation against relevant commitments and risks rather than a prior test count or superseded mechanism/i);
+  assert.match(qa, /Refer broader scope or requirement changes to the caller/i);
+
+  assert.match(skill, /^name: qa-skill$/m);
+  assert.match(qa, /^model: cpa\/gpt-5\.5$/m);
+  assert.match(qa, /^mode: all$/m);
+  assert.match(qa, /^  bash: deny$/m);
+  assert.match(qaCr, /^model: cpa\/gpt-5\.5$/m);
+  assert.match(qaCr, /^mode: subagent$/m);
+  assert.match(qaCr, /^hidden: true$/m);
+  assert.match(qaCr, /^  task: deny$/m);
+  assert.match(qa, /required core fields are `agent`, `scope`, `status`, `gate`, `evidence`, and `limits`/i);
+  assert.match(qaCr, /required core fields `agent`, `scope`, `status`, `gate`, `evidence`, `limits`/i);
+});
+
+test('QA blocks only reachable material risks and keeps fix re-review bounded', () => {
+  const skill = read('qa-skill/SKILL.md');
+  const qa = read('qa-skill/agents/qa.md');
+  const qaCr = read('qa-skill/agents/qa-cr.md');
+
+  assert.match(skill, /Keep commitments stable/i);
+  assert.match(skill, /new concern blocks only when it violates one or proves reachable, material/i);
+  assert.match(skill, /synthetic input alone is not a blocker/i);
+  assert.match(skill, /actual project\/framework\/domain contract/i);
+  assert.match(skill, /material sink, realistic trigger, and impact/i);
+  assert.match(skill, /Static source, code, SQL, contract, or dependency evidence is sufficient/i);
+  assert.match(skill, /continue required verification/i);
+  assert.match(skill, /one status; distinguish functional results/i);
+  assert.match(skill, /not parallel verdicts/i);
+  assert.match(skill, /original finding plus immediate blast-radius regressions/i);
+  assert.match(skill, /without new fuzz variants unless evidence connects them to a reachable path/i);
+
+  assert.doesNotMatch(qa, /caller\/Supervisor/i);
+  assert.match(qa, /Prefer caller-supplied HEAD\/ref\/diff\/touched files/i);
+  assert.match(qa, /ignore superseded assumptions and prior fuzzing without new reachable-path evidence/i);
+  assert.match(qa, /Accept `stop_and_fail` only for direct oracle failure or reachable, material/i);
+  assert.match(qa, /must not short-circuit required `qa-api` or `qa-e2e` evidence/i);
+
+  assert.match(qaCr, /plausible source under the actual project\/framework\/domain contract/i);
+  assert.match(qaCr, /Static code, SQL, contract, or dependency evidence suffices/i);
+  assert.match(qaCr, /project\/domain contracts outrank generic heuristics/i);
+  assert.match(qaCr, /server idempotency or interface contracts/i);
+  assert.match(qaCr, /Use `stop_and_fail` only for direct oracle contradiction or reachable, material/i);
+  assert.match(qaCr, /Hardening must not stop required runtime or e2e evidence/i);
+  assert.match(qaCr, /do not reopen that risk class with new fuzz variants absent reachable-path evidence/i);
+
+  const taskSection = /task:\s*([\s\S]*?)---/.exec(qa)?.[1] ?? '';
+  const taskAllow = [...taskSection.matchAll(/"([^"]+)":\s*allow/g)].map((match) => match[1]);
+  assert.deepEqual(taskAllow, ['qa-api', 'qa-cr', 'qa-e2e']);
+});
+
 test('fail-closed child evidence contract stays enforced without rigid paragraph matching', () => {
   const skill = read('qa-skill/SKILL.md');
   const qa = read('qa-skill/agents/qa.md');
