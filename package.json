@@ -1,18 +1,10 @@
 {
-  "name": "qa-guardian-tools",
+  "name": "qa-skills",
   "private": true,
   "type": "module",
   "scripts": {
+    "test": "node --test tests/orchestrator/*.test.mjs tests/e2e-runner.test.mjs",
     "test:orchestrator": "node --test tests/orchestrator/*.test.mjs",
-    "test:e2e-runner": "node --test tests/e2e-runner.test.mjs",
-    "test:guardian": "node --test tests/guardian/*.test.mjs",
-    "guardian:start": "node tools/guardian/guardian-runtime.mjs",
-    "guardian:dashboard": "node tools/guardian/dashboard.mjs",
-    "guardian:dashboard:tui": "node tools/guardian/dashboard-tui.mjs"
-  },
-  "dependencies": {
-    "@larksuiteoapi/node-sdk": "1.73.0",
-    "@opencode-ai/sdk": "^1.18.18",
-    "undici": "^8.10.0"
+    "test:e2e-runner": "node --test tests/e2e-runner.test.mjs"
   }
 }

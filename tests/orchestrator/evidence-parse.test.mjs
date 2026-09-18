@@ -50,7 +50,7 @@ function validBlock(overrides = {}) {
 
 test('stop_and_fail prevents later qa-e2e work in parsed event stream', () => {
   const jsonl = [
-    JSON.stringify({ type: 'tool_use', part: { tool: 'task', state: { status: 'completed', input: { subagent_type: 'qa-cr' }, output: '<task_result>\nQA_EVIDENCE_RESULT\nagent: qa-cr\nstatus: FAIL\ngate: stop_and_fail\nevidence:\n  - file: src/a.ts:10\nfindings:\n  - mismatch\nlimits:\n  - none\nrecommended_next:\n  - none\nconfidence: high\nEND_QA_EVIDENCE_RESULT\n</task_result>' } } }),
+    JSON.stringify({ type: 'tool_use', part: { tool: 'task', state: { status: 'completed', input: { subagent_type: 'qa-cr' }, output: '<task_result>\nQA_EVIDENCE_RESULT\nagent: qa-cr\nscope: bounded diff\nstatus: FAIL\ngate: stop_and_fail\nevidence:\n  - file: src/a.ts:10\nfindings:\n  - mismatch\nlimits:\n  - none\nrecommended_next:\n  - none\nconfidence: high\nEND_QA_EVIDENCE_RESULT\n</task_result>' } } }),
     JSON.stringify({ type: 'text', part: { text: 'Overall Status: FAIL\nEvidence: file src/a.ts:10\nFindings: mismatch' } }),
   ].join('\n');
 
@@ -63,6 +63,27 @@ test('extractQaEvidenceBlocks parses all blocks and tracks structure', () => {
   assert.equal(blocks[0].parsed.agent, 'qa-cr');
   assert.equal(blocks[1].parsed.agent, 'qa-e2e');
   assert.deepEqual(blocks[0].structuralIssues, []);
+});
+
+test('extractQaEvidenceBlocks matches only standalone exact marker lines and tolerates CRLF spacing', () => {
+  const text = [
+    'NOT_QA_EVIDENCE_RESULT',
+    'agent: ignored',
+    'END_QA_EVIDENCE_RESULT',
+    '  QA_EVIDENCE_RESULT   ',
+    'agent: qa-cr',
+    'scope: bounded diff',
+    'status: OK',
+    'gate: continue',
+    'evidence:',
+    '  - <button disabled> remains visible',
+    'limits:',
+    '  - none',
+    'END_QA_EVIDENCE_RESULT   ',
+  ].join('\r\n');
+  const blocks = extractQaEvidenceBlocks(text);
+  assert.equal(blocks.length, 1);
+  assert.equal(blocks[0].parsed.agent, 'qa-cr');
 });
 
 test('compatibility parser refuses multiple blocks instead of choosing one', () => {
@@ -90,6 +111,43 @@ test('optional auxiliary fields may be absent without making a block malformed',
   assert.equal(classification.kind, 'usable');
 });
 
+test('duplicate and unknown top-level fields are rejected fail-closed', () => {
+  const duplicate = classifySubagentResult([
+    'QA_EVIDENCE_RESULT',
+    'agent: qa-cr',
+    'scope: bounded diff',
+    'status: OK',
+    'gate: continue',
+    'evidence:',
+    '  - command node verify.mjs; exit code 0; observed match',
+    'findings:',
+    '  - none',
+    'findings:',
+    '  - still none',
+    'limits:',
+    '  - none',
+    'END_QA_EVIDENCE_RESULT',
+  ].join('\n'));
+  assert.equal(duplicate.kind, 'malformed');
+  assert.match(duplicate.issues.join('\n'), /duplicate field: findings/i);
+
+  const unknown = classifySubagentResult([
+    'QA_EVIDENCE_RESULT',
+    'agent: qa-cr',
+    'scope: bounded diff',
+    'status: OK',
+    'gate: continue',
+    'evidence:',
+    '  - command node verify.mjs; exit code 0; observed match',
+    'limits:',
+    '  - none',
+    'taxonomy: expanded',
+    'END_QA_EVIDENCE_RESULT',
+  ].join('\n'));
+  assert.equal(unknown.kind, 'malformed');
+  assert.match(unknown.issues.join('\n'), /unknown top-level field: taxonomy/i);
+});
+
 test('html evidence is not treated as placeholder evidence', () => {
   const classification = classifySubagentResult(validBlock({ evidence: '<button disabled> remains visible and non-interactive' }));
   assert.equal(classification.kind, 'usable');
@@ -111,6 +169,14 @@ test('real completed qa-cr stop followed by qa-e2e task is rejected', () => {
     JSON.stringify({ type: 'tool_use', part: { tool: 'task', state: { status: 'running', input: { subagent_type: 'qa-e2e' }, output: '' } } }),
   ].join('\n'));
   assert.throws(() => assertNoQaE2eAfterStop(events), /qa-e2e must not appear/i);
+});
+
+test('real completed qa-cr stop followed by qa-api task is rejected', () => {
+  const events = parseJsonlEvents([
+    JSON.stringify({ type: 'tool_use', part: { tool: 'task', state: { status: 'completed', input: { subagent_type: 'qa-cr' }, output: wrapTaskResult(validBlock()) } } }),
+    JSON.stringify({ type: 'tool_use', part: { tool: 'task', state: { status: 'running', input: { subagent_type: 'qa-api' }, output: '' } } }),
+  ].join('\n'));
+  assert.throws(() => assertNoQaE2eAfterStop(events), /qa-api or qa-e2e must not appear/i);
 });
 
 test('status-only final report is invalid', () => {
@@ -160,6 +226,35 @@ test('final report accepts Chinese evidence section with bullets', () => {
   assert.equal(result.evidenceSections.length, 1);
 });
 
+test('blocked final report accepts combined evidence and findings heading', () => {
+  const report = [
+    'Overall Status: BLOCKED',
+    'Evidence and findings:',
+    '- command node verify.mjs; exit code 1; observed missing fixture',
+    '- audit token redacted not verified because the fixture never loaded',
+    'Commitments:',
+    '- none',
+    'Environment-needed handoff:',
+    '- provide the missing fixture and rerun',
+  ].join('\n');
+  const result = validateFinalReport(report, { requiredClaimEvidence: [/audit token redacted/i] });
+  assert.equal(result.ok, true);
+  assert.equal(result.evidenceSections.length, 1);
+});
+
+test('PASS final report accepts positive combined evidence and findings heading', () => {
+  const report = [
+    'Overall Status: PASS',
+    'Evidence and findings:',
+    '- command node verify.mjs; exit code 0; observed expected output',
+    '- audit token redacted in log output',
+    'Limits:',
+    '- none',
+  ].join('\n');
+  const result = validateFinalReport(report, { requiredClaimEvidence: [/audit token redacted/i] });
+  assert.equal(result.ok, true);
+});
+
 test('required claim may be satisfied by evidence bullet content', () => {
   const report = [
     'Overall Status: PASS',
@@ -172,6 +267,53 @@ test('required claim may be satisfied by evidence bullet content', () => {
   assert.equal(result.ok, true);
 });
 
+test('PASS required claim rejects skipped not-run pending and deferred CR wording', () => {
+  const reports = [
+    [
+      'Overall Status: PASS',
+      'Evidence: Inline CR skipped',
+      'Limits: none',
+    ].join('\n'),
+    [
+      'Overall Status: PASS',
+      'Evidence: CR gate not-run',
+      'Limits: none',
+    ].join('\n'),
+    [
+      'Overall Status: PASS',
+      'Evidence: code-review evidence not-performed',
+      'Limits: none',
+    ].join('\n'),
+    [
+      'Overall Status: PASS',
+      'Evidence: reviewed touched files pending review',
+      'Limits: none',
+    ].join('\n'),
+    [
+      'Overall Status: PASS',
+      'Evidence: reviewed touched files deferred until later',
+      'Limits: none',
+    ].join('\n'),
+  ];
+
+  for (const report of reports) {
+    const result = validateFinalReport(report, {
+      requiredClaimEvidence: [/inline cr|cr gate|code-review evidence|reviewed touched files/i],
+    });
+    assert.equal(result.ok, false);
+  }
+});
+
+test('pending requests handled remains positive evidence for PASS required claim', () => {
+  const report = [
+    'Overall Status: PASS',
+    'Evidence: pending requests were handled in queue drain replay; exit code 0; observed expected output',
+    'Limits: none',
+  ].join('\n');
+  const result = validateFinalReport(report, { requiredClaimEvidence: [/pending requests were handled/i] });
+  assert.equal(result.ok, true);
+});
+
 test('claim mentioned only in limits does not close PASS', () => {
   const report = [
     'Overall Status: PASS',
@@ -181,6 +323,188 @@ test('claim mentioned only in limits does not close PASS', () => {
   ].join('\n');
   const result = validateFinalReport(report, { requiredClaimEvidence: [/audit token redacted/i] });
   assert.equal(result.ok, false);
+});
+
+test('epistemically negative PASS evidence lines do not close required claims', () => {
+  const uncertainReports = [
+    [
+      'Overall Status: PASS',
+      'Evidence: audit token redacted not verified',
+      'Limits: none',
+    ].join('\n'),
+    [
+      'Overall Status: PASS',
+      'Evidence and findings:',
+      '- audit token redacted unverified',
+      'Limits:',
+      '- none',
+    ].join('\n'),
+    [
+      'Overall Status: PASS',
+      'Evidence: audit token redacted not checked',
+      'Limits: none',
+    ].join('\n'),
+    [
+      'Overall Status: PASS',
+      'Evidence: audit token redacted unable to verify in this run',
+      'Limits: none',
+    ].join('\n'),
+    [
+      'Overall Status: PASS',
+      'Evidence: audit token redacted no evidence collected',
+      'Limits: none',
+    ].join('\n'),
+    [
+      'Overall Status: PASS',
+      'Evidence: audit token redacted could not be verified in this run',
+      'Limits: none',
+    ].join('\n'),
+    [
+      'Overall Status: PASS',
+      'Evidence: audit token redacted was not observed during replay',
+      'Limits: none',
+    ].join('\n'),
+    [
+      'Overall Status: PASS',
+      'Evidence: audit token redacted not validated',
+      'Limits: none',
+    ].join('\n'),
+    [
+      'Overall Status: PASS',
+      'Evidence: audit token redacted cannot verify from supplied logs',
+      'Limits: none',
+    ].join('\n'),
+    [
+      'Overall Status: PASS',
+      'Evidence: audit token redacted unable to confirm',
+      'Limits: none',
+    ].join('\n'),
+    [
+      'Overall Status: PASS',
+      'Evidence: audit token redacted unchecked',
+      'Limits: none',
+    ].join('\n'),
+  ];
+
+  for (const report of uncertainReports) {
+    assert.equal(validateFinalReport(report, { requiredClaimEvidence: [/audit token redacted/i] }).ok, false);
+  }
+
+  const semanticNegativeButVerified = [
+    'Overall Status: PASS',
+    'Evidence: audit token redacted and no userId leaked; exit code 0; observed expected output',
+    'Limits: none',
+  ].join('\n');
+  assert.equal(validateFinalReport(semanticNegativeButVerified, { requiredClaimEvidence: [/audit token redacted/i] }).ok, true);
+});
+
+test('required claim mentioned only under commitments or next steps does not close PASS evidence', () => {
+  const reports = [
+    [
+      'Overall Status: PASS',
+      'Evidence and findings:',
+      '- command node verify.mjs; exit code 0; observed expected output',
+      'Commitments:',
+      '- audit token redacted will be verified after fixture restore',
+      'Limits:',
+      '- none',
+    ].join('\n'),
+    [
+      'Overall Status: PASS',
+      'Evidence: command node verify.mjs; exit code 0; observed expected output',
+      'Next steps:',
+      '- verify audit token redacted in the next run',
+      'Limits: none',
+    ].join('\n'),
+    [
+      'Overall Status: PASS',
+      '证据与发现：',
+      '- command node verify.mjs; exit code 0; observed expected output',
+      '下一步：',
+      '- 验证 audit token redacted',
+      '限制：',
+      '- none',
+    ].join('\n'),
+  ];
+
+  for (const report of reports) {
+    const result = validateFinalReport(report, { requiredClaimEvidence: [/audit token redacted/i] });
+    assert.equal(result.ok, false);
+    assert.equal(result.evidenceSections.length, 1);
+  }
+});
+
+test('evidence section stops before non-evidence handoff headings while keeping positive evidence bullets', () => {
+  const report = [
+    'Overall Status: PASS',
+    'Evidence and findings:',
+    '- command node verify.mjs; exit code 0; observed expected output',
+    '- audit token redacted in log output',
+    'Environment-needed handoff:',
+    '- provide staging fixture',
+    'Suggestions:',
+    '- rerun broader coverage later',
+    'Limits:',
+    '- none',
+  ].join('\n');
+  const result = validateFinalReport(report, { requiredClaimEvidence: [/audit token redacted/i] });
+  assert.equal(result.ok, true);
+  assert.equal(result.evidenceSections.length, 1);
+  assert.doesNotMatch(result.evidenceSections[0], /Environment-needed handoff|Suggestions/i);
+});
+
+test('evidence section stops at plain future-work headings like planned verification', () => {
+  const report = [
+    'Overall Status: PASS',
+    'Evidence:',
+    '- command node verify.mjs; exit code 0; observed expected output',
+    'Planned verification:',
+    '- reviewed touched files in follow-up CR pass',
+    'Limits:',
+    '- none',
+  ].join('\n');
+  const result = validateFinalReport(report, { requiredClaimEvidence: [/reviewed touched files/i] });
+  assert.equal(result.ok, false);
+  assert.equal(result.evidenceSections.length, 1);
+  assert.doesNotMatch(result.evidenceSections[0], /Planned verification|reviewed touched files/i);
+});
+
+test('planned verification blocks path-bearing bullets from closing PASS required claims until new evidence section', () => {
+  const report = [
+    'Overall Status: PASS',
+    'Evidence:',
+    '- command node verify.mjs; exit code 0; observed expected output',
+    'Planned verification:',
+    '- file: src/ui/status.ts line 12 reviewed touched files in follow-up pass',
+    'P0 CR gate:',
+    '- file: src/ui/status.ts line 1 keeps exported status constant as `ready-now`',
+    'Findings:',
+    '- none',
+    'Limits:',
+    '- none',
+  ].join('\n');
+  assert.equal(validateFinalReport(report, { requiredClaimEvidence: [/reviewed touched files/i] }).ok, false);
+  assert.equal(validateFinalReport(report, { requiredClaimEvidence: [/ready-now/i] }).ok, true);
+});
+
+test('planned verification then notes does not reopen concrete evidence collection for PASS required claims', () => {
+  const report = [
+    'Overall Status: PASS',
+    'Evidence:',
+    '- command node verify.mjs; exit code 0; observed expected output',
+    'Planned verification:',
+    '- follow-up CR review pending fixture restore',
+    'Notes:',
+    '- file: src/ui/status.ts line 12 reviewed touched files in follow-up pass',
+    'Findings:',
+    '- none',
+    'Limits:',
+    '- none',
+  ].join('\n');
+  const result = validateFinalReport(report, { requiredClaimEvidence: [/reviewed touched files/i] });
+  assert.equal(result.ok, false);
+  assert.deepEqual(result.missingRequiredClaims, [/reviewed touched files/i]);
+  assert.doesNotMatch(result.concreteEvidenceLines.join('\n'), /reviewed touched files/i);
 });
 
 test('linked-worktree style CR gate report is valid without explicit evidence heading', () => {

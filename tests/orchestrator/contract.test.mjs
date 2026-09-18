@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -17,21 +17,61 @@ function assertHasCoreFields(text) {
   }
 }
 
-test('qa task allowlist stays limited to qa-cr and qa-e2e and both remain leaf read-only agents', () => {
+function assertHasCompactMarkers(text) {
+  assert.match(text, /start with a line `QA_EVIDENCE_RESULT`/i);
+  assert.match(text, /end with a line `END_QA_EVIDENCE_RESULT`/i);
+  assert.match(text, /only outer block/i);
+}
+
+test('active package exposes only the four-agent QA framework', () => {
+  const agents = readdirSync(path.join(root, 'qa-skill', 'agents')).sort();
+  assert.deepEqual(agents, ['qa-api.md', 'qa-cr.md', 'qa-e2e.md', 'qa.md']);
+  assert.equal(existsSync(path.join(root, 'tools', 'guardian')), false);
+  assert.equal(existsSync(path.join(root, 'tests', 'guardian')), false);
+
+  const pkg = JSON.parse(read('package.json'));
+  assert.equal(pkg.name, 'qa-skills');
+  assert.deepEqual(pkg.scripts, {
+    test: 'node --test tests/orchestrator/*.test.mjs tests/e2e-runner.test.mjs',
+    'test:orchestrator': 'node --test tests/orchestrator/*.test.mjs',
+    'test:e2e-runner': 'node --test tests/e2e-runner.test.mjs',
+  });
+  assert.equal(pkg.dependencies, undefined);
+});
+
+test('qa/qa-cr stay mechanically no-shell, qa task allowlist stays exact, and workers keep bounded permissions', () => {
   const qa = read('qa-skill/agents/qa.md');
+  const qaApi = read('qa-skill/agents/qa-api.md');
   const qaCr = read('qa-skill/agents/qa-cr.md');
   const qaE2e = read('qa-skill/agents/qa-e2e.md');
 
   const taskSection = /task:\s*([\s\S]*?)---/.exec(qa)?.[1] ?? '';
   const taskAllow = [...taskSection.matchAll(/"([^"]+)":\s*allow/g)].map((match) => match[1]).sort();
-  assert.deepEqual(taskAllow, ['qa-cr', 'qa-e2e']);
+  assert.deepEqual(taskAllow, ['qa-api', 'qa-cr', 'qa-e2e']);
+  assert.match(qa, /bash:\s*deny/);
+  assert.match(qaCr, /bash:\s*deny/);
+
+  assert.match(qaApi, /hidden:\s*true/);
+  assert.match(qaApi, /task:\s*deny/);
+  assert.match(qaApi, /edit:\s*[\s\S]*?"\*": deny/);
+  assert.match(qaApi, /bash:/);
+  assert.match(qaApi, /npm i\*/i);
+  assert.match(qaApi, /npm ci\*/i);
+  assert.match(qaApi, /git commit\*/i);
+  assert.match(qaApi, /npm install\*|pnpm install\*|yarn install\*|bun install\*|pip install\*/i);
+  assert.match(qaApi, /webfetch:\s*deny/);
+  assert.match(qaApi, /websearch:\s*deny/);
 
   assert.match(qaCr, /task:\s*deny/);
   assert.match(qaCr, /edit:\s*deny/);
   assert.match(qaCr, /never runs shell|No shell/i);
   assert.match(qaE2e, /task:\s*deny/);
   assert.match(qaE2e, /"\*": deny/);
+  assert.match(qaE2e, /git add\*/i);
+  assert.match(qaE2e, /npm ci\*/i);
   assert.match(qaE2e, /never edits product code/i);
+  assert.match(qaE2e, /webfetch:\s*deny/);
+  assert.match(qaE2e, /websearch:\s*deny/);
 });
 
 test('core files describe evidence-driven expansion, no fixed hop, pre-CR diagnostic, report evidence summary, and .git worktree boundary', () => {
@@ -55,6 +95,7 @@ test('core prompts avoid forbidden rigid planner phrases and fixed edge lists', 
   const corpus = [
     read('qa-skill/SKILL.md'),
     read('qa-skill/agents/qa.md'),
+    read('qa-skill/agents/qa-api.md'),
     read('qa-skill/agents/qa-cr.md'),
     read('qa-skill/agents/qa-e2e.md'),
   ].join('\n');
@@ -73,9 +114,10 @@ test('core prompts avoid forbidden rigid planner phrases and fixed edge lists', 
   );
 });
 
-test('qa, qa-e2e, and skill stay consistent on bounded pre-CR diagnostic and QA_EVIDENCE_RESULT contract', () => {
+test('qa, qa-api, qa-e2e, and skill stay consistent on bounded pre-CR diagnostic and QA_EVIDENCE_RESULT contract', () => {
   const skill = read('qa-skill/SKILL.md');
   const qa = read('qa-skill/agents/qa.md');
+  const qaApi = read('qa-skill/agents/qa-api.md');
   const qaE2e = read('qa-skill/agents/qa-e2e.md');
 
   assert.match(skill, /diagnostic/i);
@@ -86,7 +128,7 @@ test('qa, qa-e2e, and skill stay consistent on bounded pre-CR diagnostic and QA_
   assert.match(qaE2e, /does not replace/i);
   assert.match(qaE2e, /mandatory CR/i);
 
-  for (const text of [skill, qa, qaE2e]) {
+  for (const text of [skill, qa, qaApi, qaE2e]) {
     assert.match(text, /QA_EVIDENCE_RESULT/);
   }
 
@@ -102,13 +144,173 @@ test('qa, qa-e2e, and skill stay consistent on bounded pre-CR diagnostic and QA_
   assert.match(qa, /encouraged|useful/i);
   assert.match(qa, /omission alone/i);
   assert.match(qa, /trustworthy evidence unusable/i);
+  assert.match(qaApi, /required core fields/i);
+  assertHasCoreFields(qaApi);
+
   assert.match(qaE2e, /required core fields/i);
   assertHasCoreFields(qaE2e);
+});
+
+test('compact worker contracts require explicit QA_EVIDENCE_RESULT start and end markers', () => {
+  const qaApi = read('qa-skill/agents/qa-api.md');
+  const qaCr = read('qa-skill/agents/qa-cr.md');
+  const qaE2e = read('qa-skill/agents/qa-e2e.md');
+
+  for (const text of [qaApi, qaCr, qaE2e]) {
+    assertHasCompactMarkers(text);
+    assert.match(text, /keep the compact contract only/i);
+    assert.match(text, /optional auxiliaries/i);
+    assert.match(text, /findings/i);
+    assert.match(text, /recommended_next/i);
+    assert.match(text, /confidence/i);
+    assertHasCoreFields(text);
+  }
+});
+
+test('qa-api/qa-e2e contracts anchor activation boundaries, worker safety, and truthful policy-vs-mechanism wording', () => {
+  const qa = read('qa-skill/agents/qa.md');
+  const skill = read('qa-skill/SKILL.md');
+  const qaApi = read('qa-skill/agents/qa-api.md');
+  const qaE2e = read('qa-skill/agents/qa-e2e.md');
+
+  assert.match(qa, /bounded runtime HTTP\/API\/integration evidence/i);
+  assert.match(qa, /Names, OpenAPI terms, route labels, or auth vocabulary alone do not activate `qa-api`/i);
+  assert.match(qa, /Default ordering is CR first/i);
+  assert.match(qa, /`qa-api` only if the API claim remains open/i);
+  assert.match(qa, /then `qa-e2e` only if a browser-mediated claim remains/i);
+  assert.match(qa, /Final CR remains mandatory for code changes/i);
+  assert.match(qa, /parallel only when their checks are independent and do not share mutable state/i);
+
+  assert.match(skill, /local\/loopback project service access is allowed/i);
+  assert.match(skill, /External or production targets still require explicit human approval/i);
+  assert.match(skill, /bounded runtime HTTP\/API\/integration behavior/i);
+  assert.match(skill, /Expected negative `4xx` responses may support `OK`/i);
+  assert.match(skill, /Mutations require explicit method\+endpoint approval/i);
+  assert.match(skill, /Default ordering is CR first/i);
+  assert.match(skill, /does not replace the mandatory CR for code changes/i);
+
+  assert.match(qaApi, /default allowed targets are loopback\/local test services only/i);
+  assert.match(qaApi, /cannot mechanically enforce loopback-only targeting or repository read-only/i);
+  assert.match(qaApi, /policy boundaries/i);
+  assert.match(qaApi, /External targets require explicit human approval and a supplied test identity/i);
+  assert.match(qaApi, /Refuse redirects from local to external targets/i);
+  assert.match(qaApi, /Redact `Authorization`, `Cookie`, `Set-Cookie`/i);
+  assert.match(qaApi, /Default to safe observation methods such as `GET`, `HEAD`, or `OPTIONS`/i);
+  assert.match(qaApi, /Mutating requests require explicit method \+ endpoint approval/i);
+  assert.match(qaApi, /Non-idempotent requests are never auto-retried/i);
+  assert.match(qaApi, /timeout, request-count, and body-size limits/i);
+  assert.match(qaApi, /transport unavailable, connect failure, or timeout \(`BLOCKED`\)/i);
+  assert.match(qaApi, /HTTP `4xx`\/`5xx` are observations, not automatic task failure/i);
+
+  assert.match(qaE2e, /cannot mechanically enforce repository read-only\s+or local-only targeting/i);
+  assert.match(qaE2e, /hard policy boundaries/i);
+  assert.match(qaE2e, /do not install or upgrade application dependencies/i);
+});
+
+test('qa evidence schema stays six-core-fields only and qa remains sole Overall Status owner', () => {
+  const corpus = [
+    read('qa-skill/SKILL.md'),
+    read('qa-skill/agents/qa.md'),
+    read('qa-skill/agents/qa-api.md'),
+    read('qa-skill/agents/qa-cr.md'),
+    read('qa-skill/agents/qa-e2e.md'),
+  ];
+
+  for (const text of corpus) {
+    assertHasCoreFields(text);
+  }
+
+  for (const text of corpus.slice(2)) {
+    assert.doesNotMatch(text, /^Overall Status:/im);
+  }
+});
+
+test('QA reporting distinguishes proven outcome failures from optional repair advice', () => {
+  const skill = read('qa-skill/SKILL.md');
+  const qaCr = read('qa-skill/agents/qa-cr.md');
+
+  assert.match(skill, /behavior violations with concrete trigger, evidence, and impact/i);
+  assert.match(skill, /separate them from evidence gaps and optional repair advice/i);
+  assert.match(skill, /Severity follows impact and likelihood/i);
+  assert.match(skill, /P0 CR priority does not make each finding P0/i);
+  assert.match(skill, /smallest sufficient existing-boundary fix/i);
+  assert.match(skill, /prescribe architecture only when approved or proven necessary/i);
+  assert.match(skill, /proven defect needs no repair recommendation/i);
+
+  assert.match(qaCr, /Missing a named queue, lease, framework, or abstraction is not itself reason for `FAIL`/i);
+  assert.match(qaCr, /necessary safety, concurrency, or data-integrity failure may be `FAIL`/i);
+  assert.match(qaCr, /PRD omits the mechanism detail/i);
+  assert.match(qaCr, /strong static evidence can prove it without a runtime reproduction/i);
+  assert.match(qaCr, /repair ideas optional examples/i);
+  assert.match(qaCr, /P0 is gate priority, not automatic finding severity/i);
+});
+
+test('QA handoff and retest boundaries preserve approved scope and fixed protocol', () => {
+  const skill = read('qa-skill/SKILL.md');
+  const qa = read('qa-skill/agents/qa.md');
+  const qaCr = read('qa-skill/agents/qa-cr.md');
+
+  assert.match(skill, /cannot expand scope, remove approved requirements, or retain mechanisms merely to satisfy an earlier report/i);
+  assert.match(skill, /broader changes need user\/caller approval/i);
+  assert.match(skill, /Do not frame this as QA deciding shipment/i);
+  assert.match(skill, /final implementation against relevant commitments and risks, not fixed historical test totals or superseded mechanisms/i);
+  assert.match(skill, /load-bearing retained DB concurrency or migrations/i);
+  assert.match(skill, /evidence gap or environment failure is not automatically product FAIL/i);
+  assert.match(qa, /final implementation against relevant commitments and risks rather than a prior test count or superseded mechanism/i);
+  assert.match(qa, /Refer broader scope or requirement changes to the caller/i);
+
+  assert.match(skill, /^name: qa-skill$/m);
+  assert.match(qa, /^model: cpa\/gpt-5\.5$/m);
+  assert.match(qa, /^mode: all$/m);
+  assert.match(qa, /^  bash: deny$/m);
+  assert.match(qaCr, /^model: cpa\/gpt-5\.5$/m);
+  assert.match(qaCr, /^mode: subagent$/m);
+  assert.match(qaCr, /^hidden: true$/m);
+  assert.match(qaCr, /^  task: deny$/m);
+  assert.match(qa, /required core fields are `agent`, `scope`, `status`, `gate`, `evidence`, and `limits`/i);
+  assert.match(qaCr, /required core fields `agent`, `scope`, `status`, `gate`, `evidence`, `limits`/i);
+});
+
+test('QA blocks only reachable material risks and keeps fix re-review bounded', () => {
+  const skill = read('qa-skill/SKILL.md');
+  const qa = read('qa-skill/agents/qa.md');
+  const qaCr = read('qa-skill/agents/qa-cr.md');
+
+  assert.match(skill, /Keep commitments stable/i);
+  assert.match(skill, /new concern blocks only when it violates one or proves reachable, material/i);
+  assert.match(skill, /synthetic input alone is not a blocker/i);
+  assert.match(skill, /actual project\/framework\/domain contract/i);
+  assert.match(skill, /material sink, realistic trigger, and impact/i);
+  assert.match(skill, /Static source, code, SQL, contract, or dependency evidence is sufficient/i);
+  assert.match(skill, /continue required verification/i);
+  assert.match(skill, /one status; distinguish functional results/i);
+  assert.match(skill, /not parallel verdicts/i);
+  assert.match(skill, /original finding plus immediate blast-radius regressions/i);
+  assert.match(skill, /without new fuzz variants unless evidence connects them to a reachable path/i);
+
+  assert.doesNotMatch(qa, /caller\/Supervisor/i);
+  assert.match(qa, /Prefer caller-supplied HEAD\/ref\/diff\/touched files/i);
+  assert.match(qa, /ignore superseded assumptions and prior fuzzing without new reachable-path evidence/i);
+  assert.match(qa, /Accept `stop_and_fail` only for direct oracle failure or reachable, material/i);
+  assert.match(qa, /must not short-circuit required `qa-api` or `qa-e2e` evidence/i);
+
+  assert.match(qaCr, /plausible source under the actual project\/framework\/domain contract/i);
+  assert.match(qaCr, /Static code, SQL, contract, or dependency evidence suffices/i);
+  assert.match(qaCr, /project\/domain contracts outrank generic heuristics/i);
+  assert.match(qaCr, /server idempotency or interface contracts/i);
+  assert.match(qaCr, /Use `stop_and_fail` only for direct oracle contradiction or reachable, material/i);
+  assert.match(qaCr, /Hardening must not stop required runtime or e2e evidence/i);
+  assert.match(qaCr, /do not reopen that risk class with new fuzz variants absent reachable-path evidence/i);
+
+  const taskSection = /task:\s*([\s\S]*?)---/.exec(qa)?.[1] ?? '';
+  const taskAllow = [...taskSection.matchAll(/"([^"]+)":\s*allow/g)].map((match) => match[1]);
+  assert.deepEqual(taskAllow, ['qa-api', 'qa-cr', 'qa-e2e']);
 });
 
 test('fail-closed child evidence contract stays enforced without rigid paragraph matching', () => {
   const skill = read('qa-skill/SKILL.md');
   const qa = read('qa-skill/agents/qa.md');
+  const qaApi = read('qa-skill/agents/qa-api.md');
   const qaCr = read('qa-skill/agents/qa-cr.md');
   const qaE2e = read('qa-skill/agents/qa-e2e.md');
 
@@ -149,8 +351,9 @@ test('fail-closed child evidence contract stays enforced without rigid paragraph
   assert.match(qa, /gate:\s*stop_and_fail/i);
   assert.match(qa, /validated load-bearing failure evidence/i);
 
-  for (const text of [qaCr, qaE2e]) {
+  for (const text of [qaApi, qaCr, qaE2e]) {
     assert.match(text, /only result block/i);
+    assertHasCompactMarkers(text);
     assert.match(text, /complete|coherent|honest about scope\/limits/i);
     assert.match(text, /substantive re-checkable evidence/i);
     assert.match(text, /placeholder evidence/i);
